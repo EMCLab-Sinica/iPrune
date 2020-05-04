@@ -48,7 +48,7 @@ int main( void )
     prvSetupHardware();
 
     vApplicationSetupTimerInterrupt();
-    IntermittentCNNTest();
+    //IntermittentCNNTest();
 
     /*
 	if(firstTime != 1){
@@ -109,6 +109,37 @@ static void prvSetupHardware( void )
     GPIO_clearInterrupt(GPIO_PORT_P5, GPIO_PIN6);
     GPIO_clearInterrupt(GPIO_PORT_P5, GPIO_PIN5);
 
+    /* P6.0 */
+    GPIO_selectInterruptEdge(GPIO_PORT_P6, GPIO_PIN0, GPIO_HIGH_TO_LOW_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P6, GPIO_PIN0);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN0);
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN0);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN0);
+    /* P6.1 */
+    GPIO_selectInterruptEdge(GPIO_PORT_P6, GPIO_PIN1, GPIO_HIGH_TO_LOW_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P6, GPIO_PIN1);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN1);
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN1);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN1);
+    /* P6.2 */
+    GPIO_selectInterruptEdge(GPIO_PORT_P6, GPIO_PIN2, GPIO_LOW_TO_HIGH_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P6, GPIO_PIN2);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN2);
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN2);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN2);
+    /* P6.3 */
+    GPIO_selectInterruptEdge(GPIO_PORT_P6, GPIO_PIN3, GPIO_LOW_TO_HIGH_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P6, GPIO_PIN3);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN3);
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN3);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN3);
+    /* P7.0 */
+    GPIO_selectInterruptEdge(GPIO_PORT_P7, GPIO_PIN0, GPIO_LOW_TO_HIGH_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P7, GPIO_PIN0);
+    GPIO_clearInterrupt(GPIO_PORT_P7, GPIO_PIN0);
+    GPIO_enableInterrupt(GPIO_PORT_P7, GPIO_PIN0);
+    GPIO_clearInterrupt(GPIO_PORT_P7, GPIO_PIN0);
+
 	/* Set DCO frequency to 16 MHz. */
 	setFrequency(FreqLevel);
 
@@ -164,6 +195,50 @@ __interrupt void Port_5(void)
     GPIO_clearInterrupt(GPIO_PORT_P5, GPIO_PIN5);
 }
 
+#pragma vector=PORT6_VECTOR
+__interrupt void Port_6(void)
+{
+    static uint32_t cnn_value = 0;
+    GPIO_disableInterrupt(GPIO_PORT_P6, GPIO_PIN0);
+    GPIO_disableInterrupt(GPIO_PORT_P6, GPIO_PIN1);
+    GPIO_disableInterrupt(GPIO_PORT_P6, GPIO_PIN2);
+    GPIO_disableInterrupt(GPIO_PORT_P6, GPIO_PIN3);
+
+    if (GPIO_getInterruptStatus(GPIO_PORT_P6, GPIO_PIN0)) {
+        print2uart("POWER_OFF\r\n");
+    }
+    if (GPIO_getInterruptStatus(GPIO_PORT_P6, GPIO_PIN2)) {
+        print2uart("POWER_ON\r\n");
+    }
+    if (GPIO_getInterruptStatus(GPIO_PORT_P6, GPIO_PIN1)) {
+        print2uart("COMMIT_START\r\n");
+        print2uart("%d\r\n", cnn_value);
+        cnn_value++;
+    }
+    if (GPIO_getInterruptStatus(GPIO_PORT_P6, GPIO_PIN3)) {
+        print2uart("BACKUP_CHANGED\r\n");
+    }
+
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN0);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN0);
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN1);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN1);
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN2);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN2);
+    GPIO_enableInterrupt(GPIO_PORT_P6, GPIO_PIN3);
+    GPIO_clearInterrupt(GPIO_PORT_P6, GPIO_PIN3);
+}
+
+#pragma vector=PORT7_VECTOR
+__interrupt void Port_7(void)
+{
+    GPIO_disableInterrupt(GPIO_PORT_P7, GPIO_PIN0);
+
+    print2uart("RESTORE_END\r\n");
+
+    GPIO_enableInterrupt(GPIO_PORT_P7, GPIO_PIN0);
+    GPIO_clearInterrupt(GPIO_PORT_P7, GPIO_PIN0);
+}
 
 /* Temperature and voltage
  * ADC12 Interrupt Service Routine
