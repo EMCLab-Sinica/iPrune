@@ -56,6 +56,7 @@ struct Node;
 
 struct ValueInfo {
     ValueInfo(const ParameterInfo *cur_param, Model *model = nullptr);
+    ValueInfo(int16_t scale);
     ValueInfo() = delete;
 
     uint16_t scale;

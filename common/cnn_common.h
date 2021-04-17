@@ -54,7 +54,7 @@ typedef struct Node {
 #endif
 } Node;
 
-static_assert(sizeof(Node) == 46 + HAWAII * 8, "Unexpected size for Node");
+static_assert(sizeof(Node) == 40 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
 
 /* ParameterInfo may indicate data from the model (parameters) or intermediate values */
 typedef struct ParameterInfo {

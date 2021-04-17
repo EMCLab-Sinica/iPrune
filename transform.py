@@ -14,12 +14,13 @@ import warnings
 from typing import List
 
 import onnx
+import onnx.checker
 import onnx.helper
 import onnxoptimizer
 import numpy as np
 
 from configs import configs
-from utils import extract_data, find_initializer
+from utils import change_batch_size, extract_data, find_initializer, find_node_by_output, find_tensor_value_info
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -27,8 +28,8 @@ logger = logging.getLogger(__name__)
 """
 Goal: Mapping name-based nodes to integer-based ones.
 Indexing policy:
-    0~len(g.input)-1: input nodes
-    len(g.input)~ : other (hidden) nodes
+    0~len(onnx_model.graph.input)-1: input nodes
+    len(onnx_model.graph.input)~ : other (hidden) nodes
 """
 
 class Constants:
@@ -41,7 +42,8 @@ class Constants:
     TURNING_POINTS_LEN = 8
     MODEL_NODES_LEN = 0
     INPUTS_DATA_LEN = 0
-    NUM_INPUTS = 3
+    # see `ops` below for the maximum possible number of inputs
+    NUM_INPUTS = 5
     N_INPUT = 0
     # Match the size of external FRAM
     NVM_SIZE = 512 * 1024
@@ -53,7 +55,6 @@ class Constants:
     USE_ARM_CMSIS = 0
     CONFIG = None
 
-    DEFAULT_TILE_C = 4
     DEFAULT_TILE_H = 8
     CUR_BATCH_SIZE = 1
     STATEFUL = 0
@@ -67,6 +68,7 @@ class Constants:
 # https://github.com/onnx/onnx/blob/master/docs/Operators.md
 # [expected_inputs_len, inplace_update]
 ops = {
+    'BatchNormalization': [5, 0],
     # Concat actually accepts 1~infinity inputs. Use 2 to fit SqueezeNet
     'Concat': [2, 0],
     'Conv': [3, 0],
@@ -183,7 +185,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('config', choices=configs.keys())
 parser.add_argument('--all-samples', action='store_true')
 parser.add_argument('--write-images', action='store_true')
-parser.add_argument('--batch-size', type=int, default=Constants.DEFAULT_TILE_C)
+parser.add_argument('--batch-size', type=int, required=True)
 parser.add_argument('--target', choices=('msp430', 'msp432'), required=True)
 parser.add_argument('--debug', action='store_true')
 intermittent_methodology = parser.add_mutually_exclusive_group(required=True)
@@ -221,15 +223,38 @@ Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 
 onnx_opt_model_name = config['onnx_model'].replace('.onnx', '-opt.onnx')
 onnx_model = onnx.load(config['onnx_model'])
+
+def mapping_input(onnx_model: onnx.ModelProto, old: str, new: str) -> onnx.ModelProto:
+    new_input = onnx.ValueInfoProto()
+    new_input.CopyFrom(find_tensor_value_info(onnx_model, new))
+    new_input.name = new + '.new'
+    onnx_model.graph.input.append(new_input)
+    for node in onnx_model.graph.node:
+        if len(node.input) and node.input[0] == new:
+            node.input[0] = new + '.new'
+    # Old inputs should be removed after nodes that use it are removed by the optimizer
+    onnx_model = onnxoptimizer.optimize(onnx_model, ['eliminate_deadend'])
+    for idx in range(len(onnx_model.graph.input)):
+        if onnx_model.graph.input[idx].name == old:
+            del onnx_model.graph.input[idx]
+            break
+    onnx.checker.check_model(onnx_model)
+    return onnx_model
+
+if args.config == 'kws':
+    onnx_model = mapping_input(onnx_model, 'wav_data:0', 'Mfcc:0')
+
 # https://zhuanlan.zhihu.com/p/41255090
 onnx_model = onnxoptimizer.optimize(onnx_model, [
+    'extract_constant_to_initializer',
+    'eliminate_nop_pad',
     'fuse_add_bias_into_conv',
     'fuse_matmul_add_bias_into_gemm',
 ])
 
 onnx_model = onnx.shape_inference.infer_shapes(onnx_model)
-onnx.save_model(onnx_model, onnx_opt_model_name)
-g = onnx_model.graph
+onnx.save_model(onnx_model, onnx_opt_model_name.replace('-opt.onnx', '-opt-pass1.onnx'))
+
 names = {}
 
 def get_attr(node, attr_name):
@@ -241,40 +266,117 @@ def get_attr(node, attr_name):
     # Not found
     return None
 
-# Remove Squeeze and Reshape nodes with constants as the input
-replaced_nodes_map = {}
+def evaluate_node(name):
+    value = find_initializer(onnx_model, name)
+    if value:
+        return extract_data(value)
 
-def replace_squeeze(node, inp):
-    # Since opset 13, axes is an input instead of an attribute
-    try:
-        axes_name = node.input[1]
-        axes = find_initializer(onnx_model, axes_name).int64_data
-    except IndexError:
-        axes = get_attr(node, 'axes')
-    new_dims = [dim for dim_idx, dim in enumerate(inp.dims) if dim_idx not in axes]
-    # Repeated fields cannot be assigned directly
-    # https://developers.google.com/protocol-buffers/docs/reference/python-generated#repeated-fields
-    inp.dims[:] = new_dims
+    node = find_node_by_output(onnx_model, name)
+    fn = globals()['handle_' + node.op_type.lower()]
+    return fn(node)
 
-def replace_reshape(node, inp):
-    dims_name = node.input[1]
-    new_dims = find_initializer(onnx_model, dims_name).int64_data
-    assert new_dims
-    inp.dims[:] = new_dims
+def handle_concat(node):
+    axis = get_attr(node, 'axis')
+    inputs = [evaluate_node(node.input[i]) for i in range(len(node.input))]
+    return np.concatenate(inputs, axis=axis)
 
-replace_handlers = {
-    'Squeeze': replace_squeeze,
-    'Reshape': replace_reshape,
-}
+def handle_constant(node):
+    value = get_attr(node, 'value')
+    return extract_data(value)
 
-def replace_nodes():
-    for n in g.node:
-        if n.op_type not in ('Squeeze', 'Reshape'):
+def handle_gather(node):
+    axis = get_attr(node, 'axis')
+    data = evaluate_node(node.input[0])
+    indices = evaluate_node(node.input[1])
+    return np.take(data, indices, axis=axis)
+
+def handle_shape(node):
+    value_info = find_tensor_value_info(onnx_model, node.input[0])
+    ret = []
+    for dim in value_info.type.tensor_type.shape.dim:
+        if dim.HasField('dim_param'):
+            ret.append(dim.dim_param)
+        else:
+            assert dim.HasField('dim_value')
+            ret.append(dim.dim_value)
+    return ret
+
+def handle_unsqueeze(node):
+    data = evaluate_node(node.input[0])
+    axes = tuple(evaluate_node(node.input[1]))
+    return np.expand_dims(data, axis=axes)
+
+def evaluate_dynamic_shape():
+    for n in onnx_model.graph.node:
+        if n.op_type != 'Reshape':
             continue
-        inp = find_initializer(onnx_model, n.input[0])
-        if inp:
-            replace_handlers[n.op_type](n, inp)
-            replaced_nodes_map[n.output[0]] = n.input[0]
+
+        shape = n.input[1]
+        if find_initializer(onnx_model, shape):
+            continue
+
+        shape = evaluate_node(shape)
+        evaluated_node = onnx.helper.make_tensor(
+            name=n.name + '_evaluated',
+            data_type=onnx.TensorProto.INT64,
+            dims=shape.shape,
+            vals=shape)
+        onnx_model.graph.initializer.append(evaluated_node)
+        n.input[1] = evaluated_node.name
+
+def constant_folding():
+    '''Remove Squeeze and Reshape nodes with constants as the input'''
+
+    replaced_nodes_map = {}
+
+    for n in onnx_model.graph.node:
+        if n.op_type not in ('Reshape', 'Squeeze'):
+            continue
+
+        data = find_initializer(onnx_model, n.input[0])
+
+        if not data:
+            continue
+
+        if n.op_type == 'Reshape':
+            shape = find_initializer(onnx_model, n.input[1])
+            if not shape:
+                continue
+            data.dims[:] = extract_data(shape)
+        elif n.op_type == 'Squeeze':
+            if len(n.input) < 2:  # version < 13
+                axes = get_attr(n, 'axes')
+            else:
+                axes = extract_data(find_initializer(onnx_model, n.input[1]))
+            if not axes:
+                continue
+            data.dims[:] = [
+                data.dims[idx_dim]
+                for idx_dim in range(len(data.dims))
+                if idx_dim not in axes
+            ]
+
+        old_tensor_value_info = find_tensor_value_info(onnx_model, data.name)
+        new_tensor_value_info = onnx.helper.make_tensor_value_info(
+            data.name, data.data_type, data.dims, old_tensor_value_info.doc_string)
+        old_tensor_value_info.CopyFrom(new_tensor_value_info)
+
+        replaced_nodes_map[n.output[0]] = data.name
+
+    for n in onnx_model.graph.node:
+        for idx in range(len(n.input)):
+            if n.input[idx] in replaced_nodes_map:
+                n.input[idx] = replaced_nodes_map[n.input[idx]]
+
+def hack_averagepool(onnx_model: onnx.ModelProto):
+    for node in onnx_model.graph.node:
+        if node.op_type != 'AveragePool':
+            continue
+        input_tensor_value_info = find_tensor_value_info(onnx_model, node.input[0])
+        input_dims = [dim.dim_value for dim in input_tensor_value_info.type.tensor_type.shape.dim[2:]]
+        kernel_shape = get_attr(node, 'kernel_shape')
+        if input_dims == kernel_shape:
+            node.CopyFrom(onnx.helper.make_node('GlobalAveragePool', node.input, node.output, node.name))
 
 def transpose_gemm(onnx_model: onnx.ModelProto):
     for node in onnx_model.graph.node:
@@ -292,12 +394,27 @@ def transpose_gemm(onnx_model: onnx.ModelProto):
                 del node.attribute[idx]
                 break
 
-replace_nodes()
+change_batch_size(onnx_model, 1)
+evaluate_dynamic_shape()
+constant_folding()
+hack_averagepool(onnx_model)
 transpose_gemm(onnx_model)
+
+onnx.save_model(onnx_model, onnx_opt_model_name.replace('-opt.onnx', '-opt-pass2.onnx'))
+
+# Remove nodes not reachable from outputs. Those are disconnected due to graph rewriting done above.
+onnx_model = onnxoptimizer.optimize(onnx_model, [
+    'eliminate_deadend',
+    'eliminate_unused_initializer',
+])
+# Run shape inference again as evaluate_dynamic_shape() may make more chances
+onnx_model = onnx.shape_inference.infer_shapes(onnx_model)
+onnx.checker.check_model(onnx_model)
+onnx.save_model(onnx_model, onnx_opt_model_name)
 
 # Split Conv/Gemm into Conv/Gemm and ConvMerge/GemmMerge (for OFM scaling up and merge of OFMs from channel tiling)
 new_nodes = []
-for idx, n in enumerate(g.node):
+for idx, n in enumerate(onnx_model.graph.node):
     if n.op_type in audio_ops:
         logger.warning('skipping audio operator %s', n.op_type)
         continue
@@ -311,24 +428,17 @@ for idx, n in enumerate(g.node):
         new_node.output[:] = [output_name]
         new_nodes.append(new_node)
 
-new_nodes = [n for n in new_nodes if n.output[0] not in replaced_nodes_map.keys()]
-for n in new_nodes:
-    for idx, inp in enumerate(n.input):
-        n.input[idx] = replaced_nodes_map.get(inp, inp)
-
 nodes = [ONNXNodeWrapper(n) for n in new_nodes]
 
 conv_param_names = set()
 
-input_mapping = model_data.input_mapping
-for idx, inp in enumerate(g.input):
-    inp_name = input_mapping.get(inp.name, inp.name)
-    names[inp_name] = idx
+for idx, inp in enumerate(onnx_model.graph.input):
+    names[inp.name] = idx
 
 # For some ONNX models (e.g., squeezenet-cifar10 converted from Keras), inputs
 # do not include initializers. Merge them here.
 inputs_len = len(names.keys())
-for idx, initializer in enumerate(g.initializer):
+for idx, initializer in enumerate(onnx_model.graph.initializer):
     if initializer.name not in names:
         names[initializer.name] = idx + inputs_len
 
@@ -337,8 +447,8 @@ print("Constants.N_INPUT = {}".format(Constants.N_INPUT))
 
 prev_node = None
 for idx, n in enumerate(nodes):
-    if n.op_type == 'Dropout':
-        output = n.output[:1]  # we don't care the second output `mask`
+    if n.op_type in ('Dropout', 'BatchNormalization'):
+        output = n.output[:1]  # we don't care outputs for training
     else:
         output = n.output
     assert len(output) == 1
@@ -377,32 +487,19 @@ class Node:
     flags: NodeFlags
     max_output_id: int
 
-def find_tensor_value_info(name: str):
-    if name.endswith('_before_merge'):
-        name = name[:-len('_before_merge')]
-    for value_info in g.value_info:
-        if value_info.name == name:
-            return value_info
-    raise ValueError(f'No value_info found for {name}')
-
-def find_node_by_output(output_name):
-    for node in g.node:
-        if node.output[0] == output_name:
-            return node
-
 def extend_for_footprints(n):
     return n + n // Constants.CUR_BATCH_SIZE
 
 def determine_conv_tile_c(n):
     logger.debug('Determine tile size for Conv node %s', n.name)
 
-    output_value_info = find_tensor_value_info(n.output[0])
+    output_value_info = find_tensor_value_info(onnx_model, n.output[0])
     filter_info = find_initializer(onnx_model, n.input[1])
     node_flags = n.flags.b.extra.conv
 
     is_separate_tiling = False
     if not find_initializer(onnx_model, n.input[0]):
-        input_node = find_node_by_output(n.input[0])
+        input_node = find_node_by_output(onnx_model, n.input[0])
         if input_node and input_node.op_type == 'Concat':
             is_separate_tiling = True
 
@@ -449,6 +546,7 @@ def determine_conv_tile_c(n):
 
         if not input_tile_too_large:
             params_len = CHANNEL / node_flags.input_tile_c * OUTPUT_CHANNEL * OUTPUT_H * OUTPUT_W * 2
+            logger.debug('Candidate params_len %d', params_len)
             if params_len < config['intermediate_values_size']:
                 break
         node_flags.input_tile_c //= 2
@@ -459,7 +557,7 @@ def determine_conv_tile_c(n):
 def determine_gemm_tile_sizes(n):
     logger.debug('Determine tile size for Gemm node %s', n.name)
 
-    A = find_tensor_value_info(n.input[0])
+    A = find_tensor_value_info(onnx_model, n.input[0])
     B = find_initializer(onnx_model, n.input[1])
     A_shape = A.type.tensor_type.shape
     A_rows = A_shape.dim[0].dim_value
@@ -525,7 +623,7 @@ for idx, node in enumerate(graph):
 
 parameters = [None for _ in range(Constants.N_INPUT)]
 
-for params in g.initializer:
+for params in onnx_model.graph.initializer:
     if params.data_type not in (onnx.TensorProto.FLOAT, onnx.TensorProto.INT64):
         raise Exception('unsupported data type {}'.format(params.data_type))
 
@@ -612,13 +710,6 @@ for node in graph:
 
 parameter_info_idx = 0
 
-def decode_raw_data(params):
-    format_char = {
-        onnx.TensorProto.FLOAT: 'f',
-        onnx.TensorProto.INT64: 'q',
-    }[params.data_type]
-    return list(map(lambda t: t[0], struct.iter_unpack(format_char, params.raw_data)))
-
 model_parameters_info = outputs['model_parameters_info']
 for params in parameters:
     if params is None:  # input
@@ -639,10 +730,7 @@ for params in parameters:
     else:
         assert len(params.dims) <= 4
         if params.data_type == onnx.TensorProto.FLOAT:
-            if params.float_data:
-                float_data = params.float_data
-            else:
-                float_data = decode_raw_data(params)
+            float_data = extract_data(params).flatten()
             data_len = len(float_data)
             assert data_len > 0
             slot = parameters_slot
@@ -654,12 +742,12 @@ for params in parameters:
             for param in float_data:
                 slot.target.write(to_bytes(_Q15(param / config['scale'])))
                 slot.offset += 2
+            if slot.offset % 4:
+                slot.offset += 2
+                slot.target.write(to_bytes(0))
             model_parameters_info.write(to_bytes(16, size=8)) # bitwidth
         elif params.data_type == onnx.TensorProto.INT64:
-            if params.int64_data:
-                int64_data = params.int64_data
-            else:
-                int64_data = decode_raw_data(params)
+            int64_data = extract_data(params)
             data_len = len(int64_data)
             assert data_len > 0
             slot = parameters_slot

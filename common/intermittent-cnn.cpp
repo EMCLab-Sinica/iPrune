@@ -20,8 +20,8 @@ static void handle_node(Model *model, uint16_t node_idx) {
     my_printf_debug("name = %.*s, ", NODE_NAME_LEN, cur_node->name);
     my_printf_debug("op_type = %d" NEWLINE, cur_node->op_type);
 
-    int16_t input_id[3];
-    const ParameterInfo *input[3];
+    int16_t input_id[NUM_INPUTS];
+    const ParameterInfo *input[NUM_INPUTS];
     MY_ASSERT(cur_node->inputs_len == expected_inputs_len[cur_node->op_type]);
     for (uint16_t j = 0; j < cur_node->inputs_len; j++) {
         input_id[j] = cur_node->inputs[j];

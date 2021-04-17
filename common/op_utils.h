@@ -13,7 +13,7 @@ typedef void (*ChunkHandler)(uint32_t output_offset, uint16_t output_chunk_len, 
 
 extern int16_t lea_buffer[LEA_BUFFER_SIZE];
 int16_t upper_gauss(int16_t a, int16_t b);
-uint16_t find_max_multiplier(struct Model *model, const ParameterInfo *param, int16_t* buffer = nullptr, uint16_t len = 0);
+uint16_t find_max_multiplier(struct Model *model, const ParameterInfo *param, int16_t* buffer = nullptr, uint16_t len = 0, int16_t initial_scale = 0);
 void float_to_scale_params(int16_t *scaleFract, uint8_t *shift, float scale);
 void iterate_chunks(Model *model, const ParameterInfo *param, uint16_t start_offset, uint16_t len, const ChunkHandler& callback, void* params);
 void determine_tile_c(ParameterInfo *param, const ParameterInfo* input, const ParameterInfo *filter = nullptr);

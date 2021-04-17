@@ -66,6 +66,8 @@ int64_t get_int64_param(const ParameterInfo *param, size_t i) {
     MY_ASSERT(param->bitwidth == 64);
     uint32_t limit;
     const uint8_t *baseptr = get_param_base_pointer(param, &limit);
+    // detect mis-aligned memory access on ARM
+    MY_ASSERT(param->params_offset % 4 == 0);
     const int64_t *ret = reinterpret_cast<const int64_t*>(baseptr + param->params_offset) + i;
     MY_ASSERT(reinterpret_cast<const uint8_t*>(ret) < baseptr + limit);
     return *ret;

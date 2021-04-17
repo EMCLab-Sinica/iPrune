@@ -12,6 +12,7 @@ from urllib.request import urlretrieve
 
 import numpy as np
 import onnx
+import onnx.helper
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,13 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
 
     return ModelData(labels=labels, images=mfccs, input_mapping=input_mapping)
 
+def load_data_omniglot(start: int, limit: int) -> ModelData:
+    n_way = 5
+    data = np.load(os.path.expanduser('~/.cache/omniglot/omniglot.npy'))[:n_way,:,:,:,:]
+    labels = list(itertools.chain.from_iterable([[idx]*20 for idx in range(n_way)]))
+    images = np.concatenate(data)
+    return ModelData(labels=labels, images=images)
+
 def kws_dnn_model():
     return download_file('https://github.com/ARM-software/ML-KWS-for-MCU/raw/master/Pretrained_models/DNN/DNN_S.pb', 'KWS-DNN_S.pb')
 
@@ -200,6 +208,11 @@ def find_tensor_value_info(onnx_model: onnx.ModelProto, name: str) -> onnx.Value
             return value_info
     raise ValueError(f'No value_info found for {name}')
 
+def find_node_by_output(onnx_model: onnx.ModelProto, output_name: str) -> Optional[onnx.ValueInfoProto]:
+    for node in onnx_model.graph.node:
+        if node.output[0] == output_name:
+            return node
+
 def change_batch_size(onnx_model: onnx.ModelProto, batch_size: Union[str, int]):
     g = onnx_model.graph
     initializer_names = set([initializer.name for initializer in g.initializer])
@@ -207,8 +220,15 @@ def change_batch_size(onnx_model: onnx.ModelProto, batch_size: Union[str, int]):
     for value_info in itertools.chain(g.value_info, g.input, g.output):
         if value_info.name in initializer_names or value_info.name in constant_names:
             continue
+        n = find_node_by_output(onnx_model, value_info.name)
+        if not n and value_info.name not in [inp.name for inp in g.input]:
+            continue
+        if n and n.op_type == 'Shape':
+            continue
         shape = value_info.type.tensor_type.shape
         if shape.dim:
+            if n and n.op_type == 'Concat' and len(shape.dim) == 1:
+                continue
             if isinstance(batch_size, str):
                 shape.dim[0].dim_param = batch_size
             else:

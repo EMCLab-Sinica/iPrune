@@ -124,7 +124,7 @@ void MaxMultiplierChunkHandler(uint32_t offset, uint16_t real_chunk_len, uint8_t
     my_printf_debug("Current max_multiplier=%d" NEWLINE, *params->max_multiplier);
 }
 
-uint16_t find_max_multiplier(Model *model, const ParameterInfo *param, int16_t* buffer, uint16_t len) {
+uint16_t find_max_multiplier(Model *model, const ParameterInfo *param, int16_t* buffer, uint16_t len, int16_t initial_scale) {
     uint16_t max_multiplier = 0;
     if (!buffer && sample_idx == 0) {
         max_multiplier = read_max_multiplier(param);
@@ -133,7 +133,11 @@ uint16_t find_max_multiplier(Model *model, const ParameterInfo *param, int16_t* 
             return max_multiplier;
         }
     }
-    max_multiplier = param->scale;
+    if (initial_scale) {
+        max_multiplier = initial_scale;
+    } else {
+        max_multiplier = param->scale;
+    }
 
     MaxMultiplierChunkHandlerParams params({model, param, buffer, &max_multiplier});
     iterate_chunks(model, param, 0, len, MaxMultiplierChunkHandler, &params);

@@ -28,7 +28,10 @@ CMSIS_ROOT="$PWD/CMSIS"
 sources=(
     DSP/Source/BasicMathFunctions/arm_add_q15.c
     DSP/Source/BasicMathFunctions/arm_offset_q15.c
+    DSP/Source/BasicMathFunctions/arm_mult_q15.c
     DSP/Source/BasicMathFunctions/arm_scale_q15.c
+    DSP/Source/BasicMathFunctions/arm_sub_q15.c
+    DSP/Source/FastMathFunctions/arm_sqrt_q15.c
     DSP/Source/MatrixFunctions/arm_mat_init_q15.c
     DSP/Source/MatrixFunctions/arm_mat_mult_fast_q15.c
     DSP/Source/StatisticsFunctions/arm_max_q15.c

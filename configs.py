@@ -2,6 +2,7 @@ from utils import (
     load_data_mnist,
     load_data_cifar10,
     load_data_google_speech,
+    load_data_omniglot,
 )
 
 # intermediate_values_size should < 65536, or TI's compiler gets confused
@@ -49,5 +50,17 @@ configs = {
         # See: https://github.com/ARM-software/ML-KWS-for-MCU/issues/44
         'fp32_accuracy': 0.6323,
     },
+    'omniglot': {
+        'onnx_model': 'data/maml.onnx',
+        'scale': 4,
+        'input_scale': 4,
+        'num_slots': 2,
+        'intermediate_values_size': 30000,
+        'data_loader': load_data_omniglot,
+        'n_all_samples': 5 * 20,  # 5-way (classes), each with 20 samples
+        'sample_size': 2 * 28 * 28,
+        'op_filters': 4,
+        'first_sample_outputs': [ -0.230564, -0.879236, -0.910271, -0.212429, 0.534965 ],
+        'fp32_accuracy': 0,
+    },
 }
-

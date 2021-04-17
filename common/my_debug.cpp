@@ -17,6 +17,10 @@ ValueInfo::ValueInfo(const ParameterInfo *cur_param, Model *model) {
     this->scale = cur_param->scale;
 }
 
+ValueInfo::ValueInfo(int16_t scale_) {
+    this->scale = scale_;
+}
+
 static void print_q15(int16_t val, const ValueInfo& val_info) {
     if (dump_integer) {
         my_printf("% 6d ", val);
