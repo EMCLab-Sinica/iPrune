@@ -1,7 +1,7 @@
+#include <cmath>
 #include <stdint.h>
 #include <string.h>
 #include <inttypes.h> // for PRId32
-#include <math.h>
 
 #include "intermittent-cnn.h"
 #include "cnn_common.h"
@@ -118,6 +118,7 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
 
     // the parameter info for the last node should also be refreshed when MY_DEBUG == 0
     // Otherwise, the model is not correctly re-initialized in some cases
+    // topological sort guarantees that the last node in an ONNX model is always the output node
     const ParameterInfo *output_node = get_parameter_info(MODEL_NODES_LEN + N_INPUT - 1);
     if (output_node_ptr) {
         *output_node_ptr = output_node;
@@ -156,7 +157,7 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
                 float expected = first_sample_outputs[ofm_idx];
                 float error = fabs((got_real - expected) / expected);
                 // Errors in CIFAR-10/Stateful are quite large...
-                MY_ASSERT(error <= 0.25,
+                MY_ASSERT((got_real == expected) /* both are zero */ || (error <= 0.35),
                           "Value error too large at index %d: got=%f, expected=%f" NEWLINE, buffer_idx, got_real, expected);
                 ofm_idx++;
             }

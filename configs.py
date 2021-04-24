@@ -32,7 +32,7 @@ configs = {
         'n_all_samples': 10000,
         'sample_size': 2 * 32 * 32 * 3,
         'op_filters': 4,
-        'first_sample_outputs': [ 4.895500, 4.331344, 4.631835, 11.602396, 4.454658, 10.819544, 5.423588, 6.451203, 5.806091, 5.272837 ],
+        'first_sample_outputs': [ 0.000830, 0.000472, 0.000637, 0.678688, 0.000534, 0.310229, 0.001407, 0.003931, 0.002062, 0.001210 ],
         'fp32_accuracy': 0.7704,
     },
     'kws': {
@@ -45,7 +45,7 @@ configs = {
         'n_all_samples': 4890,
         'sample_size': 2 * 25 * 10,  # MFCC gives 25x10 tensors
         'op_filters': 4,
-        'first_sample_outputs': [ -29.228327, 5.429047, 22.146973, 3.142066, -10.448060, -9.513299, 15.832925, -4.655487, -14.588447, -1.577156, -5.864228, -6.609077 ],
+        'first_sample_outputs': [ 0.000000, 0.000000, 0.998193, 0.000000, 0.000000, 0.000000, 0.001807, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000 ],
         # Much lower than reported on the paper due to mismatched window_size_ms/window_stride_ms (?)
         # See: https://github.com/ARM-software/ML-KWS-for-MCU/issues/44
         'fp32_accuracy': 0.6323,

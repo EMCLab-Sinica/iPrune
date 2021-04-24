@@ -79,7 +79,7 @@ ops = {
     'MaxPool': [1, 0],
     'Relu': [1, 0],
     'Reshape': [2, 1],
-    'Softmax': [1, 1],
+    'Softmax': [1, 0],
     'Squeeze': [1, 1],
     # XXX: Transpose does nothing as we happens to need NHWC
     'Transpose': [1, 1],
