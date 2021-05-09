@@ -220,6 +220,10 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     dump_params_debug(model, output);
 }
 
+void handle_backward_gemm(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
+}
+
 void alloc_gemmmerge(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
     output->slot = get_next_slot(model, input[0]);
     int16_t output_len = output->dims[0] * output->dims[1];
@@ -293,4 +297,8 @@ void handle_gemmmerge(struct Model *model, const struct ParameterInfo **input, s
 
     my_printf_debug("handle_gemmmerge output" NEWLINE);
     dump_params_debug(model, output);
+}
+
+void handle_backward_gemmmerge(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
 }

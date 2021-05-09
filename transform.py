@@ -867,21 +867,20 @@ struct NodeFlags;
         output_c.write(f'{ops[op][0]}, ')
     output_c.write('};\n\n')
 
-    for op in keys:
-        output_h.write('void alloc_{}(struct Model *model, const struct ParameterInfo *input[], struct ParameterInfo *output, const struct NodeFlags* flags);\n'.format(op.lower()))
-        output_h.write('void handle_{}(struct Model *model, const struct ParameterInfo *input[], struct ParameterInfo *output, const struct NodeFlags* flags);\n'.format(op.lower()))
-    output_c.write('const handler handlers[] = {\n')
-    for op in keys:
-        output_c.write(f'    handle_{op},\n'.lower())
-    output_c.write('};\n')
-    output_c.write('const allocator allocators[] = {\n')
-    for op in keys:
-        output_c.write(f'    alloc_{op},\n'.lower())
-    output_c.write('};\n')
+    handler_signature = 'struct Model *model, const struct ParameterInfo *input[], struct ParameterInfo *output, const struct NodeFlags* flags'
+    output_h.write(f'typedef void (*handler)({handler_signature});')
+    for array_name, func_prefix in (('allocators', 'alloc_'), ('handlers', 'handle_'), ('backward_handlers', 'handle_backward_')):
+        output_c.write(f'const handler {array_name}[] = {{\n')
+        output_h.write(f'extern const handler {array_name}[];\n')
+        for op in keys:
+            op = op.lower()
+            output_h.write(f'void {func_prefix}{op}({handler_signature});\n')
+            output_c.write(f'    {func_prefix}{op},\n')
+        output_c.write('};\n')
     for op in keys:
         if ops[op][1]:
             output_c.write(textwrap.dedent(f'''
-                void alloc_{op.lower()}(struct Model *model, const struct ParameterInfo *[], struct ParameterInfo *output, const struct NodeFlags*) {{
+                void alloc_{op.lower()}({handler_signature}) {{
                     SlotInfo *cur_slot_info = get_slot_info(model, output->slot);
                     if (cur_slot_info) {{
                         cur_slot_info->user = model->layer_idx;

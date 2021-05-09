@@ -728,6 +728,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     dump_params_nhwc_debug(model, output);
 }
 
+void handle_backward_conv(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
+}
+
 void alloc_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo *output, const NodeFlags*) {
     const ParameterInfo *data = input[0];
 
@@ -895,4 +899,8 @@ void handle_convmerge(struct Model *model, const ParameterInfo *input[], struct 
     flip_state_bit(model, output);
 
     dump_params_nhwc_debug(model, output);
+}
+
+void handle_backward_convmerge(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
 }

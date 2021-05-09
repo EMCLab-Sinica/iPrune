@@ -313,6 +313,10 @@ finished:
     }
 }
 
+void handle_backward_maxpool(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
+}
+
 void alloc_globalaveragepool(Model *model, const ParameterInfo *input[], ParameterInfo *output, const NodeFlags*) {
     const ParameterInfo *data = input[0];
 
@@ -377,4 +381,8 @@ void handle_globalaveragepool(Model *model, const ParameterInfo *input[], Parame
     flip_state_bit(model, output);
 
     dump_params_debug(model, output);
+}
+
+void handle_backward_globalaveragepool(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
 }

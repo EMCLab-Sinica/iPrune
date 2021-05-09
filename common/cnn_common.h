@@ -150,10 +150,6 @@ void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, 
 /**********************************
  *       Operation handlers       *
  **********************************/
-typedef void (*handler)(Model *model, const ParameterInfo *input[], ParameterInfo *output, const NodeFlags* flags);
-typedef void (*allocator)(Model *model, const ParameterInfo *input[], ParameterInfo *output, const NodeFlags* flags);
 // below are defined in ops.c
 extern const uint8_t expected_inputs_len[];
-extern const handler handlers[];
-extern const allocator allocators[];
 extern uint8_t BATCH_SIZE;

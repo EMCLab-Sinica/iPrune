@@ -9,10 +9,16 @@
 #include "my_debug.h"
 #include "my_dsplib.h"
 #include "op_utils.h"
+#include "platform.h"
 
 uint16_t sample_idx;
 
-static void handle_node(Model *model, uint16_t node_idx) {
+enum class PropagationDirection {
+    FORWARD,
+    BACKWARD,
+};
+
+static void handle_node(Model *model, uint16_t node_idx, PropagationDirection direction) {
     my_printf_debug("Current node: %d, ", node_idx);
 
     /* schedule it */
@@ -36,7 +42,9 @@ static void handle_node(Model *model, uint16_t node_idx) {
     ParameterInfo *output = get_intermediate_parameter_info(node_idx);
     my_memcpy(output, input[0], sizeof(ParameterInfo) - sizeof(uint16_t)); // don't overwrite parameter_info_idx
     output->params_offset = 0;
-    allocators[cur_node->op_type](model, input, output, &cur_node->flags);
+    if (direction == PropagationDirection::FORWARD) {
+        allocators[cur_node->op_type](model, input, output, &cur_node->flags);
+    }
     my_printf_debug("Needed mem = %d" NEWLINE, output->params_len);
     MY_ASSERT(output->params_len < INTERMEDIATE_VALUES_SIZE);
     if (output->slot == SLOT_INTERMEDIATE_VALUES) {
@@ -46,7 +54,11 @@ static void handle_node(Model *model, uint16_t node_idx) {
 #if STATEFUL
     my_printf_debug("Old output state bit=%d" NEWLINE, get_state_bit(model, output->slot));
 #endif
-    handlers[cur_node->op_type](model, input, output, &cur_node->flags);
+    if (direction == PropagationDirection::FORWARD) {
+        handlers[cur_node->op_type](model, input, output, &cur_node->flags);
+    } else {
+        backward_handlers[cur_node->op_type](model, input, output, &cur_node->flags);
+    }
     // For some operations (e.g., ConvMerge), scale is determined in the handlers
     my_printf_debug("Output scale = %d" NEWLINE, output->scale);
     MY_ASSERT(output->scale > 0);  // fail when overflow
@@ -108,7 +120,7 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
     dump_model_debug(model);
 
     for (uint16_t node_idx = model->layer_idx; node_idx < MODEL_NODES_LEN; node_idx++) {
-        handle_node(model, node_idx);
+        handle_node(model, node_idx, PropagationDirection::FORWARD);
         model->layer_idx++;
 
         commit_model();
@@ -262,6 +274,13 @@ uint8_t run_cnn_tests(uint16_t n_samples) {
     return 0;
 }
 
+void fine_tuning(void) {
+    Model *model = get_model();
+    for (int16_t node_idx = MODEL_NODES_LEN - 1; node_idx >= 0; node_idx--) {
+        handle_node(model, node_idx, PropagationDirection::BACKWARD);
+        model->layer_idx--;
+    }
+}
 
 #if INDIRECT_RECOVERY
 static void check_feature_map_states(Model *model, const ParameterInfo* output, uint32_t first_unfinished_job_index, uint32_t len, const char* func) {

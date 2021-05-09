@@ -9,6 +9,7 @@ extern uint16_t sample_idx;
 struct ParameterInfo;
 struct Model;
 uint8_t run_cnn_tests(uint16_t n_samples);
+void fine_tuning(void);
 
 uint32_t job_index_to_offset(const ParameterInfo* output, uint16_t job_index);
 

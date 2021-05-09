@@ -98,6 +98,7 @@ int main(int argc, char* argv[]) {
     }
 
     ret = run_cnn_tests(n_samples);
+    fine_tuning();
 
     for (uint16_t counter_idx = 0; counter_idx < COUNTERS_LEN; counter_idx++) {
         counters()->dma_invocations[counter_idx] = 0;

@@ -197,6 +197,10 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     }
 }
 
+void handle_backward_relu(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
+}
+
 void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *output, const NodeFlags*) {
     my_printf_debug("Reshape!" NEWLINE);
 
@@ -248,6 +252,10 @@ void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *o
     MY_ASSERT(new_len * sizeof(int16_t) == output->params_len);
 }
 
+void handle_backward_reshape(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
+}
+
 void handle_squeeze(Model *model, const ParameterInfo *input[], ParameterInfo *output, const NodeFlags* flags) {
     my_printf_debug("Squeeze!" NEWLINE);
 
@@ -286,6 +294,10 @@ void handle_squeeze(Model *model, const ParameterInfo *input[], ParameterInfo *o
     }
 }
 
+void handle_backward_squeeze(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
+}
+
 void alloc_concat(Model *, const ParameterInfo *[], ParameterInfo*, const NodeFlags*) {
 }
 
@@ -309,6 +321,10 @@ void handle_concat(Model *model, const ParameterInfo *input[], ParameterInfo *ou
 
     dump_params_nhwc_debug(model, A);
     dump_params_nhwc_debug(model, B);
+}
+
+void handle_backward_concat(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
 }
 
 void alloc_softmax(Model *model, const ParameterInfo **input, ParameterInfo *output, const struct NodeFlags*) {
@@ -346,6 +362,12 @@ void handle_softmax(Model* model, const ParameterInfo* input[], ParameterInfo* o
     dump_matrix_debug(buffer_input, data_len, ValueInfo(output));
 }
 
+void handle_backward_softmax(Model* model, const ParameterInfo* input[], ParameterInfo* output, const NodeFlags*) {
+    const uint8_t *labels = labels_data;
+    put_q15_param(output, labels[0], get_q15_param(model, output, labels[0]) - 0x8000);
+    dump_params(model, output);
+}
+
 void handle_transpose(Model*, const ParameterInfo *input[], ParameterInfo *output, const NodeFlags*) {
     my_printf_debug("Transpose!" NEWLINE);
 
@@ -355,6 +377,10 @@ void handle_transpose(Model*, const ParameterInfo *input[], ParameterInfo *outpu
     output->dims[1] = X->dims[3];
     output->dims[2] = X->dims[1];
     output->dims[3] = X->dims[2];
+}
+
+void handle_backward_transpose(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
 }
 
 void alloc_batchnormalization(Model* model, const ParameterInfo* input[], ParameterInfo* output, const NodeFlags* flags) {
@@ -433,4 +459,8 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
     my_printf_debug("handle_batchnormalization output" NEWLINE);
     dump_params_nhwc_debug(model, output);
+}
+
+void handle_backward_batchnormalization(struct Model *model, const struct ParameterInfo **input, struct ParameterInfo *output, const struct NodeFlags *flags) {
+    ERROR_OCCURRED();
 }
