@@ -15,10 +15,11 @@
 /data/others.txt
 /data/*-opt*.onnx
 
-# CCS-generated files
+# IDE-generated files
 .launches/
 /msp430/Large_Data/
 /msp432/Debug__GNU/
+/stm32/Debug/
 
 # External projects
 /msp430/driverlib

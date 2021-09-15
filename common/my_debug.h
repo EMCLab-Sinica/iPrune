@@ -10,19 +10,21 @@
 // 1: normal
 // 2: verbose
 #ifndef MY_DEBUG
-#define MY_DEBUG 0
+#define MY_DEBUG 2
 #endif
 
-#if defined(__MSP430__) || defined(__MSP432__)
+#if defined(__MSP430__) || defined(__MSP432__) || defined(__STM32__)
 #  include "Tools/myuart.h"
 #  define my_printf print2uart_new
 #  define my_flush()
 #  define NEWLINE "\r\n"
-#else
+#elif defined(__linux__)
 #  include <stdio.h>
 #  define my_printf printf
 #  define my_flush() do { fflush(stdout); } while (0);
 #  define NEWLINE "\n"
+#else
+#  error "Please defined __MSP430__, __MSP432__, __STM32__ or __linux__ according to the target platform"
 #endif
 
 template<typename ...Args>
