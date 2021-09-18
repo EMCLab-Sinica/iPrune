@@ -171,7 +171,7 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
 #endif
 }
 
-#if MY_DEBUG >= 1
+#if MY_DEBUG >= 0
 static void print_results(const ParameterInfo *output_node) {
     Model *model = get_model();
 
@@ -220,7 +220,7 @@ static void print_results(const ParameterInfo *output_node) {
 uint8_t run_cnn_tests(uint16_t n_samples) {
     int8_t predicted = -1;
     const ParameterInfo *output_node;
-#if MY_DEBUG >= 1
+#if MY_DEBUG >= 0
     int8_t label = -1;
     uint32_t correct = 0, total = 0;
     if (!n_samples) {
@@ -231,7 +231,7 @@ uint8_t run_cnn_tests(uint16_t n_samples) {
     for (uint16_t i = 0; i < n_samples; i++) {
         sample_idx = i;
         run_model(&predicted, &output_node);
-#if MY_DEBUG >= 1
+#if MY_DEBUG >= 0
         label = labels[i];
         total++;
         if (label == predicted) {
@@ -245,7 +245,7 @@ uint8_t run_cnn_tests(uint16_t n_samples) {
         my_printf_debug("idx=%d label=%d predicted=%d correct=%d" NEWLINE, i, label, predicted, label == predicted);
 #endif
     }
-#if MY_DEBUG >= 1
+#if MY_DEBUG >= 0
     if (n_samples == 1) {
         print_results(output_node);
     }
