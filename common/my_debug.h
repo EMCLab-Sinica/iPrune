@@ -10,7 +10,7 @@
 // 1: normal
 // 2: verbose
 #ifndef MY_DEBUG
-#define MY_DEBUG 2
+#define MY_DEBUG 1
 #endif
 
 #if defined(__MSP430__) || defined(__MSP432__) || defined(__STM32__)
