@@ -159,7 +159,7 @@ void first_run(void) {
     get_model(); // refresh model_vm
     commit_model();
 
-    my_printf("Init for " CONFIG "/" METHOD " with batch size=%d" NEWLINE, BATCH_SIZE);
+    my_printf_debug("Init for " CONFIG "/" METHOD " with batch size=%d" NEWLINE, BATCH_SIZE);
 }
 
 static uint32_t max_multipler_offset(uint16_t layer_idx) {
