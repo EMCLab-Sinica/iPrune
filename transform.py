@@ -210,7 +210,7 @@ if args.target == 'msp432':
 Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 
 onnx_model = load_model(config)
-
+print(onnx_model)
 names = {}
 
 def get_attr(node, attr_name):

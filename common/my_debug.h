@@ -12,7 +12,7 @@
 #define MY_DEBUG_VERBOSE 3
 
 #ifndef MY_DEBUG
-#define MY_DEBUG MY_DEBUG_NO_ASSERT
+#define MY_DEBUG MY_DEBUG_NORMAL
 #endif
 
 #if defined(__MSP430__) || defined(__MSP432__)

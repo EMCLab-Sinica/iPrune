@@ -24,3 +24,12 @@
 /ARM-CMSIS/*
 !/ARM-CMSIS/*.sh
 !/ARM-CMSIS/*.diff
+
+# Trace code index
+/cscope.in.out
+/cscope.out
+/cscope.po.out
+/tags
+
+# Dataset
+/pruning/Intermittent_Aware/data/
