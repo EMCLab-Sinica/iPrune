@@ -30,9 +30,9 @@ def save_state(model, acc):
                     state['state_dict'].pop(key)
     subprocess.call('mkdir -p saved_models', shell=True)
     if args.prune:
-        torch.save(state, 'saved_models/'+args.arch+'.prune.' + args.prune + '.group_25.' +str(args.stage)+'.pth.tar')
+        torch.save(state, 'saved_models/'+args.arch+'.prune.new.pad.' + args.prune + '.group_25.' +str(args.stage)+'.pth.tar')
     else:
-        torch.save(state, 'saved_models/'+args.arch+'.best_origin.pth.tar')
+        torch.save(state, 'saved_models/'+args.arch+'.new.pad.best_origin.pth.tar')
 
 def train(epoch):
     model.train()
@@ -129,8 +129,8 @@ if __name__=='__main__':
             help='whether to run evaluation')
     parser.add_argument('--retrain', action='store_true', default=False,
             help='retrain the pruned network')
-    parser.add_argument('--prune', action='store', default='intermittent',
-            help='pruning mechanism: intermittent | energy')
+    parser.add_argument('--prune', action='store', default=None,
+            help='pruning mechanism: None | intermittent | energy')
     parser.add_argument('--prune-target', action='store', default=None,
             help='pruning target: default=None | conv | ip')
     parser.add_argument('--stage', action='store', type=int, default=0,

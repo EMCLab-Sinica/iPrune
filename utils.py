@@ -288,7 +288,7 @@ def dynamic_shape_inference(onnx_model: onnx.ModelProto, sample_size: Iterable[i
 
     del onnx_model.graph.value_info[:]
 
-    BATCH_SIZE = 2  # Any number larger than 1 is OK. Here I pick the smallest one for performance considerations
+    BATCH_SIZE = 1  # Any number larger than 1 is OK. Here I pick the smallest one for performance considerations
     dummy_images = [np.expand_dims(np.zeros(sample_size, dtype=np.float32), axis=0)]
     shapes = {
         layer_name: np.shape(layer_out)

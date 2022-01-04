@@ -13,10 +13,12 @@ import struct
 import textwrap
 import warnings
 from typing import List
+from scipy.sparse import csr_matrix
 
 import onnx
 import onnx.defs
 import onnx.helper
+import onnx.numpy_helper
 import numpy as np
 
 from configs import configs
@@ -173,6 +175,7 @@ parser.add_argument('--write-images', action='store_true')
 parser.add_argument('--batch-size', type=int, default=Constants.DEFAULT_TILE_C)
 parser.add_argument('--target', choices=('msp430', 'msp432'), required=True)
 parser.add_argument('--debug', action='store_true')
+parser.add_argument('--sparse', action='store_true')
 intermittent_methodology = parser.add_mutually_exclusive_group(required=True)
 intermittent_methodology.add_argument('--baseline', action='store_true')
 intermittent_methodology.add_argument('--hawaii', action='store_true')
@@ -210,7 +213,7 @@ if args.target == 'msp432':
 Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 
 onnx_model = load_model(config)
-print(onnx_model)
+# print(onnx_model)
 names = {}
 
 def get_attr(node, attr_name):
@@ -300,6 +303,7 @@ for n in new_nodes:
 nodes = [ONNXNodeWrapper(n) for n in new_nodes]
 
 conv_param_names = set()
+gemm_param_names = set()
 
 for idx, inp in enumerate(onnx_model.graph.input):
     names[inp.name] = idx
@@ -325,8 +329,10 @@ for idx, n in enumerate(nodes):
         conv_param_names.add(n.input[1])
         auto_pad = get_attr(n, 'auto_pad')
         pads = get_attr(n ,'pads')
-        if auto_pad == b'VALID' or auto_pad is None and pads is None:
+        if auto_pad == b'VALID' or (auto_pad is None and pads == [0, 0, 0, 0]):
             n.flags.b.generic += op_flag('AUTO_PAD_VALID')
+    if n.op_type == 'Gemm':
+        gemm_param_names.add(n.input[1])
     if n.op_type == 'MaxPool':
         kernel_shape = get_attr(n, 'kernel_shape')
         if kernel_shape is not None:
@@ -392,7 +398,7 @@ def determine_conv_tile_c(n):
             node_flags.input_tile_c *= 2
 
     logger.debug('Initial input_tile_c=%d', node_flags.input_tile_c)
-
+    # ignore the code if you want to fix tile size
     def get_memory_usage(output_tile_c, filter_len):
         # *2 as in JAPARI, the number of footprint weights is up to the number of
         # filters (e.g., batch size=1)
@@ -423,7 +429,10 @@ def determine_conv_tile_c(n):
         assert node_flags.input_tile_c
         logger.debug('input_tile_c=%d', node_flags.input_tile_c)
     node_flags.output_tile_c = output_tile_c
-
+    '''
+    node_flags.input_tile_c = 1
+    node_flags.output_tile_c = 1
+    '''
 def determine_gemm_tile_sizes(n):
     logger.debug('Determine tile size for Gemm node %s', n.name)
 
@@ -530,6 +539,8 @@ def nchw2nhwc(arr, dims):
 
 outputs = {
     'parameters': io.BytesIO(),
+#    'cols': io.BytesIO(),
+#    'rows': io.BytesIO(),
     'samples': io.BytesIO(),
     'model': io.BytesIO(),
     'nodes': io.BytesIO(),
@@ -558,8 +569,11 @@ model.write(to_bytes(0, size=8))  # Model.version
 class ParametersSlot:
     offset: int
     target: io.BytesIO
+#    cols: io.BytesIO
+#    rows: io.BytesIO
     slot_id: int
 
+# parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], cols=outputs['cols'], rows=outputs['rows'], slot_id=Constants.SLOT_PARAMETERS)
 parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], slot_id=Constants.SLOT_PARAMETERS)
 
 output_nodes = outputs['nodes']
@@ -597,6 +611,30 @@ def decode_raw_data(params):
     }[params.data_type]
     return list(map(lambda t: t[0], struct.iter_unpack(format_char, params.raw_data)))
 
+def toBSR(matrix, dims, width):
+    matrix = np.reshape(matrix, tuple(dims))
+    matrix = np.reshape(matrix, (dims[0], -1))
+    shape = matrix.shape
+    # align the group size
+    append_size = width - shape[1] % width
+    if append_size != width:
+        matrix = np.concatenate((matrix, np.zeros((len(matrix), append_size), dtype=np.int8)), 1)
+    bsr = csr_matrix(matrix).tobsr((1, width))
+    # FIXME: discard the appended weights
+    '''
+    bsr.data = np.reshape(bsr.data, bsr.data.shape[0])
+    print(bsr.data.shape)
+    data = bsr.data[:, 0:shape[1]]
+    print(data.shape)
+    '''
+    data = np.reshape(bsr.data, -1)
+    cols = bsr.indices
+    rows = bsr.indptr
+    # print('Data: {}'.format(data))
+    # print('Cols: {}'.format(cols))
+    # print('Rows: {}'.format(rows))
+    return data, cols, rows
+
 model_parameters_info = outputs['model_parameters_info']
 for params in parameters:
     if params is None:  # input
@@ -604,6 +642,8 @@ for params in parameters:
         dims = model_data.images[0].shape
         model_parameters_info.write(to_bytes(parameters_slot.offset, size=32))  # params_offset
         model_parameters_info.write(to_bytes(np.prod(dims) * 2, size=32))  # A _q15 is 16-bit
+#        model_parameters_info.write(to_bytes(0, size=32))  # cols_offset, the place is used by sparse matrix
+#        model_parameters_info.write(to_bytes(0, size=32))  # rows_offset, the place is used by sparse matrix
         model_parameters_info.write(to_bytes(16, size=8))                # bitwidth
         model_parameters_info.write(to_bytes(Constants.SLOT_TEST_SET, size=8))     # slot
         model_parameters_info.write(to_bytes(0))                     # dummy
@@ -621,16 +661,33 @@ for params in parameters:
                 float_data = params.float_data
             else:
                 float_data = decode_raw_data(params)
-            data_len = len(float_data)
-            assert data_len > 0
-            slot = parameters_slot
-            model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
-            model_parameters_info.write(to_bytes(data_len * 2, size=32))  # A _q15 is 16-bit
+            # TODO: handle data layout for sparse matrix
             if params.name in conv_param_names:
                 logger.info('Reorder conv param %s', params.name)
                 float_data, _ = nchw2nhwc(float_data, params.dims)
-            slot.target.write(to_bytes(_Q15(np.array(float_data) / config['scale'], 'Parameter')))
-            slot.offset += 2 * len(float_data)
+
+            # TODO: transform the sparse matrix into BSR format
+            int_data_Q15 = _Q15(np.array(float_data) / config['scale'], 'Parameter')
+#            cols = []
+#            rows = []
+            if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
+                data, cols, rows = toBSR(int_data_Q15, params.dims, 25)
+                int_data_Q15 = data
+
+            data_len = len(int_data_Q15)
+            assert data_len > 0
+            slot = parameters_slot
+            # TODO: maybe i need to add some infomation into model_parameters_info
+            model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
+            model_parameters_info.write(to_bytes(data_len * 2, size=32))  # A _q15 is 16-bit
+#            model_parameters_info.write(to_bytes(len(cols), size=32))  # cols_offset
+#            model_parameters_info.write(to_bytes(len(rows), size=32))  # rows_offset
+            slot.target.write(to_bytes(int_data_Q15))
+            if args.sparse:
+                slot.cols.write(to_bytes(cols))
+                slot.rows.write(to_bytes(rows))
+
+            slot.offset += 2 * len(int_data_Q15)
             model_parameters_info.write(to_bytes(16, size=8)) # bitwidth
         elif params.data_type == onnx.TensorProto.INT64:
             if params.int64_data:
@@ -696,7 +753,7 @@ for idx in range(model_data.images.shape[0]):
         os.makedirs('images', exist_ok=True)
         # Restore conanical image format (H, W, C)
         im = np.squeeze(im * 256)
-        if args.config == 'mnist':
+        if args.config == 'mnist' or args.config == 'pruned_mnist':
             im = np.expand_dims(im, axis=-1)
             im = 255 - im
         cv2.imwrite(f'images/test{idx:02d}.png', im)
@@ -710,6 +767,8 @@ if args.write_images:
 
 pathlib.Path('build').mkdir(exist_ok=True)
 
+# TODO: Add index structure (BSR format)
+# _parameters_
 with open('build/data.cpp', 'w') as output_c, open('build/data.h', 'w') as output_h:
     output_h.write('''
 #pragma once

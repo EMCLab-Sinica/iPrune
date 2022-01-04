@@ -5,9 +5,9 @@ GROUP_SIZE='1 1 5 5'
 # python main.py $COMMON_FLAGS
 
 # 83.4% pruned / 92.6% pruned (NCHW) -- 99.18%
- python main.py $COMMON_FLAGS --prune 'intermittent' --stage 0 \
-	--group $GROUP_SIZE \
-	--pretrained saved_models/LeNet_5.best_origin.pth.tar \
+python main.py $COMMON_FLAGS --prune 'intermittent' --stage 0 \
+ 	--group $GROUP_SIZE \
+	--pretrained saved_models/LeNet_5.new.pad.best_origin.pth.tar \
 	--lr 0.1 --lr-epochs 15 --threshold 0.04
 
 # 92.1% pruned / 93.7% pruned (NHWC) -- 99.11%

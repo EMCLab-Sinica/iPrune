@@ -168,10 +168,12 @@ class Prune_Op():
     def setPruningRatios(self, model):
         # https://gist.github.com/georgesung/ddb3a0b0412513d8811696293d8b1771
         # summary(model, (1, 28, 28), device='cpu')
-        output_shapes = [[1, 20, 24, 24], \
-                         [1, 50, 8, 8], \
-                         [1, 500], \
-                         [1, 10]]
+        output_shapes = [[1, 8, 28, 28], \
+                         [1, 16, 14, 14], \
+                         [1, 275], \
+                         [1, 25]]
+                        # [1, 256]
+                        # [1, 10]
         pruning_ratios = [0] * len(output_shapes)
         jobs = []
         node_idx = 0
@@ -191,9 +193,12 @@ class Prune_Op():
 
 
     def getJobs(self, node, group_size, output_shapes, node_idx):
+        width = group_size[1]
         shape = node.weight.data.shape
         matrix = node.weight.data
         matrix = matrix.reshape(shape[0], -1)
+        append_size = width - matrix.shape[1]%width
+        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
         bsr = csr_matrix(matrix).tobsr(group_size)
         data = bsr.data
         cols = bsr.indices
