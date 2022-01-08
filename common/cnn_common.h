@@ -60,6 +60,11 @@ static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 14 + NUM_INPUTS * 2 + HAWAII *
 typedef struct ParameterInfo {
     uint32_t params_offset;
     uint32_t params_len;  /* in bytes */
+#if SPARSE
+    /* Used to store sparse matrix */
+    uint32_t params_cols_offset;
+    uint32_t params_rows_offset;
+#endif
     /* Known bitwidth values:
      * 16: q15
      * 32: iq31
@@ -71,7 +76,7 @@ typedef struct ParameterInfo {
      */
     uint8_t slot;
     uint16_t dummy;
-    // uint8_t is not enough. For example, fully connected layer in MNIST has dims 256x1
+    // uint8_t is not enough. For example, fully connected layer in MNIST has dims 257x1
     uint16_t dims[4];
     uint16_t scale;
     uint8_t param_flags;
@@ -79,7 +84,11 @@ typedef struct ParameterInfo {
     uint16_t parameter_info_idx; // must be the last member of this struct
 } ParameterInfo;
 
-static_assert(sizeof(ParameterInfo) == 28, "Unexpected size for ParameterInfo");
+#if SPARSE
+    static_assert(sizeof(ParameterInfo) == 36, "Unexpected size for ParameterInfo");
+#else
+    static_assert(sizeof(ParameterInfo) == 28, "Unexpected size for ParameterInfo");
+#endif
 
 typedef struct SlotInfo {
 #if INDIRECT_RECOVERY

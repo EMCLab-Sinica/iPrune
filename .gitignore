@@ -33,3 +33,6 @@
 
 # Dataset
 /pruning/Intermittent_Aware/data/
+
+# Pruned models
+/pruning/Intermittent_Aware/saved_models/

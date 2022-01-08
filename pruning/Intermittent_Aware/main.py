@@ -30,9 +30,9 @@ def save_state(model, acc):
                     state['state_dict'].pop(key)
     subprocess.call('mkdir -p saved_models', shell=True)
     if args.prune:
-        torch.save(state, 'saved_models/'+args.arch+'.prune.new.pad.' + args.prune + '.group_25.' +str(args.stage)+'.pth.tar')
+        torch.save(state, 'saved_models/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
     else:
-        torch.save(state, 'saved_models/'+args.arch+'.new.pad.best_origin.pth.tar')
+        torch.save(state, 'saved_models/'+args.arch+'.origin.pth.tar')
 
 def train(epoch):
     model.train()
@@ -40,6 +40,7 @@ def train(epoch):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
+        print(data[0])
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)

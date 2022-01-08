@@ -66,6 +66,8 @@ class Constants:
     INDIRECT_RECOVERY = 0
     METHOD = "Baseline"
     FIRST_SAMPLE_OUTPUTS = []
+    # Sparse Matrix
+    SPARSE = 0
 
 # XXX: Transpose does nothing as we happens to need NHWC
 inplace_update_ops = ['Reshape', 'Softmax', 'Squeeze', 'Transpose']
@@ -206,6 +208,8 @@ if args.japari:
     Constants.JAPARI = 1
     Constants.METHOD = "JAPARI"
     config['intermediate_values_size'] *= 2
+if args.sparse:
+    Constants.SPARSE = 1
 Constants.INTERMITTENT = Constants.STATEFUL | Constants.HAWAII | Constants.JAPARI
 Constants.INDIRECT_RECOVERY = Constants.STATEFUL | Constants.JAPARI
 if args.target == 'msp432':
@@ -536,18 +540,28 @@ def nchw2nhwc(arr, dims):
                     new_idx = n * H * W * C + h * W * C + w * C + c
                     ret[new_idx] = arr[old_idx]
     return ret, (N, H, W, C)
-
-outputs = {
-    'parameters': io.BytesIO(),
-#    'cols': io.BytesIO(),
-#    'rows': io.BytesIO(),
-    'samples': io.BytesIO(),
-    'model': io.BytesIO(),
-    'nodes': io.BytesIO(),
-    'model_parameters_info': io.BytesIO(),
-    'intermediate_parameters_info': io.BytesIO(),
-    'labels': io.BytesIO(),
-}
+if args.sparse:
+    outputs = {
+        'parameters': io.BytesIO(),
+        'cols': io.BytesIO(),
+        'rows': io.BytesIO(),
+        'samples': io.BytesIO(),
+        'model': io.BytesIO(),
+        'nodes': io.BytesIO(),
+        'model_parameters_info': io.BytesIO(),
+        'intermediate_parameters_info': io.BytesIO(),
+        'labels': io.BytesIO(),
+    }
+else:
+    outputs = {
+        'parameters': io.BytesIO(),
+        'samples': io.BytesIO(),
+        'model': io.BytesIO(),
+        'nodes': io.BytesIO(),
+        'model_parameters_info': io.BytesIO(),
+        'intermediate_parameters_info': io.BytesIO(),
+        'labels': io.BytesIO(),
+    }
 
 Constants.MODEL_NODES_LEN = len(graph)
 
@@ -565,16 +579,25 @@ for _ in range(config['num_slots']): # Model.slots_info
 model.write(to_bytes(0, size=8))  # Model.dummy
 model.write(to_bytes(0, size=8))  # Model.version
 
-@dataclasses.dataclass
-class ParametersSlot:
-    offset: int
-    target: io.BytesIO
-#    cols: io.BytesIO
-#    rows: io.BytesIO
-    slot_id: int
+if args.sparse:
+    @dataclasses.dataclass
+    class ParametersSlot:
+        offset: int
+        target: io.BytesIO
+        cols: io.BytesIO
+        rows: io.BytesIO
+        slot_id: int
+else:
+    @dataclasses.dataclass
+    class ParametersSlot:
+        offset: int
+        target: io.BytesIO
+        slot_id: int
 
-# parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], cols=outputs['cols'], rows=outputs['rows'], slot_id=Constants.SLOT_PARAMETERS)
-parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], slot_id=Constants.SLOT_PARAMETERS)
+if args.sparse:
+    parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], cols=outputs['cols'], rows=outputs['rows'], slot_id=Constants.SLOT_PARAMETERS)
+else:
+    parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], slot_id=Constants.SLOT_PARAMETERS)
 
 output_nodes = outputs['nodes']
 for node in graph:
@@ -612,6 +635,7 @@ def decode_raw_data(params):
     return list(map(lambda t: t[0], struct.iter_unpack(format_char, params.raw_data)))
 
 def toBSR(matrix, dims, width):
+    print('origin size: {}'.format(len(matrix)))
     matrix = np.reshape(matrix, tuple(dims))
     matrix = np.reshape(matrix, (dims[0], -1))
     shape = matrix.shape
@@ -630,6 +654,9 @@ def toBSR(matrix, dims, width):
     data = np.reshape(bsr.data, -1)
     cols = bsr.indices
     rows = bsr.indptr
+    print('modified size: {}'.format(len(data)))
+    print('Rows size: {}'.format(rows.shape))
+    print('Cols size: {}'.format(cols.shape))
     # print('Data: {}'.format(data))
     # print('Cols: {}'.format(cols))
     # print('Rows: {}'.format(rows))
@@ -642,8 +669,9 @@ for params in parameters:
         dims = model_data.images[0].shape
         model_parameters_info.write(to_bytes(parameters_slot.offset, size=32))  # params_offset
         model_parameters_info.write(to_bytes(np.prod(dims) * 2, size=32))  # A _q15 is 16-bit
-#        model_parameters_info.write(to_bytes(0, size=32))  # cols_offset, the place is used by sparse matrix
-#        model_parameters_info.write(to_bytes(0, size=32))  # rows_offset, the place is used by sparse matrix
+        if args.sparse:
+            model_parameters_info.write(to_bytes(0, size=32))  # cols_offset, the place is used by sparse matrix
+            model_parameters_info.write(to_bytes(0, size=32))  # rows_offset, the place is used by sparse matrix
         model_parameters_info.write(to_bytes(16, size=8))                # bitwidth
         model_parameters_info.write(to_bytes(Constants.SLOT_TEST_SET, size=8))     # slot
         model_parameters_info.write(to_bytes(0))                     # dummy
@@ -668,20 +696,23 @@ for params in parameters:
 
             # TODO: transform the sparse matrix into BSR format
             int_data_Q15 = _Q15(np.array(float_data) / config['scale'], 'Parameter')
-#            cols = []
-#            rows = []
+            if args.sparse:
+                cols = []
+                rows = []
             if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
-                data, cols, rows = toBSR(int_data_Q15, params.dims, 25)
+                data, cols, rows = toBSR(int_data_Q15, params.dims, 5)
                 int_data_Q15 = data
 
             data_len = len(int_data_Q15)
             assert data_len > 0
             slot = parameters_slot
-            # TODO: maybe i need to add some infomation into model_parameters_info
+
             model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
             model_parameters_info.write(to_bytes(data_len * 2, size=32))  # A _q15 is 16-bit
-#            model_parameters_info.write(to_bytes(len(cols), size=32))  # cols_offset
-#            model_parameters_info.write(to_bytes(len(rows), size=32))  # rows_offset
+            # XXX: adjuct the length of cols and rows
+            if args.sparse:
+                model_parameters_info.write(to_bytes(len(cols), size=32))  # cols_offset
+                model_parameters_info.write(to_bytes(len(rows), size=32))  # rows_offset
             slot.target.write(to_bytes(int_data_Q15))
             if args.sparse:
                 slot.cols.write(to_bytes(cols))
