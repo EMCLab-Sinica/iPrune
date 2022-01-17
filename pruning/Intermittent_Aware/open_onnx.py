@@ -62,7 +62,7 @@ if __name__ == '__main__':
     parser.add_argument('--onnx_model', action='store', default=None)
     parser.add_argument('--arch', action='store', default='LeNet_5')
     parser.add_argument('--prune', action='store', default='intermittent', help='Pruning methods: intermittent | energy')
-    parser.add_argument('--group', action='store', type=int, default=25, help='Group size')
+    parser.add_argument('--group', action='store', type=int, default=5, help='Group size')
     args = parser.parse_args()
     printArgs(args)
 

@@ -107,12 +107,15 @@ class Prune_Op():
         self.criterion = criterion
         self.args = args
         if not evaluate:
-            # pruned_ratios = self.getPrunedRatios(model.weights_pruned)
+            if args.with_sen:
+                pruning_ratios, sorted_idx, first_unpruned_idx = self.setPruningRatios2(model, total_pruning_ratio)
+            else:
+                pruned_ratios = self.getPrunedRatios(model.weights_pruned)
+                pruning_ratios = self.setPruningRatios(model)
+
             # print('pruned ratios: {}'.format(pruned_ratios))
             model.weights_pruned = []
             node_idx = 0
-            # pruning_ratios = self.setPruningRatios(model)
-            pruning_ratios, sorted_idx, first_unpruned_idx = self.setPruningRatios2(model, total_pruning_ratio)
             for m in model.modules():
                 if isinstance(m, nn.Linear):
                     tmp_pruned = m.weight.data.clone()
@@ -120,8 +123,10 @@ class Prune_Op():
                     tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1)
                     tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, self.width)
                     shape = tmp_pruned.shape
-                    # tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
-                    tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
+                    if args.with_sen:
+                        tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
+                    else:
+                        tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
                     # tmp_pruned[:, -1] = 0
                     tmp_pruned = tmp_pruned.reshape(tmp_pruned.shape[0], -1)
                     tmp_pruned = tmp_pruned[:, 0:m.weight.data.shape[1]]
@@ -142,8 +147,11 @@ class Prune_Op():
                             tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1) # Append: [20, 25] -> [20, 32]
                     tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, self.width) # Slice by width: [20,32] -> [20, 4, 8]
                     shape = tmp_pruned.shape
-                    # tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
-                    tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
+                    if args.with_sen:
+                        tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
+                    else:
+                        tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
+
                     # tmp_pruned[:, -1] = 0
                     tmp_pruned = tmp_pruned.reshape(original_size[0], -1)
                     tmp_pruned = tmp_pruned[:, 0:m.weight.data[0].nelement()]
@@ -210,22 +218,26 @@ class Prune_Op():
         # summary(model, (1, 28, 28), device='cpu')
         output_shapes = [[1, 8, 28, 28], \
                          [1, 16, 14, 14], \
-                         [1, 275], \
-                         [1, 25]]
-                        # [1, 256]
-                        # [1, 10]
+                         #[1, 275], \
+                         #[1, 25]]
+                         [1, 260], \
+                         [1, 10]]
         pruning_ratios = [0] * len(output_shapes)
-        jobs = []
+        metrics = []
         node_idx = 0
         for m in model.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                job = self.getJobs(m, (1, self.width), output_shapes, node_idx)
-                jobs.append(job)
+                if self.args.prune == 'intermittent':
+                    metric = self.getJobs(m, (1, self.width), output_shapes, node_idx)
+                    metrics.append(metric)
+                elif self.args.prune == 'energy':
+                    metric = self.getReuse(m, (1, self.width), output_shapes, node_idx)
+                    metrics.append(metric)
                 node_idx += 1
 
         # adjusted by manually
-        candidates = [0.1, 0.2, 0.3, 0.4]
-        order = sorted(range(len(jobs)), key=lambda k : jobs[k])
+        candidates = [0.25, 0.30, 0.35, 0.4]
+        order = sorted(range(len(metrics)), key=lambda k : metrics[k])
         for i in range(len(order)):
             pruning_ratios[order[i]] = candidates[i]
         print('pruning_ratios: {}'.format(pruning_ratios))
@@ -311,7 +323,7 @@ class Prune_Op():
                         idx += 1
                     elif len(m.weight.shape) == 2:
                         n_weights = np.prod(m.weight.shape)
-                        output_sizes.append([1, m.weight.shape[1]])
+                        output_sizes.append([1, m.weight.shape[0]])
                         job = int(n_weights / np.prod(group_size))
                         jobs.append(job)
                         per_group_job.append(1)
@@ -384,8 +396,32 @@ class Prune_Op():
             job = len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
         return job
 
-    def getReuse(self):
-        pass
+    def getReuse(self, node, group_size, output_shapes, node_idx):
+        shape = node.weight.data.shape
+        matrix = node.weight.data
+        matrix = matrix.reshape(shape[0], -1)
+        append_size = self.width - matrix.shape[1]%self.width
+        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
+        bsr = csr_matrix(matrix).tobsr(group_size)
+        data = bsr.data
+        cols = bsr.indices
+        rows = bsr.indptr
+        if isinstance(node, nn.Linear):
+            weight_reuse = len(cols) * self.width
+            input_reuse = weight_reuse
+            output_reuse = len(cols)
+            psum_read = 2 * len(cols)
+            psum_write = len(cols)
+            reuse = weight_reuse + input_reuse + output_reuse + psum_read + psum_write
+        elif isinstance(node, nn.Conv2d):
+            weight_reuse = self.width * len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
+            input_reuse = weight_reuse
+            output_reuse = len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
+            psum_read = 2 * (len(cols) - 1) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
+            psum_write = (len(cols) - 1) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
+            reuse = weight_reuse + input_reuse + output_reuse + psum_read + psum_write
+        return reuse
+
 
     def print_info(self):
         print('------------------------------------------------------------------')

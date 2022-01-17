@@ -1,0 +1,418 @@
+
+==> Setting params:
+batch_size : 128
+test_batch_size : 128
+epochs : 60
+lr_epochs : 20
+lr : 0.01
+momentum : 0.9
+weight_decay : 0.0001
+no_cuda : False
+seed : 1
+log_interval : 100
+arch : LeNet_5
+pretrained : saved_models/LeNet_5.prune.intermittent.group_size5.4.pth.tar
+evaluate : False
+retrain : False
+prune : intermittent
+prune_target : None
+stage : 5
+group : [1, 1, 1, 5]
+penalty : 0.0
+pruning_ratio : 0.0
+threshold : 0.0
+with_sen : False
+cuda : False
+====================
+
+LeNet_5(
+  (conv1): Conv2d(1, 8, kernel_size=(5, 5), stride=(1, 1), padding=(2, 2))
+  (relu_conv1): ReLU(inplace=True)
+  (pool1): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+  (conv2): Conv2d(8, 16, kernel_size=(5, 5), stride=(1, 1), padding=(2, 2))
+  (relu_conv2): ReLU(inplace=True)
+  (pool2): MaxPool2d(kernel_size=3, stride=3, padding=0, dilation=1, ceil_mode=False)
+  (ip1): Linear(in_features=256, out_features=256, bias=True)
+  (relu_ip1): ReLU(inplace=True)
+  (ip2): Linear(in_features=256, out_features=10, bias=True)
+)
+==> Start pruning ...
+pruning_ratios: [0.35, 0.4, 0.3, 0.25]
+------------------------------------------------------------------
+- Intermittent-aware weight pruning info:
+- Layer 0:        180 /        200 (90.0%) weights are pruned
+- Layer 1:       3045 /       3200 (95.2%) weights are pruned
+- Layer 2:      58243 /      65536 (88.9%) weights are pruned
+- Layer 3:       2079 /       2560 (81.2%) weights are pruned
+- Total  :      63547 /      71496 (88.9%) weights are pruned
+------------------------------------------------------------------
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0711, Accuracy: 9775/10000 (97.75%)
+Best Accuracy: 97.75%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0637, Accuracy: 9807/10000 (98.07%)
+Best Accuracy: 98.07%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0608, Accuracy: 9812/10000 (98.12%)
+Best Accuracy: 98.12%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0611, Accuracy: 9815/10000 (98.15%)
+Best Accuracy: 98.15%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0587, Accuracy: 9817/10000 (98.17%)
+Best Accuracy: 98.17%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0521, Accuracy: 9845/10000 (98.45%)
+Best Accuracy: 98.45%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0567, Accuracy: 9835/10000 (98.35%)
+Best Accuracy: 98.35%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0531, Accuracy: 9846/10000 (98.46%)
+Best Accuracy: 98.46%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0516, Accuracy: 9849/10000 (98.49%)
+Best Accuracy: 98.49%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0543, Accuracy: 9847/10000 (98.47%)
+Best Accuracy: 98.47%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0574, Accuracy: 9824/10000 (98.24%)
+Best Accuracy: 98.24%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0520, Accuracy: 9844/10000 (98.44%)
+Best Accuracy: 98.44%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0549, Accuracy: 9834/10000 (98.34%)
+Best Accuracy: 98.34%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0531, Accuracy: 9845/10000 (98.45%)
+Best Accuracy: 98.45%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0523, Accuracy: 9847/10000 (98.47%)
+Best Accuracy: 98.47%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0540, Accuracy: 9838/10000 (98.38%)
+Best Accuracy: 98.38%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0520, Accuracy: 9843/10000 (98.43%)
+Best Accuracy: 98.43%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0560, Accuracy: 9843/10000 (98.43%)
+Best Accuracy: 98.43%
+
+Learning rate: 0.01
+==> Saving model ...
+
+Test set: Average loss: 0.0550, Accuracy: 9853/10000 (98.53%)
+Best Accuracy: 98.53%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0502, Accuracy: 9863/10000 (98.63%)
+Best Accuracy: 98.63%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0498, Accuracy: 9865/10000 (98.65%)
+Best Accuracy: 98.65%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0516, Accuracy: 9863/10000 (98.63%)
+Best Accuracy: 98.63%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0614, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0505, Accuracy: 9859/10000 (98.59%)
+Best Accuracy: 98.59%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9855/10000 (98.55%)
+Best Accuracy: 98.55%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0500, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0501, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0504, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0503, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0530, Accuracy: 9859/10000 (98.59%)
+Best Accuracy: 98.59%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0506, Accuracy: 9857/10000 (98.57%)
+Best Accuracy: 98.57%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0505, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0503, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0538, Accuracy: 9858/10000 (98.58%)
+Best Accuracy: 98.58%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9858/10000 (98.58%)
+Best Accuracy: 98.58%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9858/10000 (98.58%)
+Best Accuracy: 98.58%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0503, Accuracy: 9863/10000 (98.63%)
+Best Accuracy: 98.63%
+
+Learning rate: 0.001
+==> Saving model ...
+
+Test set: Average loss: 0.0512, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0511, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0507, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0506, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0506, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0506, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0626, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0506, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0507, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0510, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0507, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0507, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0520, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0507, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0510, Accuracy: 9860/10000 (98.60%)
+Best Accuracy: 98.60%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0507, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0507, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 0.00010000000000000002
+==> Saving model ...
+
+Test set: Average loss: 0.0524, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+Learning rate: 1.0000000000000003e-05
+==> Saving model ...
+
+Test set: Average loss: 0.0508, Accuracy: 9861/10000 (98.61%)
+Best Accuracy: 98.61%
+
+------------------------------------------------------------------
+- Intermittent-aware weight pruning info:
+- Layer 0:        180 /        200 (90.0%) weights are pruned
+- Layer 1:       3045 /       3200 (95.2%) weights are pruned
+- Layer 2:      58243 /      65536 (88.9%) weights are pruned
+- Layer 3:       2079 /       2560 (81.2%) weights are pruned
+- Total  :      63547 /      71496 (88.9%) weights are pruned
+------------------------------------------------------------------
+

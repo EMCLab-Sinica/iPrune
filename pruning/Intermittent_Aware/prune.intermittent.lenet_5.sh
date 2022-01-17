@@ -1,31 +1,36 @@
 COMMON_FLAGS='--arch LeNet_5'
 GROUP_SIZE='1 1 1 5'
 
-# original training -- 99.18%
-# python main.py $COMMON_FLAGS
+# original training -- 99.23%
+#python main.py $COMMON_FLAGS
 
-# 20.7% pruned -- 99.22%
-# python main.py $COMMON_FLAGS --prune 'intermittent' --stage 0 \
+# 30.4% pruned -- 99.19%
+#python main.py $COMMON_FLAGS --prune 'intermittent' --stage 0 \
 # 	--group $GROUP_SIZE \
 #	--pretrained saved_models/LeNet_5.origin.pth.tar \
 #	--lr 0.1 --lr-epochs 15
 
-# 37.1% pruned -- 99.24%
-# python main.py $COMMON_FLAGS --stage 1 --prune 'intermittent' --group $GROUP_SIZE\
+# 51.6% pruned -- 99.17%
+#python main.py $COMMON_FLAGS --stage 1 --prune 'intermittent' --group $GROUP_SIZE\
 #	--pretrained saved_models/LeNet_5.prune.intermittent.group_size5.0.pth.tar \
 #	--lr 0.01 --lr-epochs 20
 
-# 50.0% pruned -- 99.07%
-# python main.py $COMMON_FLAGS --prune 'intermittent' --stage 2 --group $GROUP_SIZE\
+# 66.5% pruned -- 98.97%
+#python main.py $COMMON_FLAGS --prune 'intermittent' --stage 2 --group $GROUP_SIZE\
 #	--pretrained saved_models/LeNet_5.prune.intermittent.group_size5.1.pth.tar \
 #	--lr 0.01 --lr-epochs 20
 
-# 60.3% pruned -- 98.85%
-# python main.py $COMMON_FLAGS --prune 'intermittent' --stage 3 --group $GROUP_SIZE\
+# 76.8% pruned -- 98.94%
+#python main.py $COMMON_FLAGS --prune 'intermittent' --stage 3 --group $GROUP_SIZE\
 #	--pretrained saved_models/LeNet_5.prune.intermittent.group_size5.2.pth.tar \
 #	--lr 0.01 --lr-epochs 20
 
-# 68.4% pruned -- 98.76%
-# python main.py $COMMON_FLAGS --prune 'intermittent' --stage 4 --group $GROUP_SIZE\
+# 83.9% pruned -- 98.92%
+#python main.py $COMMON_FLAGS --prune 'intermittent' --stage 4 --group $GROUP_SIZE\
 #	--pretrained saved_models/LeNet_5.prune.intermittent.group_size5.3.pth.tar \
 #	--lr 0.01 --lr-epochs 20
+
+# 98.61% pruned -- 98.61%
+python main.py $COMMON_FLAGS --prune 'intermittent' --stage 5 --group $GROUP_SIZE\
+	--pretrained saved_models/LeNet_5.prune.intermittent.group_size5.4.pth.tar \
+	--lr 0.01 --lr-epochs 20

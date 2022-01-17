@@ -12,9 +12,12 @@ cwd = os.getcwd()
 sys.path.append(cwd+'/../')
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import models
+
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 from util import *
+
+from tqdm import tqdm, trange
 
 def save_state(model, acc):
     print('==> Saving model ...')
@@ -29,9 +32,17 @@ def save_state(model, acc):
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
     subprocess.call('mkdir -p saved_models', shell=True)
+    subprocess.call('mkdir -p saved_models/intermittent', shell=True)
+    subprocess.call('mkdir -p saved_models/energy', shell=True)
     subprocess.call('mkdir -p saved_models/with_sensitivity', shell=True)
     if args.prune:
-        torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
+        if args.with_sen:
+            torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
+        else:
+            if args.prune == 'intermittent':
+                torch.save(state, 'saved_models/intermittent/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
+            elif args.prune == 'energy':
+                torch.save(state, 'saved_models/energy/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
     else:
         torch.save(state, 'saved_models/'+args.arch+'.origin.pth.tar')
 
@@ -48,10 +59,12 @@ def train(epoch):
         optimizer.step()
         if args.prune:
             prune_op.prune_weight()
+        '''
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
+        '''
     return
 
 @torch.no_grad()
@@ -145,9 +158,16 @@ if __name__=='__main__':
             help='pruning ratio for Intermittent-aware weight pruning')
     parser.add_argument('--threshold', action='store', type=float, default=0.0,
             help='threshold for Intermittent-aware weight pruning')
+    parser.add_argument('--with_sen', action='store_true', default=False,
+            help='w/ or w/o sensitivity analysis')
+
     args = parser.parse_args()
     # args.cuda = not args.no_cuda and torch.cuda.is_available()
     args.cuda = False
+
+    if args.prune == None:
+        print('ERROR: Please choose the type of pruning')
+        exit()
 
     # check options
     if not (args.prune_target in [None, 'conv', 'ip']):
@@ -163,17 +183,10 @@ if __name__=='__main__':
     # load data
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
     train_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=True, download=True,
-                transform=transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.1307,), (0.3081,))
-                    ])),
-                batch_size=args.batch_size, shuffle=True, **kwargs)
+            datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
+            batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
-                ])),
+            datasets.MNIST('data', train=False, transform=transforms.ToTensor()),
             batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
     # generate the model
@@ -230,13 +243,13 @@ if __name__=='__main__':
             print('==> ERROR: Please assign the pretrained model')
             exit()
         prune_op = Prune_Op(model, args.threshold, args.group, train_loader, criterion, args.pruning_ratio, args)
-        for epoch in range(1, args.epochs + 1):
+        for epoch in trange(1, args.epochs + 1):
             lr = adjust_learning_rate(optimizer, epoch)
             train(epoch)
             test()
-            prune_op.print_info()
+        prune_op.print_info()
     else:
-        for epoch in range(1, args.epochs + 1):
+        for epoch in trange(1, args.epochs + 1):
             adjust_learning_rate(optimizer, epoch)
             train(epoch)
             test()
