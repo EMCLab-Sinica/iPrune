@@ -28,6 +28,17 @@ def getVal(node, colIdx):
     cols = bsr.indices
     rows = bsr.indptr
 
+def getJob(node, output_shape):
+    bsr = node['weights']
+    data = bsr.data
+    cols = bsr.indices
+    rows = bsr.indptr
+    if len(output_shape) == 4:
+        print('cols: {}'.format(len(cols)))
+        return len(cols) * output_shape[2] * output_shape[3]
+    elif len(output_shape) == 2:
+        print('cols: {}'.format(len(cols)))
+        return len(cols)
 
 def printGroups(node):
     bsr = node['weights']
@@ -70,18 +81,19 @@ if __name__ == '__main__':
         exit()
 
     model = onnx.load(args.onnx_model)
+    '''
     for idx, n in enumerate(model.graph.input):
         print(n)
     for idx, n in enumerate(model.graph.node):
         print(n.op_type)
         print(n)
-
+    '''
     main_names = [n.input[1] for idx, n in enumerate(model.graph.node) if n.op_type == 'Conv' or n.op_type == 'Gemm']
 
     nodes = model.graph.initializer
     for idx, node in enumerate(nodes):
         shape = node.dims
-        print(shape)
+        # print(shape)
         matrix = onnx.numpy_helper.to_array(node)
         if node.name in main_names:
             matrix = lowering(matrix, shape)
@@ -93,7 +105,18 @@ if __name__ == '__main__':
         graph.append(sparse_node)
 
     # getVal(graph[], 0)
-    printGroups(graph[2])
+    # printGroups(graph[2])
+    output_shape = [[1,8,28,28], [1,20,14,14], [1, 256], [1, 10]]
+    total_job = 0
+    job = getJob(graph[0], output_shape[0])
+    total_job += job
+    job = getJob(graph[2], output_shape[1])
+    total_job += job
+    job = getJob(graph[4], output_shape[2])
+    total_job += job
+    job = getJob(graph[6], output_shape[3])
+    total_job += job
+    print('total_job: {}'.format(total_job))
 
 
 

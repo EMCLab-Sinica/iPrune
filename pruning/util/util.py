@@ -5,8 +5,13 @@ import math
 import torch
 import torch.nn as nn
 import numpy as np
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
 from scipy.sparse import csr_matrix
 from torchsummary import summary
+from torch.autograd import Variable
+from itertools import chain
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
@@ -95,15 +100,19 @@ class dropout_update():
         return
 
 class Prune_Op():
-    def __init__(self, model, threshold, struct, evaluate=False):
+    def __init__(self, model, threshold, struct, train_loader, criterion, total_pruning_ratio, args, evaluate=False):
         self.struct = struct
         self.width = struct[0] * struct[1] * struct[2] * struct[3]
+        self.train_loader = train_loader
+        self.criterion = criterion
+        self.args = args
         if not evaluate:
-            pruned_ratios = self.getPrunedRatios(model.weights_pruned)
-            print('pruned ratios: {}'.format(pruned_ratios))
+            # pruned_ratios = self.getPrunedRatios(model.weights_pruned)
+            # print('pruned ratios: {}'.format(pruned_ratios))
             model.weights_pruned = []
             node_idx = 0
-            pruning_ratios = self.setPruningRatios(model)
+            # pruning_ratios = self.setPruningRatios(model)
+            pruning_ratios, sorted_idx, first_unpruned_idx = self.setPruningRatios2(model, total_pruning_ratio)
             for m in model.modules():
                 if isinstance(m, nn.Linear):
                     tmp_pruned = m.weight.data.clone()
@@ -111,7 +120,8 @@ class Prune_Op():
                     tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1)
                     tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, self.width)
                     shape = tmp_pruned.shape
-                    tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
+                    # tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
+                    tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
                     # tmp_pruned[:, -1] = 0
                     tmp_pruned = tmp_pruned.reshape(tmp_pruned.shape[0], -1)
                     tmp_pruned = tmp_pruned[:, 0:m.weight.data.shape[1]]
@@ -132,7 +142,8 @@ class Prune_Op():
                             tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1) # Append: [20, 25] -> [20, 32]
                     tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, self.width) # Slice by width: [20,32] -> [20, 4, 8]
                     shape = tmp_pruned.shape
-                    tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
+                    # tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
+                    tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
                     # tmp_pruned[:, -1] = 0
                     tmp_pruned = tmp_pruned.reshape(original_size[0], -1)
                     tmp_pruned = tmp_pruned[:, 0:m.weight.data[0].nelement()]
@@ -157,6 +168,18 @@ class Prune_Op():
         sorted_idx = sorted(range(len(tmp_val)), key = lambda k : tmp_val[k])[: int(n_values * pruning_ratio)]
         mask = np.zeros(tmp_val.shape, dtype=bool)
         mask[sorted_idx] = True
+        mask = np.reshape(mask, values.shape)
+        return torch.tensor(mask).expand(tmp_pruned.shape)
+
+    def criteria2(self, tmp_pruned, sorted_idx, first_unpruned_idx):
+        if first_unpruned_idx != -1:
+            masked_indices = sorted_idx[:first_unpruned_idx]
+        else:
+            masked_indices = sorted_idx
+        values = tmp_pruned.pow(2.0).mean(2, keepdim=True).pow(0.5)
+        tmp_val = np.array(values.tolist()).flatten()
+        mask = np.zeros(tmp_val.shape, dtype=bool)
+        mask[masked_indices] = True
         mask = np.reshape(mask, values.shape)
         return torch.tensor(mask).expand(tmp_pruned.shape)
 
@@ -208,6 +231,142 @@ class Prune_Op():
         print('pruning_ratios: {}'.format(pruning_ratios))
         return pruning_ratios
 
+    def setPruningRatios2(self, model, total_pruning_ratio = 0.5):
+        weights = []
+        org_layers = []
+        for m in model.children():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                weights.append(m.weight)
+                org_layers.append(m)
+
+        def getGrad(train_loader, model, criterion, weights):
+            model.eval()
+            grad_one = [torch.zeros(w.size()) for w in weights]
+            for batch_idx, (inputs, target) in enumerate(train_loader):
+                if self.args.cuda:
+                    inputs, target = inputs.cuda(), target.cuda()
+                inputs, target = Variable(inputs), Variable(target)
+                inputs.requires_grad_(True)
+                output = model(inputs)
+                loss = criterion(output, target)
+                grad_params_1 = torch.autograd.grad(loss, weights)
+
+                for j, gp in enumerate(grad_params_1):
+                    grad_one[j] += gp
+
+            grad_one = [g / len(train_loader) for g in grad_one]
+            return grad_one
+
+        grads = getGrad(self.train_loader, model, self.criterion, weights)
+
+        def getI(model, org_layers, grads):
+            res = []
+            for i in range(len(org_layers)):
+                res.append(torch.pow(grads[i] * org_layers[i].weight, 2))
+            return res
+
+        I = getI(model, org_layers, grads)
+
+        group_size = [1, 1, 1, 5]
+
+        def grouping(I, group = [1, 1, 1, 5]): # group size: one row
+            I_groups = []
+            for i in range(len(I)):
+                layer = I[i]
+                layer = layer.reshape(-1).data
+                layer = np.add.reduceat(layer, np.arange(0, len(layer), group[3]))
+                I_groups.append(layer)
+            return I_groups
+
+        I_groups = grouping(I, group_size)
+
+        metrics_sort = []
+        for i in range(len(I_groups)):
+            layer = I_groups[i]
+            metric_sort = sorted(range(len(layer)), key=lambda idx : layer[idx])
+            metrics_sort.append(metric_sort)
+
+        input_sizes = [[1,1,28,28], [1,8,14,14], [16*4*4, 256], [256, 10]]
+        output_sizes = []
+        def getJob(model, group_size, input_sizes):
+            idx = 0
+            jobs = []
+            total_job = 0
+            per_group_job = []
+            for m in model.children():
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                    if len(m.weight.shape) == 4:
+                        input_size = input_sizes[idx]
+                        kernel_size = m.weight.shape[2:]
+                        padding = m.padding
+                        stride = m.stride
+                        out_h = int((input_size[2] + 2 * padding[0] - kernel_size[0])/stride[0] + 1)
+                        out_w = int((input_size[3] + 2 * padding[1] - kernel_size[1])/stride[1] + 1)
+                        output_sizes.append([out_h, out_w])
+                        per_group_job.append(out_h * out_w)
+                        n_weights = np.prod(m.weight.shape)
+                        job = int(n_weights * out_h * out_w / np.prod(group_size))
+                        jobs.append(job)
+                        total_job += job
+                        idx += 1
+                    elif len(m.weight.shape) == 2:
+                        n_weights = np.prod(m.weight.shape)
+                        output_sizes.append([1, m.weight.shape[1]])
+                        job = int(n_weights / np.prod(group_size))
+                        jobs.append(job)
+                        per_group_job.append(1)
+                        total_job += job
+                        idx += 1
+            return jobs, total_job, per_group_job
+
+        jobs, total_job, per_group_job = getJob(model, group_size, input_sizes)
+        print('jobs: {}'.format(jobs))
+        print('total job: {}'.format(total_job))
+        print('output size: {}'.format(output_sizes))
+
+        acc_I = []
+        percentages = []
+        for i in range(len(metrics_sort)):
+            acc = np.array(I_groups[i])[metrics_sort[i]]
+            for j in range(len(acc) - 1):
+                acc[j + 1] += acc[j]
+            acc /= per_group_job[i]
+            percentage = np.linspace(0, 100, len(acc))
+            percentages.append(percentage)
+            acc_I.append(acc)
+
+        def getPruningRatio(acc_I, total_pruning_ratio, total_job, jobs, per_group_job, threshold = 0):
+            total_acc = list(chain.from_iterable(acc_I))
+            total_acc.sort()
+            PR = []
+            indices = []
+            remain_job = total_job
+            ideal_job = int(total_job * (1 - total_pruning_ratio))
+            for threshold in total_acc:
+                PR = []
+                indices = []
+                for i in range(len(acc_I)):
+                    iters = iter(idx for idx, val in enumerate(acc_I[i]) if val > threshold)
+                    first_greater_than_idx = next(iters, -1)
+                    if first_greater_than_idx == -1:
+                        print('Layer {} is exhausted iteration'.format(i + 1))
+                        first_greater_than_idx = len(acc_I[i])
+                    PR.append(first_greater_than_idx / len(acc_I[i]) * 100)
+                    indices.append(first_greater_than_idx)
+                remain_job = int(sum(jobs - np.array(indices) * np.array(per_group_job)))
+                if(remain_job <= ideal_job):
+                    break
+
+            print('Remain: {}'.format(remain_job))
+            print('Ideal remain job: {}'.format(ideal_job))
+            print('threshold: {}'.format(threshold))
+            return PR, indices
+
+        print('============================================================================================')
+        PR, indices = getPruningRatio(acc_I, total_pruning_ratio, total_job, jobs, per_group_job)
+        print('Total Prune: {}'.format(total_pruning_ratio))
+        print('Pruning Ratio: {}'.format(PR))
+        return PR, metrics_sort, indices
 
     def getJobs(self, node, group_size, output_shapes, node_idx):
         shape = node.weight.data.shape

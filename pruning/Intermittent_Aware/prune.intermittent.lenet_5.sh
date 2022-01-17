@@ -2,7 +2,7 @@ COMMON_FLAGS='--arch LeNet_5'
 GROUP_SIZE='1 1 1 5'
 
 # original training -- 99.18%
-python main.py $COMMON_FLAGS
+# python main.py $COMMON_FLAGS
 
 # 20.7% pruned -- 99.22%
 # python main.py $COMMON_FLAGS --prune 'intermittent' --stage 0 \

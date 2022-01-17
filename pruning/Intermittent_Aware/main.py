@@ -5,12 +5,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
 import sys
 import subprocess
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import models
 from torchvision import datasets, transforms
 from torch.autograd import Variable
@@ -29,8 +29,9 @@ def save_state(model, acc):
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
     subprocess.call('mkdir -p saved_models', shell=True)
+    subprocess.call('mkdir -p saved_models/with_sensitivity', shell=True)
     if args.prune:
-        torch.save(state, 'saved_models/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
+        torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
     else:
         torch.save(state, 'saved_models/'+args.arch+'.origin.pth.tar')
 
@@ -40,7 +41,6 @@ def train(epoch):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
-        print(data[0])
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
@@ -54,6 +54,7 @@ def train(epoch):
                 100. * batch_idx / len(train_loader), loss.item()))
     return
 
+@torch.no_grad()
 def test(evaluate=False):
     global best_acc
     model.eval()
@@ -65,7 +66,7 @@ def test(evaluate=False):
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
+        data, target = Variable(data), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
@@ -140,10 +141,13 @@ if __name__=='__main__':
             help='pruing granularity (group size)')
     parser.add_argument('--penalty', action='store', default=0.0,
             help='beta penalty')
+    parser.add_argument('--pruning_ratio', action='store', type=float, default=0.0,
+            help='pruning ratio for Intermittent-aware weight pruning')
     parser.add_argument('--threshold', action='store', type=float, default=0.0,
             help='threshold for Intermittent-aware weight pruning')
     args = parser.parse_args()
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
+    # args.cuda = not args.no_cuda and torch.cuda.is_available()
+    args.cuda = False
 
     # check options
     if not (args.prune_target in [None, 'conv', 'ip']):
@@ -225,7 +229,7 @@ if __name__=='__main__':
         if not args.pretrained:
             print('==> ERROR: Please assign the pretrained model')
             exit()
-        prune_op = Prune_Op(model, args.threshold, args.group)
+        prune_op = Prune_Op(model, args.threshold, args.group, train_loader, criterion, args.pruning_ratio, args)
         for epoch in range(1, args.epochs + 1):
             lr = adjust_learning_rate(optimizer, epoch)
             train(epoch)
