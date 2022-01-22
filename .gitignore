@@ -36,3 +36,5 @@
 
 # Pruned models
 /pruning/Intermittent_Aware/saved_models/
+
+/pruning/Intermittent_Aware/logs/

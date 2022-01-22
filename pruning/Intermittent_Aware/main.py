@@ -37,14 +37,14 @@ def save_state(model, acc):
     subprocess.call('mkdir -p saved_models/with_sensitivity', shell=True)
     if args.prune:
         if args.with_sen:
-            torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
+            torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
         else:
             if args.prune == 'intermittent':
-                torch.save(state, 'saved_models/intermittent/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
+                torch.save(state, 'saved_models/intermittent/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
             elif args.prune == 'energy':
-                torch.save(state, 'saved_models/energy/'+args.arch+'.prune.' + args.prune + '.group_size5.' + str(args.stage)+'.pth.tar')
+                torch.save(state, 'saved_models/energy/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
     else:
-        torch.save(state, 'saved_models/'+args.arch+'.origin.pth.tar')
+        torch.save(state, 'saved_models/'+args.arch+'.origin1.pth.tar')
 
 def train(epoch):
     model.train()
@@ -91,11 +91,12 @@ def test(evaluate=False):
         if not evaluate:
             save_state(model, best_acc)
 
-    test_loss /= len(test_loader.dataset)
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        test_loss * args.batch_size, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-    print('Best Accuracy: {:.2f}%\n'.format(best_acc))
+    if args.prune == None or evaluate:
+        test_loss /= len(test_loader.dataset)
+        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+            test_loss * args.batch_size, correct, len(test_loader.dataset),
+            100. * correct / len(test_loader.dataset)))
+        print('Best Accuracy: {:.2f}%\n'.format(best_acc))
     return
 
 def adjust_learning_rate(optimizer, epoch):
@@ -136,8 +137,8 @@ if __name__=='__main__':
             help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
-    parser.add_argument('--arch', action='store', default='LeNet_300_100',
-            help='the MNIST network structure: LeNet_300_100 | LeNet_5')
+    parser.add_argument('--arch', action='store', default=None,
+            help='the MNIST network structure: LeNet_300_100 | LeNet_5 | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -152,22 +153,15 @@ if __name__=='__main__':
             help='pruning stage')
     parser.add_argument('--group', action='store', nargs='+', type=int, default=[1,1,1,5],
             help='pruing granularity (group size)')
-    parser.add_argument('--penalty', action='store', default=0.0,
-            help='beta penalty')
     parser.add_argument('--pruning_ratio', action='store', type=float, default=0.0,
             help='pruning ratio for Intermittent-aware weight pruning')
-    parser.add_argument('--threshold', action='store', type=float, default=0.0,
-            help='threshold for Intermittent-aware weight pruning')
+    parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0.25, 0.3, 0.35, 0.4],
+            help='candidates of pruning ratios for weight pruning')
     parser.add_argument('--with_sen', action='store_true', default=False,
             help='w/ or w/o sensitivity analysis')
 
     args = parser.parse_args()
-    # args.cuda = not args.no_cuda and torch.cuda.is_available()
-    args.cuda = False
-
-    if args.prune == None:
-        print('ERROR: Please choose the type of pruning')
-        exit()
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
 
     # check options
     if not (args.prune_target in [None, 'conv', 'ip']):
@@ -182,16 +176,26 @@ if __name__=='__main__':
 
     # load data
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-    train_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
-            batch_size=args.batch_size, shuffle=True, **kwargs)
-    test_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=False, transform=transforms.ToTensor()),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
     # generate the model
     if args.arch == 'LeNet_5':
+        train_loader = torch.utils.data.DataLoader(
+                datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
+                batch_size=args.batch_size, shuffle=True, **kwargs)
+        test_loader = torch.utils.data.DataLoader(
+                datasets.MNIST('data', train=False, transform=transforms.ToTensor()),
+                batch_size=args.test_batch_size, shuffle=True, **kwargs)
+
         model = models.LeNet_5(args.prune)
+    elif args.arch == 'SqueezeNet':
+        train_loader = torch.utils.data.DataLoader(
+                datasets.CIFAR10('data', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
+                batch_size=args.batch_size, shuffle=True, **kwargs)
+        test_loader = torch.utils.data.DataLoader(
+                datasets.CIFAR10('data', train=False, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
+                batch_size=args.test_batch_size, shuffle=True, **kwargs)
+
+        model = models.SqueezeNet(args.prune)
     else:
         print('ERROR: specified arch is not suppported')
         exit()
@@ -215,7 +219,6 @@ if __name__=='__main__':
     param_dict = dict(model.named_parameters())
     params = []
 
-    base_lr = 0.1
 
     for key, value in param_dict.items():
         params += [{'params':[value], 'lr': args.lr,
@@ -223,8 +226,11 @@ if __name__=='__main__':
             'weight_decay': args.weight_decay,
             'key':key}]
 
-    optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
-            weight_decay=args.weight_decay)
+    if args.arch == 'LeNet_5':
+        optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
+                weight_decay=args.weight_decay)
+    elif args.arch == 'SqueezeNet':
+        optimizer = optim.Adam(params, lr=args.lr)
 
     criterion = nn.CrossEntropyLoss()
 
@@ -233,7 +239,7 @@ if __name__=='__main__':
         if args.prune:
             if not model.weights_pruned:
                 raise Exception ('weights_pruned is missing')
-            prune_op = Prune_Op(model, args.threshold, args.group, True)
+            prune_op = Prune_Op(model, args.group, True)
         test(evaluate=True)
         exit()
 
@@ -242,14 +248,27 @@ if __name__=='__main__':
         if not args.pretrained:
             print('==> ERROR: Please assign the pretrained model')
             exit()
-        prune_op = Prune_Op(model, args.threshold, args.group, train_loader, criterion, args.pruning_ratio, args)
+        if args.arch == 'LeNet_5':
+            input_shape = (1, 28, 28)
+        elif args.arch == 'SqueezeNet':
+            input_shape = (3, 32, 32)
+        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args)
         for epoch in trange(1, args.epochs + 1):
-            lr = adjust_learning_rate(optimizer, epoch)
+            if args.arch == 'LeNet_5':
+                lr = adjust_learning_rate(optimizer, epoch)
+            elif args.arch == 'SqueezeNet':
+                # adjusted by ADAM
+                pass
             train(epoch)
             test()
+        test(evaluate=True)
         prune_op.print_info()
     else:
         for epoch in trange(1, args.epochs + 1):
-            adjust_learning_rate(optimizer, epoch)
+            if args.arch == 'LeNet_5':
+                adjust_learning_rate(optimizer, epoch)
+            elif args.arch == 'SqueezeNet':
+                # adjusted by ADAM
+                pass
             train(epoch)
             test()

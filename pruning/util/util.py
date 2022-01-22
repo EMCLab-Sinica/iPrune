@@ -5,6 +5,7 @@ import math
 import torch
 import torch.nn as nn
 import numpy as np
+import math
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -12,9 +13,81 @@ from scipy.sparse import csr_matrix
 from torchsummary import summary
 from torch.autograd import Variable
 from itertools import chain
+from collections import OrderedDict
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
+
+# https://github.com/sksq96/pytorch-summary/blob/master/torchsummary/torchsummary.py
+def activation_shapes(model, input_size, batch_size=-1, device=torch.device('cuda:0'), dtypes=None):
+    if dtypes == None:
+        dtypes = [torch.FloatTensor]*len(input_size)
+
+    summary_str = ''
+
+    def register_hook(module):
+        def hook(module, input, output):
+            class_name = str(module.__class__).split(".")[-1].split("'")[0]
+            module_idx = len(summary)
+
+            m_key = "%s-%i" % (class_name, module_idx + 1)
+            summary[m_key] = OrderedDict()
+            summary[m_key]["input_shape"] = list(input[0].size())
+            summary[m_key]["input_shape"][0] = batch_size
+            if isinstance(output, (list, tuple)):
+                summary[m_key]["output_shape"] = [
+                    [-1] + list(o.size())[1:] for o in output
+                ]
+            else:
+                summary[m_key]["output_shape"] = list(output.size())
+                summary[m_key]["output_shape"][0] = batch_size
+
+            params = 0
+            if hasattr(module, "weight") and hasattr(module.weight, "size"):
+                params += torch.prod(torch.LongTensor(list(module.weight.size())))
+                summary[m_key]["trainable"] = module.weight.requires_grad
+            if hasattr(module, "bias") and hasattr(module.bias, "size"):
+                params += torch.prod(torch.LongTensor(list(module.bias.size())))
+            summary[m_key]["nb_params"] = params
+
+        if (
+            not isinstance(module, nn.Sequential)
+            and not isinstance(module, nn.ModuleList)
+        ):
+            hooks.append(module.register_forward_hook(hook))
+
+    # multiple inputs to the network
+    if isinstance(input_size, tuple):
+        input_size = [input_size]
+
+    # batch_size of 2 for batchnorm
+    x = [torch.rand(2, *in_size).type(dtype).to(device=device)
+         for in_size, dtype in zip(input_size, dtypes)]
+
+    # create properties
+    summary = OrderedDict()
+    hooks = []
+
+    # register hook
+    model.apply(register_hook)
+
+    # make a forward pass
+    # print(x.shape)
+    model(*x)
+
+    # remove these hooks
+    for h in hooks:
+        h.remove()
+
+    names = []
+    shapes = []
+    valid_layer = ("Conv2d", "Linear")
+    for layer in summary:
+        if layer[:layer.find('-')] in valid_layer:
+            names.append(layer)
+            shapes.append(summary[layer]["output_shape"])
+
+    return names, shapes
 
 def print_layer_info(model):
     index = 0
@@ -100,20 +173,20 @@ class dropout_update():
         return
 
 class Prune_Op():
-    def __init__(self, model, threshold, struct, train_loader, criterion, total_pruning_ratio, args, evaluate=False):
-        self.struct = struct
-        self.width = struct[0] * struct[1] * struct[2] * struct[3]
+    def __init__(self, model, train_loader, criterion, input_shape,args, evaluate=False):
+        self.width = math.prod(args.group)
         self.train_loader = train_loader
         self.criterion = criterion
         self.args = args
+        names, output_shapes = activation_shapes(model, input_shape)
         if not evaluate:
             if args.with_sen:
-                pruning_ratios, sorted_idx, first_unpruned_idx = self.setPruningRatios2(model, total_pruning_ratio)
+                pruning_ratios, sorted_idx, first_unpruned_idx = self.setPruningRatios2(model, args.pruned_ratios)
             else:
-                pruned_ratios = self.getPrunedRatios(model.weights_pruned)
-                pruning_ratios = self.setPruningRatios(model)
+                pruned_ratios = self.getPrunedRatios(model.weights_pruned, output_shapes)
+                pruning_ratios = self.setPruningRatios(model, args.candidates_pruning_ratios, output_shapes)
 
-            # print('pruned ratios: {}'.format(pruned_ratios))
+            print('pruned ratios: {}'.format(pruned_ratios))
             model.weights_pruned = []
             node_idx = 0
             for m in model.modules():
@@ -134,6 +207,7 @@ class Prune_Op():
                     node_idx += 1
 
                 elif isinstance(m, nn.Conv2d):
+                    print(m)
                     tmp_pruned = m.weight.data.clone()
                     # tmp_pruned = tmp_pruned.permute(0, 2, 3, 1) # NCHW -> NHWC
                     original_size = tmp_pruned.size()
@@ -191,9 +265,9 @@ class Prune_Op():
         mask = np.reshape(mask, values.shape)
         return torch.tensor(mask).expand(tmp_pruned.shape)
 
-    def getPrunedRatios(self, masks):
+    def getPrunedRatios(self, masks, output_shapes):
         if masks == None or masks == []:
-            return [0, 0, 0, 0]
+            return [0] * len(output_shapes)
         pruned_ratios = []
         for i in range(len(masks)):
             n_pruned = int(masks[i].sum())
@@ -213,15 +287,8 @@ class Prune_Op():
                 index += 1
         return
 
-    def setPruningRatios(self, model):
+    def setPruningRatios(self, model, candidates, output_shapes):
         # https://gist.github.com/georgesung/ddb3a0b0412513d8811696293d8b1771
-        # summary(model, (1, 28, 28), device='cpu')
-        output_shapes = [[1, 8, 28, 28], \
-                         [1, 16, 14, 14], \
-                         #[1, 275], \
-                         #[1, 25]]
-                         [1, 260], \
-                         [1, 10]]
         pruning_ratios = [0] * len(output_shapes)
         metrics = []
         node_idx = 0
@@ -234,10 +301,10 @@ class Prune_Op():
                     metric = self.getReuse(m, (1, self.width), output_shapes, node_idx)
                     metrics.append(metric)
                 node_idx += 1
-
-        # adjusted by manually
-        candidates = [0.25, 0.30, 0.35, 0.4]
+        print(output_shapes)
+        print("Metrics : {}".format(metrics))
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
+        print("Pruning Order: {}".format(order))
         for i in range(len(order)):
             pruning_ratios[order[i]] = candidates[i]
         print('pruning_ratios: {}'.format(pruning_ratios))
@@ -386,6 +453,7 @@ class Prune_Op():
         matrix = matrix.reshape(shape[0], -1)
         append_size = self.width - matrix.shape[1]%self.width
         matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
+        matrix = matrix.cpu()
         bsr = csr_matrix(matrix).tobsr(group_size)
         data = bsr.data
         cols = bsr.indices
