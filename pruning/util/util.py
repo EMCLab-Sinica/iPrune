@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import math
+from config import config
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -207,7 +208,6 @@ class Prune_Op():
                     node_idx += 1
 
                 elif isinstance(m, nn.Conv2d):
-                    print(m)
                     tmp_pruned = m.weight.data.clone()
                     # tmp_pruned = tmp_pruned.permute(0, 2, 3, 1) # NCHW -> NHWC
                     original_size = tmp_pruned.size()
@@ -298,7 +298,9 @@ class Prune_Op():
                     metric = self.getJobs(m, (1, self.width), output_shapes, node_idx)
                     metrics.append(metric)
                 elif self.args.prune == 'energy':
-                    metric = self.getReuse(m, (1, self.width), output_shapes, node_idx)
+                    metric, (vm_access, nvm_access) = self.getReuse(m, (1, self.width), output_shapes, node_idx)
+                    print('vm access: {}'.format(vm_access))
+                    print('nvm access: {}'.format(nvm_access))
                     metrics.append(metric)
                 node_idx += 1
         print(output_shapes)
@@ -465,31 +467,61 @@ class Prune_Op():
         return job
 
     def getReuse(self, node, group_size, output_shapes, node_idx):
+        layer_config = config[self.args.arch][node_idx]
+
+        nvm_access_cost = 100
+        vm_access_cost = 1
+
         shape = node.weight.data.shape
         matrix = node.weight.data
         matrix = matrix.reshape(shape[0], -1)
         append_size = self.width - matrix.shape[1]%self.width
-        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
+        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1).cpu()
         bsr = csr_matrix(matrix).tobsr(group_size)
         data = bsr.data
         cols = bsr.indices
         rows = bsr.indptr
-        if isinstance(node, nn.Linear):
-            weight_reuse = len(cols) * self.width
-            input_reuse = weight_reuse
-            output_reuse = len(cols)
-            psum_read = 2 * len(cols)
-            psum_write = len(cols)
-            reuse = weight_reuse + input_reuse + output_reuse + psum_read + psum_write
-        elif isinstance(node, nn.Conv2d):
-            weight_reuse = self.width * len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
-            input_reuse = weight_reuse
-            output_reuse = len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
-            psum_read = 2 * (len(cols) - 1) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
-            psum_write = (len(cols) - 1) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
-            reuse = weight_reuse + input_reuse + output_reuse + psum_read + psum_write
-        return reuse
 
+        nvm_jobs = 0
+        nvm_read_weights = 0
+        nvm_read_inputs = 0
+        vm_jobs = 0
+        vm_read_psum = 0
+        vm_write_psum = 0
+        vm_read_weights = 0
+        vm_read_inputs = 0
+        if isinstance(node, nn.Linear):
+            # input stationary
+            nvm_read_inputs += layer_config['input'][2]
+            for i in range(1, len(rows)):
+                if rows[i] - rows[i - 1] != 0:
+                    # TODO: indexing cost
+                    nvm_read_weights += (rows[i] - rows[i - 1]) * self.width
+                    nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
+                    vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+
+        elif isinstance(node, nn.Conv2d):
+            # weight stationary
+            nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
+            nvm_read_inputs += math.prod(layer_config['input']) * nvm_access_per_ifm
+            for i in range(1, len(rows)):
+                if rows[i] != rows[i - 1]:
+                    # TODO: indexing cost
+                    nvm_read_weights += (rows[i] - rows[i - 1]) * self.width
+                    nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
+                    vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+
+        vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
+        nvm_access = (nvm_jobs + nvm_read_weights + nvm_read_inputs)
+        return vm_access * vm_access_cost + nvm_access * nvm_access_cost, (vm_access, nvm_access)
 
     def print_info(self):
         print('------------------------------------------------------------------')
