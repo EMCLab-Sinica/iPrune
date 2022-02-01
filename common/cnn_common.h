@@ -4,18 +4,29 @@
 #include <cstdint>
 #include "data.h"
 
+#define ENABLE_COUNTERS 0
+
 /**********************************
  *        Data structures         *
  **********************************/
 
 struct ConvNodeFlags {
-    uint8_t input_tile_c;
-    uint8_t output_tile_c;
+    uint16_t input_tile_c;
+    uint16_t output_tile_c;
+    uint8_t pads[4];
+};
+
+struct MaxPoolFlags {
+    uint8_t kernel_shape[2];
+    uint8_t strides[2];
 };
 
 struct GemmNodeFlags {
     uint16_t tile_channel;
-    uint16_t tile_width;
+};
+
+struct GemmMergeNodeFlags {
+    uint16_t tile_length;
 };
 
 struct SqueezeNodeFlags {
@@ -24,7 +35,9 @@ struct SqueezeNodeFlags {
 
 union ExtraNodeFlags {
     ConvNodeFlags conv;
+    MaxPoolFlags maxpool;
     GemmNodeFlags gemm;
+    GemmMergeNodeFlags gemmmerge;
     SqueezeNodeFlags squeeze;
 };
 
@@ -33,10 +46,9 @@ struct NodeFlags {
     uint8_t kernel_size : 4;    // used in MaxPool
     uint8_t stride : 4;         // used in Conv and MaxPool
     ExtraNodeFlags extra;
-    uint16_t dummy;
 };
 
-static_assert(sizeof(NodeFlags) == 8, "Unexpected size for NodeFlags");
+static_assert(sizeof(NodeFlags) == 10, "Unexpected size for NodeFlags");
 
 typedef struct Node {
     char name[NODE_NAME_LEN];
@@ -54,7 +66,7 @@ typedef struct Node {
 #endif
 } Node;
 
-static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 14 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
+static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 16 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
 
 /* ParameterInfo may indicate data from the model (parameters) or intermediate values */
 typedef struct ParameterInfo {
@@ -110,21 +122,28 @@ typedef struct Model {
 
 static_assert(sizeof(Model) == 8 + NUM_SLOTS * (2 + INDIRECT_RECOVERY * (2 + TURNING_POINTS_LEN * 2)), "Unexpected size for Model");
 
-#define COUNTERS_LEN 64
-typedef struct {
-    uint16_t time_counters[COUNTERS_LEN];
-    uint16_t power_counters[COUNTERS_LEN];
-    uint32_t dma_invocations[COUNTERS_LEN];
-    uint32_t dma_bytes[COUNTERS_LEN];
-} Counters;
-
-// Keep the following coefficients synced with transform.py
-static_assert(sizeof(Counters) == 12 * COUNTERS_LEN, "Unexpected size of Counters");
-
 /**********************************
  *          Global data           *
  **********************************/
-Counters *counters(void);
+#define COUNTERS_LEN (MODEL_NODES_LEN+1)
+struct Counters {
+    uint32_t power_counters;
+    uint32_t dma_invocations;
+    uint32_t dma_bytes;
+
+    uint32_t embedding;
+    uint32_t stripping;
+    uint32_t overflow_handling;
+
+    uint32_t state_query;
+    uint32_t table_updates;
+    uint32_t table_preservation;
+    uint32_t table_loading;
+
+    uint32_t progress_seeking;
+};
+
+Counters *counters(uint16_t idx);
 extern ParameterInfo intermediate_parameters_info_vm[MODEL_NODES_LEN];
 
 

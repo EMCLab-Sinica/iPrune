@@ -20,6 +20,7 @@ if (ENABLE_COVERAGE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
 endif ()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_FLAGS} -Wstrict-prototypes -std=c11")
+# Don't use something that require C++17 or newer, which are not supported by MSP-CGT yet
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_FLAGS} -std=c++14 -Wold-style-cast")
 
 if (USE_PROTOBUF)
@@ -54,7 +55,7 @@ add_library(arm_cmsis_dsp
     ${ARM_CMSIS_PATH}/DSP/Source/SupportFunctions/arm_fill_q15.c
 )
 target_include_directories(arm_cmsis_dsp
-    PUBLIC
+    SYSTEM PUBLIC
         ${ARM_CMSIS_PATH}/Core/Include
         ${ARM_CMSIS_PATH}/DSP/Include
     PRIVATE

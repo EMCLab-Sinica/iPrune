@@ -22,7 +22,7 @@ import onnx.numpy_helper
 import numpy as np
 
 from configs import configs
-from utils import extract_data, find_initializer, find_node_by_output, find_tensor_value_info, load_model, get_model_ops, OPS_WITH_MERGE
+from utils import extract_data, find_initializer, find_node_by_output, find_tensor_value_info, load_model, get_model_ops, OPS_WITH_MERGE, DataLayout
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -56,7 +56,6 @@ class Constants:
     USE_ARM_CMSIS = 0
     CONFIG = None
 
-    DEFAULT_TILE_C = 4
     DEFAULT_TILE_H = 8
     BATCH_SIZE = 1
     STATEFUL = 0
@@ -70,16 +69,17 @@ class Constants:
     SPARSE = 0
 
 # XXX: Transpose does nothing as we happens to need NHWC
-inplace_update_ops = ['Reshape', 'Softmax', 'Squeeze', 'Transpose']
+inplace_update_ops = ['Reshape', 'Softmax', 'Squeeze', 'Transpose', 'Unsqueeze']
 
 audio_ops = ['DecodeWav', 'AudioSpectrogram', 'Mfcc']
 
 other_flags = [
-    'AUTO_PAD_VALID',
+    # node flags
     'NHWC2NCHW',
-    'TRANSPOSED',
-    # Tiles in different channels are actually in different slots
-    'SEPARATE_TILING',
+
+    # parameter flags
+    'CHANNEL_FIRST',
+    'SEPARATE_TILING',  # Tiles in different channels are actually in different slots
 ]
 
 def op_flag(flag):
@@ -107,25 +107,38 @@ def _Q15(arr, name):
 # https://stackoverflow.com/a/11481471/3786245
 class ConvNodeFlags(ctypes.Structure):
     _fields_ = [
-        ("input_tile_c", ctypes.c_uint8, 8),
-        ("output_tile_c", ctypes.c_uint8, 8),
+        ("input_tile_c", ctypes.c_uint16),
+        ("output_tile_c", ctypes.c_uint16),
+        ("pads", ctypes.c_uint8 * 4),
+    ]
+
+class MaxPoolFlags(ctypes.Structure):
+    _fields_ = [
+        ("kernel_shape", ctypes.c_uint8 * 2),
+        ("strides", ctypes.c_uint8 * 2),
     ]
 
 class GemmNodeFlags(ctypes.Structure):
     _fields_ = [
         ("tile_channel", ctypes.c_uint16, 16),
-        ("tile_width", ctypes.c_uint16, 16),
+    ]
+
+class GemmMergeNodeFlags(ctypes.Structure):
+    _fields_ = [
+        ("tile_length", ctypes.c_uint16, 16),
     ]
 
 class SqueezeNodeFlags(ctypes.Structure):
     _fields_ = [
-        ("axes", ctypes.c_uint8, 8),  # a bitmap for axes to squeeze
+        ("axes", ctypes.c_uint8, 8),  # a bitmap for axes to squeeze/unsqueeze
     ]
 
 class ExtraNodeFlags(ctypes.Union):
     _fields_ = [
         ("conv", ConvNodeFlags),
+        ("maxpool", MaxPoolFlags),
         ("gemm", GemmNodeFlags),
+        ("gemmmerge", GemmMergeNodeFlags),
         ("squeeze", SqueezeNodeFlags),
     ]
 
@@ -140,7 +153,7 @@ class NodeFlags_bits(ctypes.LittleEndianStructure):
 class NodeFlags(ctypes.Union):
     _fields_ = [
         ("b", NodeFlags_bits),
-        ("as_bytes", ctypes.c_uint64),
+        ("as_bytes", ctypes.c_uint8 * 10),
     ]
 
     def __repr__(self):
@@ -174,7 +187,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('config', choices=configs.keys())
 parser.add_argument('--all-samples', action='store_true')
 parser.add_argument('--write-images', action='store_true')
-parser.add_argument('--batch-size', type=int, default=Constants.DEFAULT_TILE_C)
+parser.add_argument('--batch-size', type=int, default=1)
 parser.add_argument('--target', choices=('msp430', 'msp432'), required=True)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--sparse', action='store_true')
@@ -190,6 +203,8 @@ else:
     logging.getLogger().setLevel(logging.INFO)
 config = configs[args.config]
 config['total_sample_size'] = np.prod(config['sample_size'])
+if 'gemm_tile_length' not in config:
+    config['gemm_tile_length'] = 0
 Constants.CONFIG = args.config
 Constants.FIRST_SAMPLE_OUTPUTS = config['first_sample_outputs']
 if args.all_samples:
@@ -322,39 +337,60 @@ for idx, initializer in enumerate(onnx_model.graph.initializer):
 Constants.N_INPUT = len(names.keys())
 logger.info('Constants.N_INPUT = %d', Constants.N_INPUT)
 
-prev_node = None
+def infer_auto_pad(node):
+    # https://github.com/onnx/onnx/blob/master/docs/Operators.md#conv
+    conv_flags = node.flags.b.extra.conv
+    auto_pad = get_attr(node, 'auto_pad')
+    pads = get_attr(node ,'pads')
+    if pads:
+        assert len(pads) <= 4
+        # https://stackoverflow.com/questions/4145775/how-do-i-convert-a-python-list-into-a-c-array-by-using-ctypes
+        conv_flags.pads = (ctypes.c_uint8 * 4)(*pads)
+    if auto_pad in (b'SAME_UPPER', b'SAME_LOWER'):
+        kernel_shape = get_attr(node, 'kernel_shape')
+        conv_flags.pads[0] = conv_flags.pads[2] = kernel_shape[0] // 2
+        conv_flags.pads[1] = conv_flags.pads[3] = kernel_shape[1] // 2
+        if conv_flags.pads[0]*2+1 != kernel_shape[0] or conv_flags.pads[1]*2+1 != kernel_shape[1]:
+            raise NotImplementedError
+
 for idx, n in enumerate(nodes):
     if n.op_type == 'Dropout':
         output = n.output[:1]  # we don't care the second output `mask`
     else:
         output = n.output
     if n.op_type == 'Conv':
-        # https://github.com/onnx/onnx/blob/master/docs/Operators.md#conv
         conv_param_names.add(n.input[1])
-        auto_pad = get_attr(n, 'auto_pad')
-        pads = get_attr(n ,'pads')
-        if auto_pad == b'VALID' or (auto_pad is None and pads == [0, 0, 0, 0]):
-            n.flags.b.generic += op_flag('AUTO_PAD_VALID')
-    if n.op_type == 'Gemm':
-        gemm_param_names.add(n.input[1])
+        infer_auto_pad(n)
     if n.op_type == 'MaxPool':
-        kernel_shape = get_attr(n, 'kernel_shape')
-        if kernel_shape is not None:
-            n.flags.b.kernel_size = kernel_shape[0]
+        kernel_shape = get_attr(n, 'kernel_shape')  # this field is required
+        assert len(kernel_shape) == 2
+        n.flags.b.extra.maxpool.kernel_shape = (ctypes.c_uint8*2)(*kernel_shape)
+        strides = get_attr(n, 'strides')
+        if strides is not None:
+            n.flags.b.extra.maxpool.strides = (ctypes.c_uint8*2)(*strides)
+        else:
+            # "If not present, the stride defaults to 1 along each spatial axis."
+            # https://github.com/onnx/onnx/blob/main/docs/Operators.md#maxpool
+            n.flags.b.extra.maxpool.strides = (ctypes.c_uint8*2)(1, 1)
     if n.op_type in ('MaxPool', 'Conv'):
         stride = get_attr(n, 'strides')[0]
         n.flags.b.stride = stride
-    if n.op_type == 'Reshape' and prev_node and prev_node.op_type == 'MaxPool':
-        prev_node.flags.b.generic += op_flag('NHWC2NCHW')
-    if n.op_type == 'Squeeze':
+    if n.op_type == 'Reshape':
+        prev_node = n
+        while prev_node and prev_node.op_type in inplace_update_ops:
+            prev_node = find_node_by_output(nodes, prev_node.input[0])
+        if prev_node and prev_node.op_type == 'MaxPool':
+            prev_node.flags.b.generic += op_flag('NHWC2NCHW')
+    if n.op_type in ('Squeeze', 'Unsqueeze'):
         axes = get_attr(n, 'axes') or []
         node_flags = n.flags.b.extra.squeeze
         node_flags.axes = 0
         for axis in axes:
             node_flags.axes |= (1 << axis)
+    if n.op_type == 'GemmMerge':
+        n.flags.b.extra.gemmmerge.tile_length = config['gemm_tile_length']
     for output_ in output:
         names[output_] = idx + Constants.N_INPUT
-    prev_node = n
 
 pprint.pprint(names)
 
@@ -379,7 +415,7 @@ def determine_conv_tile_c(n):
 
     is_separate_tiling = False
     if not find_initializer(onnx_model, n.input[0]):
-        input_node = find_node_by_output(onnx_model, n.input[0])
+        input_node = find_node_by_output(onnx_model.graph.node, n.input[0])
         if input_node and input_node.op_type == 'Concat':
             is_separate_tiling = True
 
@@ -393,13 +429,8 @@ def determine_conv_tile_c(n):
 
     max_continuous_channels = CHANNEL
     if is_separate_tiling:
-        max_continuous_channels /= 2
-    if max_continuous_channels % 2:
-        node_flags.input_tile_c = max_continuous_channels
-    else:
-        node_flags.input_tile_c = 1
-        while max_continuous_channels % (node_flags.input_tile_c * 2) == 0 and node_flags.input_tile_c < 128:
-            node_flags.input_tile_c *= 2
+        max_continuous_channels //= 2
+    node_flags.input_tile_c = max_continuous_channels
 
     logger.debug('Initial input_tile_c=%d', node_flags.input_tile_c)
     # ignore the code if you want to fix tile size
@@ -429,8 +460,8 @@ def determine_conv_tile_c(n):
             if params_len < config['intermediate_values_size']:
                 break
             logger.debug(f'params_len={params_len}, too high!')
+        assert node_flags.input_tile_c / 2 * 2 == node_flags.input_tile_c
         node_flags.input_tile_c //= 2
-        assert node_flags.input_tile_c
         logger.debug('input_tile_c=%d', node_flags.input_tile_c)
     node_flags.output_tile_c = output_tile_c
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
@@ -453,13 +484,11 @@ def determine_gemm_tile_sizes(n):
     # writing a batch at a time is simpler and faster
     tile_size_unit = config['op_filters']
 
-    node_flags.tile_width = tile_size_unit
-
     while True:
-        logger.debug("tile_width=%d", node_flags.tile_width)
         # LEA wants addresses to be 4 byte-aligned, or 2 Q15-aligned
-        node_flags.tile_channel = int(min([(Constants.ARM_PSTATE_LEN / node_flags.tile_width) / 2 * 2 - 2, B_rows])) // tile_size_unit * tile_size_unit
-        full_tile_width = (extend_for_footprints(node_flags.tile_width)+1)/2*2
+        node_flags.tile_channel = min([(Constants.ARM_PSTATE_LEN / tile_size_unit) / 2 * 2 - 2, B_rows,
+                                       (config['gemm_tile_length'] or float('inf'))]) // tile_size_unit * tile_size_unit
+        full_tile_width = (extend_for_footprints(tile_size_unit)+1)/2*2
         while node_flags.tile_channel > 0:
             tmp = int(math.ceil(B_rows / node_flags.tile_channel))
             needed_mem = (A_rows * A_cols + 2) + (node_flags.tile_channel + 2) * full_tile_width + A_rows * full_tile_width
@@ -470,14 +499,8 @@ def determine_gemm_tile_sizes(n):
         logger.debug("tile_channel = %d", node_flags.tile_channel)
         if node_flags.tile_channel > 0:
             break
-        assert node_flags.tile_width % tile_size_unit == 0
-        node_flags.tile_width += tile_size_unit
 
-    while node_flags.tile_width * (node_flags.tile_channel + 2) > Constants.ARM_PSTATE_LEN:
-        assert node_flags.tile_width > tile_size_unit
-        node_flags.tile_width -= tile_size_unit
-    print("channel: {}".format(node_flags.tile_channel))
-    print("width: {}".format(node_flags.tile_width))
+    assert tile_size_unit * (node_flags.tile_channel + 2) <= Constants.ARM_PSTATE_LEN
 
 graph = []
 for n in nodes:
@@ -534,38 +557,19 @@ def to_bytes(arr, size=16):
     return struct.pack('%u%c' % (len(arr), FORMAT_CHARS[size]), *arr)
 
 def nchw2nhwc(arr, dims):
-    N, C, H, W = dims
-    ret = [0] * (N * C * H * W)
-    for n in range(N):
-        for c in range(C):
-            for h in range(H):
-                for w in range(W):
-                    old_idx = n * C * H * W + c * H * W + h * W + w
-                    new_idx = n * H * W * C + h * W * C + w * C + c
-                    ret[new_idx] = arr[old_idx]
-    return ret, (N, H, W, C)
-if args.sparse:
-    outputs = {
-        'parameters': io.BytesIO(),
-        'cols': io.BytesIO(),
-        'rows': io.BytesIO(),
-        'samples': io.BytesIO(),
-        'model': io.BytesIO(),
-        'nodes': io.BytesIO(),
-        'model_parameters_info': io.BytesIO(),
-        'intermediate_parameters_info': io.BytesIO(),
-        'labels': io.BytesIO(),
-    }
-else:
-    outputs = {
-        'parameters': io.BytesIO(),
-        'samples': io.BytesIO(),
-        'model': io.BytesIO(),
-        'nodes': io.BytesIO(),
-        'model_parameters_info': io.BytesIO(),
-        'intermediate_parameters_info': io.BytesIO(),
-        'labels': io.BytesIO(),
-    }
+    arr = np.reshape(arr, dims)  # Change flattened to 4-D
+    arr = np.transpose(arr, axes=(0, 2, 3, 1))  # NCHW -> NHWC
+    return arr.flatten()  # Change it back to flattened
+
+outputs = {
+    'parameters': io.BytesIO(),
+    'samples': io.BytesIO(),
+    'model': io.BytesIO(),
+    'nodes': io.BytesIO(),
+    'model_parameters_info': io.BytesIO(),
+    'intermediate_parameters_info': io.BytesIO(),
+    'labels': io.BytesIO(),
+}
 
 Constants.MODEL_NODES_LEN = len(graph)
 
@@ -624,7 +628,9 @@ for node in graph:
         output_nodes.write(to_bytes(0))
     output_nodes.write(to_bytes(node.max_output_id))
     output_nodes.write(to_bytes(ops.index(node.op_type)))
-    output_nodes.write(to_bytes(node.flags.as_bytes, size=64))
+    assert ctypes.sizeof(node.flags.as_bytes) == ctypes.sizeof(node.flags.b)
+    for idx in range(ctypes.sizeof(node.flags.as_bytes)):
+        output_nodes.write(to_bytes(node.flags.as_bytes[idx], size=8))
     if Constants.HAWAII:
         for _ in range(2):
             output_nodes.write(to_bytes(0, size=32))  # Node::Footprint
@@ -713,6 +719,7 @@ for params in parameters:
 
             model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
             model_parameters_info.write(to_bytes(data_len * 2, size=32))  # A _q15 is 16-bit
+            '''
             # XXX: adjuct the length of cols and rows
             if args.sparse:
                 model_parameters_info.write(to_bytes(len(cols), size=32))  # cols_offset
@@ -723,6 +730,12 @@ for params in parameters:
                 slot.rows.write(to_bytes(rows))
 
             slot.offset += 2 * len(int_data_Q15)
+            '''
+            if params.name in conv_param_names:
+                logger.info('Reorder conv param %s', params.name)
+                float_data = nchw2nhwc(float_data, params.dims)
+            slot.target.write(to_bytes(_Q15(np.array(float_data) / config['scale'], 'Parameter')))
+            slot.offset += 2 * len(float_data)
             model_parameters_info.write(to_bytes(16, size=8)) # bitwidth
         elif params.data_type == onnx.TensorProto.INT64:
             if params.int64_data:
@@ -778,8 +791,19 @@ for idx, n in enumerate(nodes):
     intermediate_parameters_info.write(to_bytes(parameter_info_idx))             # parameter_info_idx
     parameter_info_idx += 1
 
+def ensure_channel_last(images, data_layout):
+    if data_layout in (DataLayout.NEUTRAL, DataLayout.NHWC, DataLayout.NWC):
+        return images
+    elif data_layout == DataLayout.NCW:
+        return np.transpose(images, axes=(0, 2, 1))  # NCW => NWC
+    elif data_layout == DataLayout.NCHW:
+        return np.transpose(images, axes=(0, 2, 3, 1))  # NCHW => NHWC
+    else:
+        raise NotImplementedError
+
+images = ensure_channel_last(model_data.images, model_data.data_layout)
 for idx in range(model_data.images.shape[0]):
-    im = model_data.images[idx, :]
+    im = images[idx, :]
     # load_data returns NCHW
     # https://stackoverflow.com/a/34794744
     outputs['samples'].write(to_bytes(_Q15(im.flatten(order='C') / config['input_scale'], 'Input')))
@@ -868,6 +892,17 @@ struct Node;
                     }}
                 }}
             '''))
+        else:
+            output_c.write(textwrap.dedent(f'''
+                void __attribute__((weak)) alloc_{op.lower()}(struct Model *model, const struct ParameterInfo *[], struct ParameterInfo *output, const struct Node*) {{
+                    ERROR_OCCURRED();
+                }}
+            '''))
+        output_c.write(textwrap.dedent(f'''
+            void __attribute__((weak)) handle_{op.lower()}(struct Model *model, const struct ParameterInfo *[], struct ParameterInfo *output, const struct Node*) {{
+                ERROR_OCCURRED();
+            }}
+        '''))
 
     # data
     for idx, name in enumerate(other_flags):

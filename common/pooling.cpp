@@ -5,6 +5,7 @@
 #include "intermittent-cnn.h"
 #include "op_utils.h"
 #include "my_dsplib.h"
+#include "platform.h"
 
 struct MaxPoolParams {
     uint16_t output_h;
@@ -12,25 +13,34 @@ struct MaxPoolParams {
     uint16_t start_channel;
     uint8_t n_channels;
     uint8_t need_nhwc2nchw;
+    uint16_t new_H;
     uint16_t new_W;
-    const NodeFlags* flags;
+    const MaxPoolFlags* flags;
     const ParameterInfo *data;
     const ParameterInfo *output;
     Model *model;
 };
 static MaxPoolParams maxpool_params_obj;
 
+enum {
+    KERNEL_SHAPE_H = 0,
+    KERNEL_SHAPE_W = 1,
+    STRIDE_H = 0,
+    STRIDE_W = 1,
+};
+
 void alloc_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
-    uint16_t stride = node->flags.stride;
 
     const ParameterInfo *data = input[0];
 
     const uint16_t H = data->dims[2], W = data->dims[3];
     uint16_t CHANNEL = data->dims[1];
-    uint16_t new_H = H / stride;
 
     MaxPoolParams* maxpool_params = &maxpool_params_obj;
-    maxpool_params->new_W = W / stride;
+    maxpool_params->flags = &(node->flags.extra.maxpool);
+
+    maxpool_params->new_H = H / maxpool_params->flags->strides[STRIDE_H];
+    maxpool_params->new_W = W / maxpool_params->flags->strides[STRIDE_W];
     maxpool_params->need_nhwc2nchw = (node->flags.generic == NHWC2NCHW);
 
 #if JAPARI
@@ -40,18 +50,19 @@ void alloc_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *ou
     }
 #endif
 
-    output->params_len = new_H * maxpool_params->new_W * CHANNEL * sizeof(int16_t);
+    output->params_len = maxpool_params->new_H * maxpool_params->new_W * CHANNEL * sizeof(int16_t);
     output->slot = get_next_slot(model, data);
     output->dims[0] = 1;
     output->dims[1] = CHANNEL;
-    output->dims[2] = new_H;
+    output->dims[2] = maxpool_params->new_H;
     output->dims[3] = maxpool_params->new_W;
+    if (maxpool_params->need_nhwc2nchw) {
+        output->param_flags |= CHANNEL_FIRST;
+    }
 }
 
 static uint8_t maxpool_patch(MaxPoolParams *maxpool_params) {
     const uint16_t CHANNEL = maxpool_params->data->dims[1], W = maxpool_params->data->dims[3];
-    uint16_t stride = maxpool_params->flags->stride;
-    uint16_t kernel_size = maxpool_params->flags->kernel_size;
 
     int16_t offset_h, offset_w;
     offset_h = W * CHANNEL;
@@ -69,9 +80,10 @@ static uint8_t maxpool_patch(MaxPoolParams *maxpool_params) {
     // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=60165
     uint8_t output_channel_offset = 0;
 
-    for (uint16_t sH = 0; sH < kernel_size; sH++) {
-        for (uint16_t sW = 0; sW < kernel_size; sW++) {
-            uint16_t val_offset = (maxpool_params->output_h*stride+sH) * offset_h + (maxpool_params->output_w*stride+sW) * offset_w + maxpool_params->start_channel;
+    for (uint16_t sH = 0; sH < maxpool_params->flags->kernel_shape[KERNEL_SHAPE_H]; sH++) {
+        for (uint16_t sW = 0; sW < maxpool_params->flags->kernel_shape[KERNEL_SHAPE_W]; sW++) {
+            uint16_t val_offset = (maxpool_params->output_h*maxpool_params->flags->strides[STRIDE_H]+sH) * offset_h +
+                                  (maxpool_params->output_w*maxpool_params->flags->strides[STRIDE_W]+sW) * offset_w + maxpool_params->start_channel;
             my_memcpy_from_param(maxpool_params->model, input_buffer, maxpool_params->data, val_offset, maxpool_params->n_channels * sizeof(int16_t));
             output_channel_offset = 0;
             for (uint8_t input_channel_offset = 0; input_channel_offset < maxpool_params->n_channels; input_channel_offset++) {
@@ -137,24 +149,15 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
     MaxPoolParams* maxpool_params = &maxpool_params_obj;
     maxpool_params->data = data;
     maxpool_params->output = output;
-    maxpool_params->flags = &node->flags;
     maxpool_params->model = model;
 
-    uint16_t stride = maxpool_params->flags->stride;
-
-    const uint16_t CHANNEL = data->dims[1], H = data->dims[2], OUTPUT_CHANNEL = output->dims[1];
-    uint16_t new_H = H / stride;
+    const uint16_t CHANNEL = data->dims[1], OUTPUT_CHANNEL = output->dims[1];
 
     uint16_t output_h = 0, output_w = 0, c = 0;
     uint16_t output_offset = 0;
 
 #if INTERMITTENT
-    uint32_t first_unfinished_value_offset = job_index_to_offset(output, run_recovery(model, output));
-#if JAPARI
-    first_unfinished_value_offset -= BATCH_SIZE;
-#else
-    first_unfinished_value_offset -= (BATCH_SIZE - 1);
-#endif
+    uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
     if (first_unfinished_value_offset * sizeof(int16_t) == output->params_len) {
         // give up early, or initial_real_tile_c may be zero and results in SIGFPE
         goto finished;
@@ -177,12 +180,12 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
         first_unfinished_value_offset /= OUTPUT_CHANNEL;
         initial_w = first_unfinished_value_offset % maxpool_params->new_W;
         first_unfinished_value_offset /= maxpool_params->new_W;
-        initial_h = first_unfinished_value_offset % new_H;
+        initial_h = first_unfinished_value_offset % maxpool_params->new_H;
     } else {
         initial_w = first_unfinished_value_offset % maxpool_params->new_W;
         first_unfinished_value_offset /= maxpool_params->new_W;
-        initial_h = first_unfinished_value_offset % new_H;
-        first_unfinished_value_offset /= new_H;
+        initial_h = first_unfinished_value_offset % maxpool_params->new_H;
+        first_unfinished_value_offset /= maxpool_params->new_H;
         initial_c = first_unfinished_value_offset % OUTPUT_CHANNEL;
     }
     output_h = initial_h;
@@ -196,7 +199,7 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
     {
         if (!maxpool_params->need_nhwc2nchw) {
             // NHWC
-            for (; output_h < new_H; output_h++) {
+            for (; output_h < maxpool_params->new_H; output_h++) {
                 maxpool_params->output_h = output_h;
                 for (; output_w < maxpool_params->new_W; output_w++) {
                     uint8_t len = OUTPUT_CHANNEL - c;
@@ -207,10 +210,12 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
                     my_printf_debug("output_offset=[% 5d, % 5d) ", output_offset, output_offset + len);
 #if INDIRECT_RECOVERY
                     check_next_turning_point(offset, output_turning_point_idx, next_output_turning_point, output_slot_info, output_offset);
+                    start_cpu_counter();
 #if STATEFUL
                     my_scale_q15(lea_buffer, 0x4000, 0, lea_buffer, len * sizeof(int16_t));
 #endif
                     offset_vector(lea_buffer, offset, len, output_offset, next_output_turning_point);
+                    stop_cpu_counter(&Counters::embedding);
 #endif
 #if MY_DEBUG >= MY_DEBUG_VERBOSE
                     // need a space as dump_value does not append spaces when DUMP_INTEGERS is not defined
@@ -249,7 +254,7 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
                     continue;
                 }
 #endif
-                for (; output_h < new_H; output_h++) {
+                for (; output_h < maxpool_params->new_H; output_h++) {
                     maxpool_params->output_h = output_h;
 #if !JAPARI
                     maxpool_params->output_w = output_w;
@@ -360,10 +365,12 @@ void handle_globalaveragepool(Model *model, const ParameterInfo *input[], Parame
                     // Input is from Conv, which uses NHWC
                     int16_t val = get_q15_param(model, data, h * W * CHANNEL + w * CHANNEL + input_channel);
 #if STATEFUL
+                    start_cpu_counter();
                     if (offset_has_state(input_channel)) {
                         strip_state(&val);
                     }
                     val *= 2;
+                    stop_cpu_counter(&Counters::stripping);
 #endif
                     total += val;
                 }

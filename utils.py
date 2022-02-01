@@ -1,4 +1,6 @@
+import enum
 import fcntl
+import functools
 import itertools
 import logging
 import os.path
@@ -8,6 +10,7 @@ import re
 import struct
 import sys
 import tarfile
+import zipfile
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
 from urllib.request import urlretrieve
 
@@ -23,9 +26,30 @@ OPS_WITH_MERGE = ['Conv', 'Gemm']
 
 TOPDIR = pathlib.Path(__file__).absolute().parent
 
+class DataLayout(enum.Enum):
+    NEUTRAL = 0
+    NCW = 1
+    NWC = 2
+    NCHW = 3
+    NHWC = 4
+
 class ModelData(NamedTuple):
     labels: List[int]
     images: np.array
+    data_layout: DataLayout
+
+def extract_archive(archive_path: pathlib.Path, subdir: str):
+    archive_dir = archive_path.with_name(subdir)
+    if not archive_dir.exists():
+        if '.tar' in str(archive_path):
+            with tarfile.open(archive_path) as tar:
+                members = [member for member in tar.getmembers() if member.name.startswith(subdir)]
+                tar.extractall(archive_path.parent, members=members)
+        elif str(archive_path).endswith('.zip'):
+            with zipfile.ZipFile(archive_path) as zip_f:
+                members = [member for member in zip_f.namelist() if member.startswith(subdir)]
+                zip_f.extractall(archive_path.parent, members=members)
+    return archive_dir
 
 def load_data_mnist(start: int, limit: int) -> ModelData:
     images = []
@@ -56,18 +80,11 @@ def load_data_mnist(start: int, limit: int) -> ModelData:
             if limit is not None and counter >= limit:
                 break
 
-    return ModelData(labels=labels, images=np.array(images, dtype=np.float32))
+    return ModelData(labels=labels, images=np.array(images, dtype=np.float32), data_layout=DataLayout.NCHW)
 
 def load_data_cifar10(start: int, limit: int) -> ModelData:
-    def extract_archive(archive_path):
-        archive_dir = archive_path.with_name('cifar-10-batches-py')
-        if not archive_dir.exists():
-            with tarfile.open(archive_path) as tar:
-                tar.extractall(archive_path.parent)
-        return archive_dir
-
     archive_dir = download_file('https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz',
-                                'cifar-10-python.tar.gz', extract_archive)
+                                'cifar-10-python.tar.gz', functools.partial(extract_archive, subdir='cifar-10-batches-py'))
 
     with open(archive_dir / 'test_batch', 'rb') as f:
         test_data = pickle.load(f, encoding='bytes')
@@ -84,7 +101,8 @@ def load_data_cifar10(start: int, limit: int) -> ModelData:
         im = im / 256
         im = np.moveaxis(im, 0, -1)
         images.append(im)
-    return ModelData(labels=labels, images=np.array(images, dtype=np.float32))
+    # XXX: the actual data layout is NCHW, while the first node is Transpose - take the resultant
+    return ModelData(labels=labels, images=np.array(images, dtype=np.float32), data_layout=DataLayout.NHWC)
 
 GOOGLE_SPEECH_URL = 'https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz'
 GOOGLE_SPEECH_SAMPLE_RATE = 16000
@@ -130,10 +148,24 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
             mfccs.append(mfcc[0])
 
 
-    return ModelData(labels=labels, images=np.array(mfccs, dtype=np.float32))
+    return ModelData(labels=labels, images=np.array(mfccs, dtype=np.float32), data_layout=DataLayout.NEUTRAL)
 
 def kws_dnn_model():
     return download_file('https://github.com/ARM-software/ML-KWS-for-MCU/raw/master/Pretrained_models/DNN/DNN_S.pb', 'KWS-DNN_S.pb')
+
+def load_har(start: int, limit: int):
+    try:
+        orig_sys_path = sys.path.copy()
+        sys.path.append(str(TOPDIR / 'data' / 'deep-learning-HAR' / 'utils'))
+        from utilities import read_data, standardize
+
+        archive_dir = download_file('https://archive.ics.uci.edu/ml/machine-learning-databases/00240/UCI%20HAR%20Dataset.zip',
+                                    filename='UCI HAR Dataset.zip', post_processor=functools.partial(extract_archive, subdir='UCI HAR Dataset'))
+        X_test, labels_test, _ = read_data(archive_dir, split='test')
+        _, X_test = standardize(np.random.rand(*X_test.shape), X_test)
+        return ModelData(labels=labels_test[:limit]-1, images=X_test[:limit, :, :].astype(np.float32), data_layout=DataLayout.NCW)
+    finally:
+        sys.path = orig_sys_path
 
 def download_file(url: str, filename: str, post_processor: Optional[Callable] = None) -> os.PathLike:
     xdg_cache_home = pathlib.Path(os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')))
@@ -206,8 +238,8 @@ def find_tensor_value_info(onnx_model: onnx.ModelProto, name: str) -> onnx.Value
             return value_info
     raise ValueError(f'No value_info found for {name}')
 
-def find_node_by_output(onnx_model: onnx.ModelProto, output_name: str) -> onnx.NodeProto:
-    for node in onnx_model.graph.node:
+def find_node_by_output(nodes: List[onnx.NodeProto], output_name: str) -> onnx.NodeProto:
+    for node in nodes:
         for output in node.output:
             if output == output_name:
                 return node
@@ -241,8 +273,15 @@ def get_model_ops(onnx_model):
 def load_model(config):
     # https://github.com/onnx/onnx/blob/master/docs/PythonAPIOverview.md
     onnx_model = onnx.load_model(TOPDIR / config['onnx_model'])
+
+    # onnxoptimizer requires known dimensions, so set the batch size=1.
+    # The batch size will be changed to a variable after dynamic_shape_inference, anyway.
+    # https://github.com/onnx/optimizer/blob/v0.2.6/onnxoptimizer/passes/fuse_matmul_add_bias_into_gemm.h#L60
+    change_batch_size(onnx_model)
+
     # https://zhuanlan.zhihu.com/p/41255090
     onnx_model = onnxoptimizer.optimize(onnx_model, [
+        'eliminate_nop_dropout',
         'extract_constant_to_initializer',
         'fuse_add_bias_into_conv',
         'fuse_matmul_add_bias_into_gemm',
@@ -277,8 +316,22 @@ def onnxruntime_get_intermediate_tensor(model, image):
     outputs = rep.run(image)
     for idx, output in enumerate(outputs):
         output_name = tmp_model.graph.output[idx].name
-        node = find_node_by_output(tmp_model, output_name)
+        node = find_node_by_output(tmp_model.graph.node, output_name)
         yield output_name, node.op_type, output
+
+def change_batch_size(onnx_model: onnx.ModelProto):
+    g = onnx_model.graph
+    initializer_names = set([initializer.name for initializer in g.initializer])
+    constant_names = set([node.output[0] for node in g.node if node.op_type == 'Constant'])
+    for value_info in itertools.chain(g.value_info, g.input, g.output):
+        if value_info.name in initializer_names or value_info.name in constant_names:
+            continue
+        shape = value_info.type.tensor_type.shape
+        if shape.dim and shape.dim[0].dim_param:
+            shape.dim[0].dim_value = 1
+
+    # make sure above steps did not break the model
+    onnx.shape_inference.infer_shapes(onnx_model)
 
 def dynamic_shape_inference(onnx_model: onnx.ModelProto, sample_size: Iterable[int]) -> None:
     for node in itertools.chain(onnx_model.graph.input, onnx_model.graph.output):
