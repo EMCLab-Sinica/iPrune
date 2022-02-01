@@ -16,11 +16,11 @@ import models
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 from util import *
-
+from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
 
 def save_state(model, acc):
-    print('==> Saving model ...')
+    # print('==> Saving model ...')
     state = {
             'acc': acc,
             'state_dict': model.state_dict(),
@@ -54,7 +54,10 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        loss = criterion(output, target)
+        if args.arch == 'LeNet_5_p':
+            loss = F.nll_loss(output, target)
+        else:
+            loss = criterion(output, target)
         loss.backward()
         optimizer.step()
         if args.prune:
@@ -81,7 +84,10 @@ def test(evaluate=False):
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
         output = model(data)
-        test_loss += criterion(output, target).item()
+        if args.arch == 'LeNet_5_p':
+            test_loss += F.nll_loss(output, target, reduction='sum').item()
+        else:
+            test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -91,18 +97,18 @@ def test(evaluate=False):
         if not evaluate:
             save_state(model, best_acc)
 
-    if args.prune == None or evaluate:
-        test_loss /= len(test_loader.dataset)
-        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-            test_loss * args.batch_size, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)))
-        print('Best Accuracy: {:.2f}%\n'.format(best_acc))
+    #if args.prune == None or evaluate:
+    test_loss /= len(test_loader.dataset)
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        test_loss * args.batch_size, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+    print('Best Accuracy: {:.2f}%\n'.format(best_acc))
     return
 
 def adjust_learning_rate(optimizer, epoch):
     """Sets the learning rate to the initial LR decayed by 10 every 15 epochs"""
     lr = args.lr * (0.1 ** (epoch // args.lr_epochs))
-    print('Learning rate:', lr)
+    # print('Learning rate:', lr)
     for param_group in optimizer.param_groups:
         if args.retrain and ('mask' in param_group['key']): # retraining
             param_group['lr'] = 0.0
@@ -159,7 +165,8 @@ if __name__=='__main__':
             help='candidates of pruning ratios for weight pruning')
     parser.add_argument('--with_sen', action='store_true', default=False,
             help='w/ or w/o sensitivity analysis')
-
+    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
+            help='Learning rate step gamma (default: 0.7)')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -178,15 +185,17 @@ if __name__=='__main__':
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
     # generate the model
-    if args.arch == 'LeNet_5':
+    if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
         train_loader = torch.utils.data.DataLoader(
                 datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
                 batch_size=args.batch_size, shuffle=True, **kwargs)
         test_loader = torch.utils.data.DataLoader(
                 datasets.MNIST('data', train=False, transform=transforms.ToTensor()),
                 batch_size=args.test_batch_size, shuffle=True, **kwargs)
-
-        model = models.LeNet_5(args.prune)
+        if args.arch == 'LeNet_5':
+            model = models.LeNet_5(args.prune)
+        else:
+            model = models.LeNet_5_p(args.prune)
     elif args.arch == 'SqueezeNet':
         train_loader = torch.utils.data.DataLoader(
                 datasets.CIFAR10('data', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
@@ -231,6 +240,9 @@ if __name__=='__main__':
                 weight_decay=args.weight_decay)
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
+    elif args.arch == 'LeNet_5_p':
+        optimizer = optim.Adadelta(params, lr=args.lr)
+        scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     criterion = nn.CrossEntropyLoss()
 
@@ -248,7 +260,7 @@ if __name__=='__main__':
         if not args.pretrained:
             print('==> ERROR: Please assign the pretrained model')
             exit()
-        if args.arch == 'LeNet_5':
+        if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
             input_shape = (1, 28, 28)
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
@@ -261,8 +273,11 @@ if __name__=='__main__':
                 pass
             train(epoch)
             test()
+            if args.arch == 'LeNet_5_p':
+                scheduler.step()
+
         test(evaluate=True)
-        prune_op.print_info()
+        # prune_op.print_info()
     else:
         for epoch in trange(1, args.epochs + 1):
             if args.arch == 'LeNet_5':

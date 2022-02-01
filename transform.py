@@ -433,6 +433,8 @@ def determine_conv_tile_c(n):
         assert node_flags.input_tile_c
         logger.debug('input_tile_c=%d', node_flags.input_tile_c)
     node_flags.output_tile_c = output_tile_c
+    print('input_tile_c: {}'.format(node_flags.input_tile_c))
+    print('output_tile_c: {}'.format(node_flags.output_tile_c))
     '''
     node_flags.input_tile_c = 1
     node_flags.output_tile_c = 1
@@ -456,7 +458,7 @@ def determine_gemm_tile_sizes(n):
     while True:
         logger.debug("tile_width=%d", node_flags.tile_width)
         # LEA wants addresses to be 4 byte-aligned, or 2 Q15-aligned
-        node_flags.tile_channel = min([(Constants.ARM_PSTATE_LEN / node_flags.tile_width) / 2 * 2 - 2, B_rows]) // tile_size_unit * tile_size_unit
+        node_flags.tile_channel = int(min([(Constants.ARM_PSTATE_LEN / node_flags.tile_width) / 2 * 2 - 2, B_rows])) // tile_size_unit * tile_size_unit
         full_tile_width = (extend_for_footprints(node_flags.tile_width)+1)/2*2
         while node_flags.tile_channel > 0:
             tmp = int(math.ceil(B_rows / node_flags.tile_channel))
@@ -474,6 +476,8 @@ def determine_gemm_tile_sizes(n):
     while node_flags.tile_width * (node_flags.tile_channel + 2) > Constants.ARM_PSTATE_LEN:
         assert node_flags.tile_width > tile_size_unit
         node_flags.tile_width -= tile_size_unit
+    print("channel: {}".format(node_flags.tile_channel))
+    print("width: {}".format(node_flags.tile_width))
 
 graph = []
 for n in nodes:

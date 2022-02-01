@@ -1,7 +1,15 @@
 import onnx, onnx.numpy_helper
 import argparse
 import numpy as np
+import os
+import sys
 from scipy.sparse import csr_matrix
+from config import config
+
+cwd = os.getcwd()
+sys.path.append(cwd+'/../')
+
+from util import *
 
 def printArgs(args):
     print('\n => Setting params:')
@@ -33,10 +41,10 @@ def getJob(node, output_shape):
     data = bsr.data
     cols = bsr.indices
     rows = bsr.indptr
-    if len(output_shape) == 4:
+    if len(node['dims']) == 4:
         print('cols: {}'.format(len(cols)))
-        return len(cols) * output_shape[2] * output_shape[3]
-    elif len(output_shape) == 2:
+        return len(cols) * output_shape[0] * output_shape[1]
+    elif len(node['dims']) == 2:
         print('cols: {}'.format(len(cols)))
         return len(cols)
 
@@ -60,25 +68,12 @@ def printGroups(node):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--onnx_model', action='store', default=None)
-    parser.add_argument('--arch', action='store', default='LeNet_5')
-    parser.add_argument('--prune', action='store', default='intermittent', help='Pruning methods: intermittent | energy')
-    parser.add_argument('--group', action='store', type=int, default=5, help='Group size')
+    parser.add_argument('--arch', action='store', default='LeNet_5', help='the network architecture: LeNet_5 | SqueezeNet')
+    parser.add_argument('--group', action='store', type=int, default=2, help='Group size')
     args = parser.parse_args()
     printArgs(args)
 
     graph = []
-    if args.prune == None:
-        print('ERROR: Please choose the correct pruning strategies: {intermittent | energy}')
-        exit()
-
-    if args.prune == 'intermittent':
-        pass
-    elif args.prune == 'energy':
-        pass
-
-    if args.onnx_model == None:
-        print('ERROR: Please choose the pruned model')
-        exit()
 
     model = onnx.load(args.onnx_model)
     '''
@@ -97,25 +92,26 @@ if __name__ == '__main__':
         matrix = onnx.numpy_helper.to_array(node)
         if node.name in main_names:
             matrix = lowering(matrix, shape)
+            print(matrix.shape)
             matrix = toBSR(matrix, shape, args.group)
-        sparse_node = {
-            'dims': shape,
-            'weights': matrix
-        }
-        graph.append(sparse_node)
+            sparse_node = {
+                'dims': shape,
+                'weights': matrix
+            }
+            graph.append(sparse_node)
 
     # getVal(graph[], 0)
     # printGroups(graph[2])
-    output_shape = [[1,8,28,28], [1,20,14,14], [1, 256], [1, 10]]
+    model_info = config[args.arch]
+    output_shapes = [layer['output'] for layer in model_info]
+    print(output_shapes)
+    node_idx = 0;
     total_job = 0
-    job = getJob(graph[0], output_shape[0])
-    total_job += job
-    job = getJob(graph[2], output_shape[1])
-    total_job += job
-    job = getJob(graph[4], output_shape[2])
-    total_job += job
-    job = getJob(graph[6], output_shape[3])
-    total_job += job
+    for idx, n in enumerate(model.graph.node):
+        if n.op_type == 'Conv' or n.op_type == 'Gemm':
+            job = getJob(graph[node_idx], output_shapes[node_idx])
+            total_job += job
+            node_idx += 1
     print('total_job: {}'.format(total_job))
 
 

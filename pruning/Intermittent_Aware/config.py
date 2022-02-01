@@ -27,8 +27,8 @@ config = {
             'filter': [1,1,64*4*4,256],
             'output': [1,1,256],
             'tile': {
-                'input': [1,1,64*4*4],
-                'weight': [1,1,64*4*4,4]
+                'input': [1,1,256],
+                'weight': [1,1,256,4]
             },
             'group': [1, 1, 2],
             'stride': 1
@@ -43,9 +43,55 @@ config = {
             },
             'group': [1, 1, 2],
             'stride': 1
-            }
-        ],
-        'SqueezeNet': [
+        }
+    ],
+    'LeNet_5_p': [
+        {
+            'input': [28,28,1],
+            'filter': [3,3,1,8],
+            'output': [26,26,8],
+            'tile': {
+                'input': [8,3,1],
+                'weight': [3,3,1,8]
+            },
+            'group': [1, 1, 2],
+            'stride': 1
+        },
+        {
+            'input': [26,26,8],
+            'filter': [3,3,8,16],
+            'output': [24,24,16],
+            'tile': {
+                'input': [8,3,8],
+                'weight': [3,3,8,16]
+            },
+            'group': [1, 1, 2],
+            'stride': 1
+        },
+        {
+            'input': [1,1,2304],
+            'filter': [1,1,2304,128],
+            'output': [1,1,128],
+            'tile': {
+                'input': [1,1,2172],
+                'weight': [1,1,2172,4]
+            },
+            'group': [1, 1, 2],
+            'stride': 1
+        },
+        {
+            'input': [1,1,128],
+            'filter': [1,1,128,10],
+            'output': [1,1,10],
+            'tile': {
+                'input': [1,1,128],
+                'weight': [1,1,128,4]
+            },
+            'group': [1, 1, 2],
+            'stride': 1
+        }
+    ],
+    'SqueezeNet': [
         #0
         {
             'input': [32,32,3],

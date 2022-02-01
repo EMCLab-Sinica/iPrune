@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import math
-from config import config
+import models
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -15,6 +15,7 @@ from torchsummary import summary
 from torch.autograd import Variable
 from itertools import chain
 from collections import OrderedDict
+from config import config
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
@@ -117,6 +118,26 @@ def lowering(tensor, shape):
 def toBSR(matrix, group):
     bsr = csr_matrix(matrix).tobsr(group)
     return bsr
+
+def to_onnx(source, name, args):
+    if args.arch == 'LeNet_5':
+        model = models.LeNet_5(None)
+        input_shape = (1,28,28)
+        dummy_input = Variable(torch.randn(1, 1, 28, 28))
+    elif args.arch == 'SqueezeNet':
+        model = models.SqueezeNet(None)
+        input_shape = (1,32,32)
+        dummy_input = Variable(torch.randn(1, 3, 32, 32))
+    # https://discuss.pytorch.org/t/missing-keys-unexpected-keys-in-state-dict-when-loading-self-trained-model/22379/14
+    state_dict = torch.load(source)['state_dict']
+    model.load_state_dict(state_dict)
+    converted_name = "./Intermittent_Aware/onnx_models/{}.onnx".format(args.arch)
+    torch.onnx.export(model, dummy_input, converted_name)
+    print('Converted model: {}'.format(converted_name))
+    return
+
+def open():
+    pass
 
 class beta_penalty():
     def __init__(self, model, penalty, lr, prune_target):
@@ -299,8 +320,8 @@ class Prune_Op():
                     metrics.append(metric)
                 elif self.args.prune == 'energy':
                     metric, (vm_access, nvm_access) = self.getReuse(m, (1, self.width), output_shapes, node_idx)
-                    print('vm access: {}'.format(vm_access))
-                    print('nvm access: {}'.format(nvm_access))
+                    # print('vm access: {}'.format(vm_access))
+                    # print('nvm access: {}'.format(nvm_access))
                     metrics.append(metric)
                 node_idx += 1
         print(output_shapes)
@@ -310,6 +331,7 @@ class Prune_Op():
         for i in range(len(order)):
             pruning_ratios[order[i]] = candidates[i]
         print('pruning_ratios: {}'.format(pruning_ratios))
+        exit()
         return pruning_ratios
 
     def setPruningRatios2(self, model, total_pruning_ratio = 0.5):
@@ -450,10 +472,11 @@ class Prune_Op():
         return PR, metrics_sort, indices
 
     def getJobs(self, node, group_size, output_shapes, node_idx):
+        width = math.prod(group_size)
         shape = node.weight.data.shape
         matrix = node.weight.data
         matrix = matrix.reshape(shape[0], -1)
-        append_size = self.width - matrix.shape[1]%self.width
+        append_size = width - matrix.shape[1]%width
         matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
         matrix = matrix.cpu()
         bsr = csr_matrix(matrix).tobsr(group_size)
@@ -476,6 +499,8 @@ class Prune_Op():
         matrix = node.weight.data
         matrix = matrix.reshape(shape[0], -1)
         append_size = self.width - matrix.shape[1]%self.width
+        if append_size == self.width:
+            append_size = 0
         matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1).cpu()
         bsr = csr_matrix(matrix).tobsr(group_size)
         data = bsr.data
@@ -491,12 +516,14 @@ class Prune_Op():
         vm_read_weights = 0
         vm_read_inputs = 0
         if isinstance(node, nn.Linear):
+            print("Node: {}".format(node_idx))
             # input stationary
             nvm_read_inputs += layer_config['input'][2]
             for i in range(1, len(rows)):
                 if rows[i] - rows[i - 1] != 0:
                     # TODO: indexing cost
                     nvm_read_weights += (rows[i] - rows[i - 1]) * self.width
+                    # XXX: All channels can't be loaded in a weight tile
                     nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
                     vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
                     vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
@@ -506,19 +533,27 @@ class Prune_Op():
 
         elif isinstance(node, nn.Conv2d):
             # weight stationary
-            nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
+            n_input_nvm_access = min(math.ceil((len(cols) * self.width) / math.prod(layer_config['tile']['weight'])), layer_config['filter'][3] / layer_config['tile']['weight'][3])
+            print("Node: {}".format(node_idx))
+            print("n_nvm_input: {}".format(n_input_nvm_access))
+            # nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
+            nvm_access_per_ifm = n_input_nvm_access * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
             nvm_read_inputs += math.prod(layer_config['input']) * nvm_access_per_ifm
             for i in range(1, len(rows)):
                 if rows[i] != rows[i - 1]:
                     # TODO: indexing cost
                     nvm_read_weights += (rows[i] - rows[i - 1]) * self.width
+                    # XXX: All channels can't be loaded in a wieght tile
                     nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
                     vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
                     vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
                     vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
                     vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
                     vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-
+        print('nvm_read_weights: {}'.format(nvm_read_weights))
+        print('nvm_read_inputs: {}'.format(nvm_read_inputs))
+        print('nvm_jobs: {}'.format(nvm_jobs))
+        print('vm_jobs: {}'.format(vm_jobs))
         vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
         nvm_access = (nvm_jobs + nvm_read_weights + nvm_read_inputs)
         return vm_access * vm_access_cost + nvm_access * nvm_access_cost, (vm_access, nvm_access)
