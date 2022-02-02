@@ -177,6 +177,10 @@ def load_state(model, state_dict):
             cur_state_dict[key].copy_(state_dict['module.'+key])
     return
 
+def nchw2nhwc(arr):
+    print(arr.shape)
+    return arr.permute(0, 2, 3, 1) # NCHW -> NHWC
+
 class dropout_update():
     def __init__(self, dropout_list, mask_list):
         self.dropout_list = dropout_list
@@ -195,7 +199,7 @@ class dropout_update():
         return
 
 class Prune_Op():
-    def __init__(self, model, train_loader, criterion, input_shape,args, evaluate=False):
+    def __init__(self, model, train_loader, criterion, input_shape, args, evaluate=False):
         self.width = math.prod(args.group)
         self.train_loader = train_loader
         self.criterion = criterion
@@ -230,17 +234,25 @@ class Prune_Op():
 
                 elif isinstance(m, nn.Conv2d):
                     tmp_pruned = m.weight.data.clone()
-                    # tmp_pruned = tmp_pruned.permute(0, 2, 3, 1) # NCHW -> NHWC
+                    if args.layout == 'nhwc':
+                        tmp_pruned = tmp_pruned.permute(0, 2, 3, 1) # NCHW -> NHWC
                     original_size = tmp_pruned.size()
-                    # Origin: im2col: [20, 1, 5, 5] -> [20, 25]
-                    # Modified: [20, 5, 5, 1] -> [20, 25]
-                    # tmp_pruned = tmp_pruned.reshape(original_size[0], -1)
-                    tmp_pruned = tmp_pruned.view(original_size[0], -1)
+                    # Origin: im2col: [8, 1, 5, 5] -> [8, 25]
+                    # Modified: [8, 5, 5, 1] -> [8, 25]
+                    # For NHWC
+                    if args.layout == 'nhwc':
+                        if original_size[-1] % 2:
+                            # pad: [8, 5, 5, 1] -> [8, 5, 5, 2]
+                            padding_shape = (tmp_pruned.shape[0], tmp_pruned.shape[1], tmp_pruned.shape[2], 1)
+                            padding_zeros = torch.zeros(padding_shape)
+                            tmp_pruned = torch.cat((tmp_pruned.cpu(), padding_zeros), 3)
+                    tmp_pruned = tmp_pruned.reshape(original_size[0], -1) # [8, 5, 5, 2] -> [8, 50]
+                    # tmp_pruned = tmp_pruned.view(original_size[0], -1)
                     if tmp_pruned.shape[1] != self.width:
                         append_size = self.width - tmp_pruned.shape[1]%self.width
                         if append_size != self.width:
-                            tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1) # Append: [20, 25] -> [20, 32]
-                    tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, self.width) # Slice by width: [20,32] -> [20, 4, 8]
+                            tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1) # Append: [8, 50] -> [8, 50]
+                    tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, self.width) # Slice by width: [8,50] -> [8, 25, 2]
                     shape = tmp_pruned.shape
                     if args.with_sen:
                         tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
@@ -248,10 +260,16 @@ class Prune_Op():
                         tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
 
                     # tmp_pruned[:, -1] = 0
+                    print(tmp_pruned.shape)
+                    if args.layout == 'nhwc':
+                        if original_size[-1] % 2:
+                            tmp_pruned = torch.narrow(tmp_pruned, 2, 0, 1)
                     tmp_pruned = tmp_pruned.reshape(original_size[0], -1)
                     tmp_pruned = tmp_pruned[:, 0:m.weight.data[0].nelement()]
                     tmp_pruned = tmp_pruned.view(original_size)
-                    # tmp_pruned = tmp_pruned.permute(0, 3, 1, 2) # NHWC -> NCHW
+                    # For NHWC
+                    if args.layout == 'nhwc':
+                        tmp_pruned = tmp_pruned.permute(0, 3, 1, 2) # NHWC -> NCHW
                     model.weights_pruned.append(tmp_pruned)
                     node_idx += 1
             else:
@@ -331,7 +349,6 @@ class Prune_Op():
         for i in range(len(order)):
             pruning_ratios[order[i]] = candidates[i]
         print('pruning_ratios: {}'.format(pruning_ratios))
-        exit()
         return pruning_ratios
 
     def setPruningRatios2(self, model, total_pruning_ratio = 0.5):
@@ -475,6 +492,9 @@ class Prune_Op():
         width = math.prod(group_size)
         shape = node.weight.data.shape
         matrix = node.weight.data
+        if self.args.layout == 'nhwc' and isinstance(node, nn.Conv2d):
+            matrix = nchw2nhwc(matrix)
+        print(matrix.shape)
         matrix = matrix.reshape(shape[0], -1)
         append_size = width - matrix.shape[1]%width
         matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)

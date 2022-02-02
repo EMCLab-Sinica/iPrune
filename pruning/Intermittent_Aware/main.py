@@ -167,6 +167,8 @@ if __name__=='__main__':
             help='w/ or w/o sensitivity analysis')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
             help='Learning rate step gamma (default: 0.7)')
+    parser.add_argument('--layout', default='nhwc',
+            help='Select data layout: nchw | nhwc')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 

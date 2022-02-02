@@ -19,7 +19,6 @@ def printArgs(args):
     return
 
 def lowering(tensor, shape):
-    origin_size = shape
     matrix = tensor.reshape(shape[0], -1)
     return matrix
 
@@ -65,11 +64,17 @@ def printGroups(node):
             cnt -= 1
             colIdx += 1
 
+def nchw2nhwc(arr):
+    arr = np.transpose(arr, axes=(0, 2, 3, 1))  # NCHW -> NHWC
+    return arr
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--onnx_model', action='store', default=None)
     parser.add_argument('--arch', action='store', default='LeNet_5', help='the network architecture: LeNet_5 | SqueezeNet')
     parser.add_argument('--group', action='store', type=int, default=2, help='Group size')
+    parser.add_argument('--layout', action='store', default='nchw', help='Select data layout: nhwc | nchw')
     args = parser.parse_args()
     printArgs(args)
 
@@ -91,6 +96,9 @@ if __name__ == '__main__':
         # print(shape)
         matrix = onnx.numpy_helper.to_array(node)
         if node.name in main_names:
+            print(shape)
+            if len(shape) == 4 and args.layout == 'nhwc':
+                matrix = nchw2nhwc(matrix)
             matrix = lowering(matrix, shape)
             print(matrix.shape)
             matrix = toBSR(matrix, shape, args.group)
