@@ -296,7 +296,8 @@ def transpose_gemm(onnx_model: onnx.ModelProto):
                 break
 
 replace_nodes()
-transpose_gemm(onnx_model)
+if not args.sparse:
+    transpose_gemm(onnx_model)
 
 # Split Conv/Gemm into Conv/Gemm and ConvMerge/GemmMerge (for OFM scaling up and merge of OFMs from channel tiling)
 new_nodes = []
@@ -361,6 +362,8 @@ for idx, n in enumerate(nodes):
     if n.op_type == 'Conv':
         conv_param_names.add(n.input[1])
         infer_auto_pad(n)
+    if n.op_type == 'Gemm':
+        gemm_param_names.add(n.input[1])
     if n.op_type == 'MaxPool':
         kernel_shape = get_attr(n, 'kernel_shape')  # this field is required
         assert len(kernel_shape) == 2
@@ -561,15 +564,29 @@ def nchw2nhwc(arr, dims):
     arr = np.transpose(arr, axes=(0, 2, 3, 1))  # NCHW -> NHWC
     return arr.flatten()  # Change it back to flattened
 
-outputs = {
-    'parameters': io.BytesIO(),
-    'samples': io.BytesIO(),
-    'model': io.BytesIO(),
-    'nodes': io.BytesIO(),
-    'model_parameters_info': io.BytesIO(),
-    'intermediate_parameters_info': io.BytesIO(),
-    'labels': io.BytesIO(),
-}
+if args.sparse:
+    outputs = {
+        'parameters': io.BytesIO(),
+        'samples': io.BytesIO(),
+        'model': io.BytesIO(),
+        'nodes': io.BytesIO(),
+        'model_parameters_info': io.BytesIO(),
+        'intermediate_parameters_info': io.BytesIO(),
+        'labels': io.BytesIO(),
+        # for sparse model
+        'rows': io.BytesIO(),
+        'cols': io.BytesIO(),
+    }
+else:
+    outputs = {
+        'parameters': io.BytesIO(),
+        'samples': io.BytesIO(),
+        'model': io.BytesIO(),
+        'nodes': io.BytesIO(),
+        'model_parameters_info': io.BytesIO(),
+        'intermediate_parameters_info': io.BytesIO(),
+        'labels': io.BytesIO(),
+    }
 
 Constants.MODEL_NODES_LEN = len(graph)
 
@@ -592,7 +609,9 @@ if args.sparse:
     class ParametersSlot:
         offset: int
         target: io.BytesIO
+        cols_offset: int
         cols: io.BytesIO
+        rows_offset: int
         rows: io.BytesIO
         slot_id: int
 else:
@@ -603,7 +622,7 @@ else:
         slot_id: int
 
 if args.sparse:
-    parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], cols=outputs['cols'], rows=outputs['rows'], slot_id=Constants.SLOT_PARAMETERS)
+    parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], cols_offset=0, cols=outputs['cols'], rows_offset=0, rows=outputs['rows'], slot_id=Constants.SLOT_PARAMETERS)
 else:
     parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], slot_id=Constants.SLOT_PARAMETERS)
 
@@ -645,7 +664,7 @@ def decode_raw_data(params):
     return list(map(lambda t: t[0], struct.iter_unpack(format_char, params.raw_data)))
 
 def toBSR(matrix, dims, width):
-    print('origin size: {}'.format(len(matrix)))
+    #print('origin size: {}'.format(len(matrix)))
     matrix = np.reshape(matrix, tuple(dims))
     matrix = np.reshape(matrix, (dims[0], -1))
     shape = matrix.shape
@@ -667,9 +686,9 @@ def toBSR(matrix, dims, width):
     print('modified size: {}'.format(len(data)))
     print('Rows size: {}'.format(rows.shape))
     print('Cols size: {}'.format(cols.shape))
-    # print('Data: {}'.format(data))
-    # print('Cols: {}'.format(cols))
-    # print('Rows: {}'.format(rows))
+    #print('Data: {}'.format(data))
+    #print('Cols: {}'.format(cols))
+    #print('Rows: {}'.format(rows))
     return data, cols, rows
 
 model_parameters_info = outputs['model_parameters_info']
@@ -702,7 +721,7 @@ for params in parameters:
             # TODO: handle data layout for sparse matrix
             if params.name in conv_param_names:
                 logger.info('Reorder conv param %s', params.name)
-                float_data, _ = nchw2nhwc(float_data, params.dims)
+                float_data = nchw2nhwc(float_data, params.dims)
 
             # TODO: transform the sparse matrix into BSR format
             int_data_Q15 = _Q15(np.array(float_data) / config['scale'], 'Parameter')
@@ -710,7 +729,7 @@ for params in parameters:
                 cols = []
                 rows = []
             if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
-                data, cols, rows = toBSR(int_data_Q15, params.dims, 5)
+                data, cols, rows = toBSR(int_data_Q15, params.dims, 2)
                 int_data_Q15 = data
 
             data_len = len(int_data_Q15)
@@ -719,23 +738,17 @@ for params in parameters:
 
             model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
             model_parameters_info.write(to_bytes(data_len * 2, size=32))  # A _q15 is 16-bit
-            '''
             # XXX: adjuct the length of cols and rows
             if args.sparse:
-                model_parameters_info.write(to_bytes(len(cols), size=32))  # cols_offset
-                model_parameters_info.write(to_bytes(len(rows), size=32))  # rows_offset
-            slot.target.write(to_bytes(int_data_Q15))
-            if args.sparse:
+                model_parameters_info.write(to_bytes(slot.cols_offset, size=32))  # cols_offset
+                model_parameters_info.write(to_bytes(slot.rows_offset, size=32))  # rows_offset
                 slot.cols.write(to_bytes(cols))
                 slot.rows.write(to_bytes(rows))
+                slot.cols_offset += len(cols)
+                slot.rows_offset += len(rows)
 
+            slot.target.write(to_bytes(int_data_Q15))
             slot.offset += 2 * len(int_data_Q15)
-            '''
-            if params.name in conv_param_names:
-                logger.info('Reorder conv param %s', params.name)
-                float_data = nchw2nhwc(float_data, params.dims)
-            slot.target.write(to_bytes(_Q15(np.array(float_data) / config['scale'], 'Parameter')))
-            slot.offset += 2 * len(float_data)
             model_parameters_info.write(to_bytes(16, size=8)) # bitwidth
         elif params.data_type == onnx.TensorProto.INT64:
             if params.int64_data:
@@ -747,9 +760,17 @@ for params in parameters:
             slot = parameters_slot
             model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
             model_parameters_info.write(to_bytes(data_len * 8, size=32))
+            if args.sparse:
+                model_parameters_info.write(to_bytes(slot.cols_offset, size=32))  # cols_offset
+                model_parameters_info.write(to_bytes(slot.rows_offset, size=32))  # rows_offset
             for param in int64_data:
                 slot.target.write(to_bytes(param, size=64))
                 slot.offset += 8
+                if args.sparse:
+                    slot.cols.write(to_bytes(cols))
+                    slot.rows.write(to_bytes(rows))
+                    slot.cols_offset += len(cols)
+                    slot.rows_offset += len(rows)
             model_parameters_info.write(to_bytes(64, size=8)) # bitwidth
         else:
             assert False
@@ -779,6 +800,9 @@ intermediate_parameters_info = outputs['intermediate_parameters_info']
 for idx, n in enumerate(nodes):
     intermediate_parameters_info.write(to_bytes(0, size=32))  # params_offset
     intermediate_parameters_info.write(to_bytes(0, size=32))  # params_len
+    if args.sparse:
+        intermediate_parameters_info.write(to_bytes(0, size=32))  # params_cols_offset
+        intermediate_parameters_info.write(to_bytes(0, size=32))  # params_rows_offset
     intermediate_parameters_info.write(to_bytes(0, size=8))  # bitwidth
     intermediate_parameters_info.write(to_bytes(0, size=8))  # slot
     intermediate_parameters_info.write(to_bytes(0))         # dummy
