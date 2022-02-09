@@ -105,6 +105,31 @@ def test(evaluate=False):
     print('Best Accuracy: {:.2f}%\n'.format(best_acc))
     return
 
+@torch.no_grad()
+def my_test(model, args, test_loader, criterion, evaluate=True):
+    global best_acc
+    model.eval()
+    test_loss = 0
+    correct = 0
+
+    for data, target in test_loader:
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data), Variable(target)
+        output = model(data)
+        if args.arch == 'LeNet_5_p':
+            test_loss += F.nll_loss(output, target, reduction='sum').item()
+        else:
+            test_loss += criterion(output, target).item()
+        pred = output.data.max(1, keepdim=True)[1]
+        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+
+    test_loss /= len(test_loader.dataset)
+    acc = correct / len(test_loader.dataset)
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        test_loss * args.batch_size, correct, len(test_loader.dataset), 100. * acc))
+    return test_loss * args.batch_size
+
 def adjust_learning_rate(optimizer, epoch):
     """Sets the learning rate to the initial LR decayed by 10 every 15 epochs"""
     lr = args.lr * (0.1 ** (epoch // args.lr_epochs))
@@ -257,6 +282,9 @@ if __name__=='__main__':
         test(evaluate=True)
         exit()
 
+    def evaluate_function(model):
+        return my_test(model, args, test_loader, criterion)
+
     if args.prune:
         print('==> Start pruning ...')
         if not args.pretrained:
@@ -266,7 +294,7 @@ if __name__=='__main__':
             input_shape = (1, 28, 28)
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
-        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args)
+        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function)
         for epoch in trange(1, args.epochs + 1):
             if args.arch == 'LeNet_5':
                 lr = adjust_learning_rate(optimizer, epoch)
