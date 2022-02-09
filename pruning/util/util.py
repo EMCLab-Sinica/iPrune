@@ -24,12 +24,12 @@ sys.path.append(cwd+'/../')
 
 # Set logger info
 logger_ = logging.getLogger(__name__)
-# logger_.setLevel(logging.INFO)
+# logger_.setLevel(logging.DEBUG)
 formatter = logging.Formatter(
-    '[%(levelname)1.1s %(asctime)s %(module)s:%(lineno)d] %(message)s',
+    '[%(levelname)s %(asctime)s %(module)s:%(lineno)d] %(message)s',
 	datefmt='%Y%m%d %H:%M:%S')
 ch = logging.StreamHandler()
-# ch.setLevel(logging.INFO)
+# ch.setLevel(logging.DEBUG)
 ch.setFormatter(formatter)
 
 logger_.addHandler(ch)
@@ -317,6 +317,7 @@ class SimulatedAnnealing():
                     metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
                     metrics.append(metric)
                 node_idx += 1
+        sparsities = sorted(sparsities)
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
         total_weight = 0
         total_weight_pruned = 0
@@ -328,6 +329,15 @@ class SimulatedAnnealing():
             total_weight_pruned += int(n_node_weights * sparsities[i])
         scale = target_sparsity / (total_weight_pruned / total_weight)
         sparsities = np.asarray(sparsities) * scale
+        # check the result of rescalling
+        total_weight_pruned_test = 0
+        for i in range(len(sparsities)):
+            node_idx = order[i]
+            node_weights = self.model_.weights_pruned[node_idx]
+            n_node_weights = np.prod(node_weights.shape)
+            total_weight_pruned_test += int(n_node_weights * sparsities[i])
+        logger_.debug('Rescale_sparsity: %s', total_weight_pruned_test / total_weight)
+
         return sparsities
 
     def init_sparsities(self):
@@ -357,10 +367,10 @@ class SimulatedAnnealing():
         while True:
             perturbation = np.random.uniform(-magnitude, magnitude, self.get_n_node())
             sparsities = np.clip(0, self.sparsities_ + perturbation, None)
-            logger_.debug("sparsities before rescalling:%s", sparsities)
+            logger_.debug("sparsities before rescalling: {}".format(sparsities))
 
             sparsities = self.rescale_sparsities(sparsities, target_sparsity=self.target_sparsity_)
-            logger_.debug("sparsities after rescalling:%s", sparsities)
+            logger_.debug("sparsities after rescalling: {}".format(sparsities))
 
             if sparsities is not None and sparsities[0] >= 0 and sparsities[-1] < 1:
                 logger_.info("Sparsities perturbated:%s", sparsities)
@@ -381,10 +391,11 @@ class SimulatedAnnealing():
                 node_idx += 1
         sparsities = sorted(sparsities)
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
-        logger_.debug('Pruning order: ', order)
-        logger_.debug('Pruning ratios: ', sparsities)
         for i in range(len(order)):
             pruning_ratios[order[i]] = sparsities[i]
+        logger_.debug('Pruning order: {}'.format(order))
+        logger_.debug('sparsities: {}'.format(sparsities))
+        logger_.debug('Pruning ratios: {}'.format(pruning_ratios))
         return pruning_ratios
 
     def start(self):
