@@ -18,21 +18,31 @@ from torch.autograd import Variable
 from itertools import chain
 from collections import OrderedDict
 from config import config
+from tqdm import tqdm, trange
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
 
-# Set logger info
-logger_ = logging.getLogger(__name__)
-#logger_.setLevel(logging.DEBUG)
-formatter = logging.Formatter(
-    '[%(levelname)s %(asctime)s %(module)s:%(lineno)d] %(message)s',
-	datefmt='%Y%m%d %H:%M:%S')
-ch = logging.StreamHandler()
-#ch.setLevel(logging.DEBUG)
-ch.setFormatter(formatter)
+def set_logger(level=None):
+    # Set logger info
+    logger = logging.getLogger(__name__)
+    formatter = logging.Formatter(
+        '[%(levelname)s %(asctime)s %(module)s:%(lineno)d] %(message)s',
+        datefmt='%Y%m%d %H:%M:%S')
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
 
-logger_.addHandler(ch)
+    if level == 1:
+        # debug
+        logger.setLevel(logging.DEBUG)
+        ch.setLevel(logging.DEBUG)
+    elif level == 0:
+        # info
+        logger.setLevel(logging.INFO)
+        ch.setLevel(logging.INFO)
+
+    logger.addHandler(ch)
+    return logger
 
 # https://github.com/sksq96/pytorch-summary/blob/master/torchsummary/torchsummary.py
 def activation_shapes(model, input_size, batch_size=-1, device=torch.device('cuda:0'), dtypes=None):
@@ -258,6 +268,11 @@ def getReuse(args, node, group_size, output_shapes, node_idx):
     vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
     nvm_access = (nvm_jobs + nvm_read_weights + nvm_read_inputs)
     return vm_access * vm_access_cost + nvm_access * nvm_access_cost, (vm_access, nvm_access)
+
+def prune_weight_layer(m, mask):
+    if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+        m.weight.data[mask] = 0
+    return m.weight.data
 
 def prune_weight(model):
     logger_.info('Start pruning weight...')
@@ -748,9 +763,63 @@ class MaskMaker():
                 masks.append(torch.zeros(shape, dtype=torch.bool))
         return masks
 
+class ADMMPruner():
+    def __init__(self, model, args, trainer, criterion, optimizer, input_shape, sparsities_maker, mask_maker, n_iterations=5, n_training_epochs=10):
+        self.model_ = model
+        self.args_ = args
+        self.trainer_ = trainer
+        self.criterion_ = criterion
+        self.optimizer_ = optimizer
+        self.n_iter_ = n_iterations
+        self.n_training_epochs_ = n_training_epochs
+        self.mask_maker_ = mask_maker
+        self.sparsities_maker_ = sparsities_maker
+
+    def projection(self, weight, wrapper):
+        wrapper_cpy = copy.deepcopy(wrapper)
+        wrapper_cpy.weight.data = weight
+        sparsity = self.sparsities_maker_.get_sparsities()
+        mask = self.mask_maker_.get_masks(sparsity)
+        return prune_weight_layer(wrapper_cpy, mask)
+
+    def compresss(self):
+        logger_.info('Start AMDD pruning ...')
+        # initiaze Z, U
+        # Z_i^0 = W_i^0
+        # U_i^0 = 0
+        self.Z = []
+        self.U = []
+        for m in enumerate(self.model_.modules()):
+            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                z = m.weight.data
+                self.Z.append(z)
+                self.U.append(torch.zeros_like(z))
+
+        # Loss = cross_entropy +  l2 regulization + \Sum_{i=1}^N \row_i ||W_i - Z_i^k + U_i^k||^2
+        # optimization iteration
+        for k in range(self.n_iter_):
+            logger_.info('ADMM iteration : %d', k)
+
+            # step 1: optimize W with AdamOptimizer
+            for epoch in trange(1, self.n_training_epochs_+1):
+                self.trainer_(self.model_, optimizer=self.optimizer_, criterion=self.criterion_, epoch=epoch)
+
+            # step 2: update Z, U
+            # Z_i^{k+1} = projection(W_i^{k+1} + U_i^k)
+            # U_i^{k+1} = U^k + W_i^{k+1} - Z_i^{k+1}
+            node_idx = 0
+            for m in enumerate(self.model_.modules()):
+                if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                    z = m.weight.data + self.U[node_idx]
+                    self.Z[node_idx] = self.projection(z, m)
+                    torch.cuda.empty_cache()
+                    self.U[node_idx] = self.U[node_idx] + m.weight.data - self.Z[node_idx]
+        return self.model_
 
 class Prune_Op():
-    def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, evaluate=False):
+    def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=None, evaluate=False):
+        global logger_
+        logger_ = set_logger(args.debug)
         self.width = math.prod(args.group)
         self.train_loader = train_loader
         self.criterion = criterion
@@ -762,6 +831,9 @@ class Prune_Op():
             model.weights_pruned = self.mask_maker.gen_masks()
         self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.35, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker)
         if not evaluate:
+            if args.admm and admm_params != None:
+                pruner = ADMMPruner(model=model, args=args, trainer=admm_params['train_function'], criterion=admm_params['criterion'], optimizer=admm_params['optimizer'], input_shape=self.input_shape, mask_maker=self.mask_maker, sparsities_maker=self.sparsities_maker)
+                model = pruner.compresss()
             model.weights_pruned = self.mask_maker.get_masks(self.sparsities_maker.get_sparsities())
 
         self.weights_pruned = model.weights_pruned

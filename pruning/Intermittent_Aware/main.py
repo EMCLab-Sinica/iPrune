@@ -70,6 +70,28 @@ def train(epoch):
         '''
     return
 
+def my_train(model, optimizer, criterion, epoch, args, train_loader):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data), Variable(target)
+        optimizer.zero_grad()
+        output = model(data)
+        if args.arch == 'LeNet_5_p':
+            loss = F.nll_loss(output, target)
+        else:
+            loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
+        '''
+        if batch_idx % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
+        '''
+    return
+
 @torch.no_grad()
 def test(evaluate=False):
     global best_acc
@@ -152,7 +174,7 @@ if __name__=='__main__':
             help='input batch size for training (default: 128)')
     parser.add_argument('--test-batch-size', type=int, default=128, metavar='N',
             help='input batch size for testing (default: 128)')
-    parser.add_argument('--epochs', type=int, default=60, metavar='N',
+    parser.add_argument('--epochs', type=int, default=50, metavar='N',
             help='number of epochs to train (default: 60)')
     parser.add_argument('--lr-epochs', type=int, default=15, metavar='N',
             help='number of epochs to decay the lr (default: 15)')
@@ -182,6 +204,8 @@ if __name__=='__main__':
             help='pruning target: default=None | conv | ip')
     parser.add_argument('--stage', action='store', type=int, default=0,
             help='pruning stage')
+    parser.add_argument('--debug', action='store', type=int, default=-1,
+            help='set debug level')
     parser.add_argument('--group', action='store', nargs='+', type=int, default=[1,1,1,5],
             help='pruing granularity (group size)')
     parser.add_argument('--pruning_ratio', action='store', type=float, default=0.0,
@@ -190,6 +214,8 @@ if __name__=='__main__':
             help='candidates of pruning ratios for weight pruning')
     parser.add_argument('--with_sen', action='store_true', default=False,
             help='w/ or w/o sensitivity analysis')
+    parser.add_argument('--admm', action='store_true', default=False,
+            help='w/ or w/o ADMM')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
             help='Learning rate step gamma (default: 0.7)')
     parser.add_argument('--layout', default='nhwc',
@@ -284,8 +310,11 @@ if __name__=='__main__':
 
     def evaluate_function(model):
         return my_test(model, args, test_loader, criterion)
+    def trainer(model, optimizer, criterion, epoch): #for ADMM pruning
+        return my_train(model, optimizer, criterion, epoch, args, train_loader)
 
     if args.prune:
+        admm_params = None
         print('==> Start pruning ...')
         if not args.pretrained:
             print('==> ERROR: Please assign the pretrained model')
@@ -294,18 +323,26 @@ if __name__=='__main__':
             input_shape = (1, 28, 28)
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
-        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function)
-        for epoch in trange(1, args.epochs + 1):
-            if args.arch == 'LeNet_5':
-                lr = adjust_learning_rate(optimizer, epoch)
-            elif args.arch == 'SqueezeNet':
-                # adjusted by ADAM
-                pass
-            train(epoch)
-            test()
-            if args.arch == 'LeNet_5_p':
-                scheduler.step()
 
+        if args.admm:
+            admm_params = {
+                'train_function': trainer,
+                'optimizer': optimizer,
+                'criterion': criterion
+            }
+
+        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=admm_params)
+        if not args.admm:
+            for epoch in trange(1, args.epochs + 1):
+                if args.arch == 'LeNet_5':
+                    lr = adjust_learning_rate(optimizer, epoch)
+                elif args.arch == 'SqueezeNet':
+                    # adjusted by ADAM
+                    pass
+                train(epoch)
+                test()
+                if args.arch == 'LeNet_5_p':
+                    scheduler.step()
         test(evaluate=True)
         # prune_op.print_info()
     else:
