@@ -24,12 +24,12 @@ sys.path.append(cwd+'/../')
 
 # Set logger info
 logger_ = logging.getLogger(__name__)
-# logger_.setLevel(logging.DEBUG)
+#logger_.setLevel(logging.DEBUG)
 formatter = logging.Formatter(
     '[%(levelname)s %(asctime)s %(module)s:%(lineno)d] %(message)s',
 	datefmt='%Y%m%d %H:%M:%S')
 ch = logging.StreamHandler()
-# ch.setLevel(logging.DEBUG)
+#ch.setLevel(logging.DEBUG)
 ch.setFormatter(formatter)
 
 logger_.addHandler(ch)
@@ -336,6 +336,7 @@ class SimulatedAnnealing():
             node_weights = self.model_.weights_pruned[node_idx]
             n_node_weights = np.prod(node_weights.shape)
             total_weight_pruned_test += int(n_node_weights * sparsities[i])
+        logger_.debug('Metrics: {}'.format(metrics))
         logger_.debug('Rescale_sparsity: %s', total_weight_pruned_test / total_weight)
 
         return sparsities
@@ -459,7 +460,9 @@ class MaskMaker():
         self.args_ = args
         self.model_ = model
         self.input_shape = input_shape
+        _, self.output_shapes_ = activation_shapes(model, input_shape)
         self.weight_masks_ = []
+        self.pruned_ratios_ = self.getPrunedRatios(model.weights_pruned, self.output_shapes_)
         self.generate_masks()
 
     def getPrunedRatios(self, masks, output_shapes):
@@ -470,6 +473,7 @@ class MaskMaker():
             n_pruned = int(masks[i].sum())
             total = int(masks[i].nelement())
             pruned_ratios.append(float(n_pruned / total))
+        logger_.debug('Pruned ratios: {}'.format(pruned_ratios))
         return pruned_ratios
 
     def setPruningRatios(self, model, candidates, output_shapes):
@@ -660,7 +664,7 @@ class MaskMaker():
             pruning_ratios, sorted_idx, first_unpruned_idx = self.setPruningRatios2(self.model_, self.args_.pruned_ratios)
             self.generate_masks_(pruning_ratios)
         else:
-            pruned_ratios = self.getPrunedRatios(self.model_.weights_pruned, output_shapes)
+            pruned_ratios = self.pruned_ratios_
             pruning_ratios = self.setPruningRatios(self.model_, self.args_.candidates_pruning_ratios, output_shapes)
             self.generate_masks_(pruning_ratios, pruned_ratios)
 
@@ -733,7 +737,7 @@ class MaskMaker():
             logger_.info('Get the mask without perturbating.')
             return self.weight_masks_
         logger_.info('Get the mask with perturbating.')
-        self.generate_masks_(sparsities_perturbated)
+        self.generate_masks_(sparsities_perturbated, self.pruned_ratios_)
         return self.weight_masks_
 
     def gen_masks(self):
@@ -756,7 +760,7 @@ class Prune_Op():
         self.mask_maker = MaskMaker(model, args, input_shape)
         if model.weights_pruned == None:
             model.weights_pruned = self.mask_maker.gen_masks()
-        self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.5, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker)
+        self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.35, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker)
         if not evaluate:
             model.weights_pruned = self.mask_maker.get_masks(self.sparsities_maker.get_sparsities())
 
