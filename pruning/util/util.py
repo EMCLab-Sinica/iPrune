@@ -4,6 +4,7 @@ import sys
 import csv
 import json
 import math
+import types
 import torch
 import torch.nn as nn
 import numpy as np
@@ -794,16 +795,40 @@ class MaskMaker():
         return masks
 
 class ADMMPruner():
-    def __init__(self, model, args, trainer, criterion, optimizer, input_shape, sparsities_maker, mask_maker, n_iterations=5, n_training_epochs=10):
+    def __init__(self, model, args, trainer, criterion, optimizer, input_shape, sparsities_maker, mask_maker, row=1e-4, n_iterations=5, n_training_epochs=10):
         self.model_ = model
         self.args_ = args
         self.trainer_ = trainer
         self.criterion_ = criterion
         self.optimizer_ = optimizer
+        self.row_ = row
         self.n_iter_ = n_iterations
         self.n_training_epochs_ = n_training_epochs
         self.mask_maker_ = mask_maker
         self.sparsities_maker_ = sparsities_maker
+
+        self.patch_optimizer(self, self.callback_)
+
+    def callback_(self):
+        # callback function to do additonal optimization, refer to the deriatives of Formula (7)
+        node_idx = 0
+        for m in self.model_.modules():
+            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                m.weight.data -= self.row_ * \
+                    (m.weight.data - self.Z[node_idx] + self.U[node_idx])
+                node_idx += 1
+
+    def patch_optimizer(self, *tasks):
+        def patch_step(old_step):
+            def new_step(_, *args, **kwargs):
+                for task in tasks:
+                    if callable(task):
+                        task()
+                output = old_step(*args, **kwargs)
+                return output
+            return new_step
+        if self.optimizer_ is not None:
+            self.optimizer_.step = types.MethodType(patch_step(self.optimizer_.step), self.optimizer_)
 
     def projection(self, weight, wrapper):
         wrapper_cpy = copy.deepcopy(wrapper)
@@ -819,7 +844,7 @@ class ADMMPruner():
         # U_i^0 = 0
         self.Z = []
         self.U = []
-        for m in enumerate(self.model_.modules()):
+        for m in self.model_.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 z = m.weight.data
                 self.Z.append(z)
