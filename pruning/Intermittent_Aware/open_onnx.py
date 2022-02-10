@@ -93,14 +93,12 @@ if __name__ == '__main__':
     nodes = model.graph.initializer
     for idx, node in enumerate(nodes):
         shape = node.dims
-        # print(shape)
+        print(shape)
         matrix = onnx.numpy_helper.to_array(node)
         if node.name in main_names:
-            print(shape)
             if len(shape) == 4 and args.layout == 'nhwc':
                 matrix = nchw2nhwc(matrix)
             matrix = lowering(matrix, shape)
-            print(matrix.shape)
             matrix = toBSR(matrix, shape, args.group)
             sparse_node = {
                 'dims': shape,
