@@ -20,7 +20,8 @@ from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
 
 def save_state(model, acc):
-    # print('==> Saving model ...')
+    global logger_
+    print('==> Saving model (accuracy {:.2f}) ....'.format(acc))
     state = {
             'acc': acc,
             'state_dict': model.state_dict(),
@@ -70,7 +71,7 @@ def train(epoch):
         '''
     return
 
-def my_train(model, optimizer, criterion, epoch, args, train_loader):
+def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
@@ -84,12 +85,10 @@ def my_train(model, optimizer, criterion, epoch, args, train_loader):
             loss = criterion(output, target)
         loss.backward()
         optimizer.step()
-        '''
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+            logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
-        '''
     return
 
 @torch.no_grad()
@@ -114,22 +113,21 @@ def test(evaluate=False):
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     acc = 100. * correct / len(test_loader.dataset)
-    if (args.prune and (not args.retrain)) or (acc > best_acc):
+    if acc > best_acc:
         best_acc = acc
         if not evaluate:
             save_state(model, best_acc)
 
     #if args.prune == None or evaluate:
     test_loss /= len(test_loader.dataset)
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        test_loss * args.batch_size, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-    print('Best Accuracy: {:.2f}%\n'.format(best_acc))
-    return
+    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+    #    test_loss * args.batch_size, correct, len(test_loader.dataset),
+    #    100. * correct / len(test_loader.dataset)))
+    # print('Best Accuracy: {:.2f}%\n'.format(best_acc))
+    return (test_loss * args.batch_size, acc, best_acc)
 
 @torch.no_grad()
-def my_test(model, args, test_loader, criterion, evaluate=True):
-    global best_acc
+def my_test(model, args, test_loader, criterion, logger, evaluate=True):
     model.eval()
     test_loss = 0
     correct = 0
@@ -148,7 +146,7 @@ def my_test(model, args, test_loader, criterion, evaluate=True):
 
     test_loss /= len(test_loader.dataset)
     acc = correct / len(test_loader.dataset)
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+    logger.info('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         test_loss * args.batch_size, correct, len(test_loader.dataset), 100. * acc))
     return test_loss * args.batch_size
 
@@ -206,7 +204,7 @@ if __name__=='__main__':
             help='pruning stage')
     parser.add_argument('--debug', action='store', type=int, default=-1,
             help='set debug level')
-    parser.add_argument('--group', action='store', nargs='+', type=int, default=[1,1,1,5],
+    parser.add_argument('--group', action='store', nargs='+', type=int, default=[1,1,1,2],
             help='pruing granularity (group size)')
     parser.add_argument('--pruning_ratio', action='store', type=float, default=0.0,
             help='pruning ratio for Intermittent-aware weight pruning')
@@ -216,6 +214,8 @@ if __name__=='__main__':
             help='w/ or w/o sensitivity analysis')
     parser.add_argument('--admm', action='store_true', default=False,
             help='w/ or w/o ADMM')
+    parser.add_argument('--sa', action='store_true', default=False,
+            help='w/ or w/o simulated annealling')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
             help='Learning rate step gamma (default: 0.7)')
     parser.add_argument('--layout', default='nhwc',
@@ -308,10 +308,15 @@ if __name__=='__main__':
         test(evaluate=True)
         exit()
 
-    def evaluate_function(model):
-        return my_test(model, args, test_loader, criterion)
-    def trainer(model, optimizer, criterion, epoch): #for ADMM pruning
-        return my_train(model, optimizer, criterion, epoch, args, train_loader)
+    def evaluate_function(model, logger):
+        return my_test(model, args, test_loader, criterion, logger)
+    def trainer(model, optimizer, criterion, epoch, logger): #for ADMM pruning
+        return my_train(model, optimizer, criterion, epoch, args, train_loader, logger)
+
+    cur_epoch = 0
+    cur_loss = 0
+    cur_acc = 0
+    best_acc = 0
 
     if args.prune:
         admm_params = None
@@ -333,14 +338,17 @@ if __name__=='__main__':
 
         prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=admm_params)
         if not args.admm:
-            for epoch in trange(1, args.epochs + 1):
+            pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
+            for epoch in pbar:
                 if args.arch == 'LeNet_5':
                     lr = adjust_learning_rate(optimizer, epoch)
                 elif args.arch == 'SqueezeNet':
                     # adjusted by ADAM
                     pass
                 train(epoch)
-                test()
+                cur_epoch = epoch
+                cur_loss, cur_acc, best_acc = test()
+                pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
                 if args.arch == 'LeNet_5_p':
                     scheduler.step()
         test(evaluate=True)

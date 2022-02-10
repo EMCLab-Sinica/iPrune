@@ -1,6 +1,8 @@
 from __future__ import print_function
 import os
 import sys
+import csv
+import json
 import math
 import torch
 import torch.nn as nn
@@ -30,18 +32,23 @@ def set_logger(level=None):
         '[%(levelname)s %(asctime)s %(module)s:%(lineno)d] %(message)s',
         datefmt='%Y%m%d %H:%M:%S')
     ch = logging.StreamHandler()
+    fh = logging.FileHandler('logs/pruning_log.txt')
     ch.setFormatter(formatter)
+    fh.setFormatter(formatter)
 
     if level == 1:
         # debug
         logger.setLevel(logging.DEBUG)
         ch.setLevel(logging.DEBUG)
+        fh.setLevel(logging.DEBUG)
     elif level == 0:
         # info
         logger.setLevel(logging.INFO)
         ch.setLevel(logging.INFO)
+        fh.setLevel(logging.INFO)
 
-    logger.addHandler(ch)
+    # logger.addHandler(ch)
+    logger.addHandler(fh)
     return logger
 
 # https://github.com/sksq96/pytorch-summary/blob/master/torchsummary/torchsummary.py
@@ -159,9 +166,6 @@ def to_onnx(source, name, args):
     torch.onnx.export(model, dummy_input, converted_name)
     print('Converted model: {}'.format(converted_name))
     return
-
-def open():
-    pass
 
 def load_state(model, state_dict):
     param_dict = dict(model.named_parameters())
@@ -414,13 +418,22 @@ class SimulatedAnnealing():
         logger_.debug('Pruning ratios: {}'.format(pruning_ratios))
         return pruning_ratios
 
+    def save_search_history(self):
+        with open("logs/search_history.csv", "w") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=['sparsity', 'performance', 'pruning_ratios'])
+            writer.writeheader()
+            for item in self.search_history_:
+                writer.writerow({'sparsity': item['sparsity'], 'performance': item['performance'], 'pruning_ratios': item['pruning_ratios']})
+
     def start(self):
         logger_.info('Starting Simulated Annealing...')
+        print('===> Starting Simulated Annealing...')
         it = 0
         self.init_sparsities()
 
         self.cur_temp_ = self.start_temp_
         while self.cur_temp_ > self.stop_temp_:
+            print('\r' + '[Iter {}] cur_temp: {:.2f} | stop_temp: {:.2f} | Loss: {:.4f} | Best perf: {:.4f}'.format(it, self.cur_temp_, self.stop_temp_, self.cur_perf_, self.best_perf_), end='')
             logger_.info('Iter {}:'.format(it))
             logger_.info('Current Temperature: {}'.format(self.cur_temp_))
 
@@ -434,7 +447,7 @@ class SimulatedAnnealing():
                 # fast evaluation
                 model_masked.weights_pruned = self.mask_maker_.get_masks(config_list)
                 model_masked = prune_weight(model_masked)
-                evaluation_result = self.evaluator_(model_masked)
+                evaluation_result = self.evaluator_(model_masked, logger_)
 
                 self.search_history_.append(
                     {'sparsity': self.sparsities_, 'performance': evaluation_result, 'pruning_ratios': config_list})
@@ -461,14 +474,15 @@ class SimulatedAnnealing():
                     probability = math.exp(-1 * delta_E /
                                            self.cur_temp_)
                     if np.random.uniform(0, 1) < probability:
-                        self.cur_perf = evaluation_result
+                        logger_.info('Escape local optimized value.')
+                        self.cur_perf_ = evaluation_result
                         self.sparsities_ = sparsities_perturbated
                         break
             # cool down
             self.cur_temp_ *= self.cool_down_rate_
             it += 1
         logger_.info('Finish simulating anealing.')
-        # print('History: ',self.search_history_)
+        self.save_search_history()
 
 class MaskMaker():
     def __init__(self, model, args, input_shape):
@@ -708,42 +722,58 @@ class MaskMaker():
                 node_idx += 1
 
             elif isinstance(m, nn.Conv2d):
+                logger_.info('start generating node {} mask...'.format(node_idx))
                 tmp_pruned = m.weight.data.clone()
                 if self.args_.layout == 'nhwc':
                     tmp_pruned = tmp_pruned.permute(0, 2, 3, 1) # NCHW -> NHWC
                 original_size = tmp_pruned.size()
+                logger_.debug('original_size: {}'.format(original_size))
                 # Origin: im2col: [8, 1, 5, 5] -> [8, 25]
                 # Modified: [8, 5, 5, 1] -> [8, 25]
                 # For NHWC
                 if self.args_.layout == 'nhwc':
                     if original_size[-1] % 2:
+                        logger_.debug('Before padding: {}'.format(tmp_pruned.size()))
                         # pad: [8, 5, 5, 1] -> [8, 5, 5, 2]
                         padding_shape = (tmp_pruned.shape[0], tmp_pruned.shape[1], tmp_pruned.shape[2], 1)
                         padding_zeros = torch.zeros(padding_shape)
                         tmp_pruned = torch.cat((tmp_pruned.cpu(), padding_zeros), 3)
+                        logger_.debug('After padding: {}'.format(tmp_pruned.size()))
+                padded_shape = tmp_pruned.size()
+
+                logger_.debug('Before reshapping: {}'.format(tmp_pruned.size()))
                 tmp_pruned = tmp_pruned.reshape(original_size[0], -1) # [8, 5, 5, 2] -> [8, 50]
+                logger_.debug('After reshapping: {}'.format(tmp_pruned.size()))
                 # tmp_pruned = tmp_pruned.view(original_size[0], -1)
+
                 if tmp_pruned.shape[1] != width:
                     append_size = width - tmp_pruned.shape[1] % width
                     if append_size != width:
                         tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1) # Append: [8, 50] -> [8, 50]
+                # Partition based on group size
+                logger_.debug('Before grouping: {}'.format(tmp_pruned.size()))
                 tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, width) # Slice by width: [8,50] -> [8, 25, 2]
+                logger_.debug('After grouping: {}'.format(tmp_pruned.size()))
                 shape = tmp_pruned.shape
                 if self.args_.with_sen:
                     tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
                 else:
                     tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
-
-                if self.args_.layout == 'nhwc':
-                    if original_size[-1] % 2:
-                        tmp_pruned = torch.narrow(tmp_pruned, 2, 0, 1)
+                logger_.debug('After pruning: {}'.format(tmp_pruned.size()))
                 tmp_pruned = tmp_pruned.reshape(original_size[0], -1)
-                tmp_pruned = tmp_pruned[:, 0:m.weight.data[0].nelement()]
-                tmp_pruned = tmp_pruned.view(original_size)
-                # For NHWC
                 if self.args_.layout == 'nhwc':
+                    tmp_pruned = tmp_pruned.view(padded_shape)
+                    if original_size[-1] % 2:
+                        logger_.debug('Before narrowing: {}'.format(tmp_pruned.size()))
+                        tmp_pruned = torch.narrow(tmp_pruned, -1, 0, original_size[-1])
+                        logger_.debug('After narrowing: {}'.format(tmp_pruned.size()))
                     tmp_pruned = tmp_pruned.permute(0, 3, 1, 2) # NHWC -> NCHW
+                elif self.args_.layout == 'nchw':
+                    tmp_pruned = tmp_pruned[:, 0:m.weight.data[0].nelement()]
+                    tmp_pruned = tmp_pruned.view(original_size)
+
                 self.weight_masks_.append(tmp_pruned)
+                logger_.info('Finish generating node {} mask.\n'.format(node_idx))
                 node_idx += 1
         logger_.info('Finish generating masks.')
 
@@ -802,7 +832,7 @@ class ADMMPruner():
 
             # step 1: optimize W with AdamOptimizer
             for epoch in trange(1, self.n_training_epochs_+1):
-                self.trainer_(self.model_, optimizer=self.optimizer_, criterion=self.criterion_, epoch=epoch)
+                self.trainer_(self.model_, optimizer=self.optimizer_, criterion=self.criterion_, epoch=epoch, logger=logger_)
 
             # step 2: update Z, U
             # Z_i^{k+1} = projection(W_i^{k+1} + U_i^k)
@@ -829,12 +859,16 @@ class Prune_Op():
         self.mask_maker = MaskMaker(model, args, input_shape)
         if model.weights_pruned == None:
             model.weights_pruned = self.mask_maker.gen_masks()
-        self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.35, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker)
+        if args.sa:
+            self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.35, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker)
         if not evaluate:
-            if args.admm and admm_params != None:
-                pruner = ADMMPruner(model=model, args=args, trainer=admm_params['train_function'], criterion=admm_params['criterion'], optimizer=admm_params['optimizer'], input_shape=self.input_shape, mask_maker=self.mask_maker, sparsities_maker=self.sparsities_maker)
-                model = pruner.compresss()
-            model.weights_pruned = self.mask_maker.get_masks(self.sparsities_maker.get_sparsities())
+            if args.sa:
+                if args.admm and admm_params != None:
+                    pruner = ADMMPruner(model=model, args=args, trainer=admm_params['train_function'], criterion=admm_params['criterion'], optimizer=admm_params['optimizer'], input_shape=self.input_shape, mask_maker=self.mask_maker, sparsities_maker=self.sparsities_maker)
+                    model = pruner.compresss()
+                model.weights_pruned = self.mask_maker.get_masks(self.sparsities_maker.get_sparsities())
+            else:
+                model.weights_pruned = self.mask_maker.get_masks()
 
         self.weights_pruned = model.weights_pruned
         self.model = model
@@ -854,7 +888,7 @@ class Prune_Op():
         return
 
     def print_info(self):
-        print('------------------------------------------------------------------')
+        print('\n------------------------------------------------------------------')
         print('- Intermittent-aware weight pruning info:')
         pruned_acc = 0
         total_acc = 0
