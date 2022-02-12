@@ -12,6 +12,7 @@ import math
 import models
 import copy
 import logging
+import subprocess
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -26,17 +27,21 @@ from tqdm import tqdm, trange
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
 
-def set_logger(level=None):
+def set_logger(args):
     # Set logger info
+    path = args.prune+'/'+args.arch
+    subprocess.call('mkdir -p logs', shell=True)
+    subprocess.call('mkdir -p logs/'+args.prune, shell=True)
+    subprocess.call('mkdir -p logs/'+path, shell=True)
     logger = logging.getLogger(__name__)
     formatter = logging.Formatter(
         '[%(levelname)s %(asctime)s %(module)s:%(lineno)d] %(message)s',
         datefmt='%Y%m%d %H:%M:%S')
     ch = logging.StreamHandler()
-    fh = logging.FileHandler('logs/pruning_log.txt')
+    fh = logging.FileHandler('logs/'+path+'/stage_'+str(args.stage)+'.txt')
     ch.setFormatter(formatter)
     fh.setFormatter(formatter)
-
+    level = args.debug
     if level == 1:
         # debug
         logger.setLevel(logging.DEBUG)
@@ -304,6 +309,7 @@ class SimulatedAnnealing():
         self.evaluator_ = evaluate_function
 
         self.sparsities_ = None
+        self.metrics_ = None
 
         self.cur_perf_ = -np.inf
         self.best_perf_ = -np.inf
@@ -326,19 +332,25 @@ class SimulatedAnnealing():
         return self.best_sparsities_
 
     def rescale_sparsities(self, sparsities, target_sparsity):
-        metrics = []
-        node_idx = 0
-        for m in self.model_.modules():
-            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                if self.args_.prune == 'intermittent':
-                    metric = getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                    metrics.append(metric)
-                elif self.args_.prune == 'energy':
-                    metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                    metrics.append(metric)
-                node_idx += 1
+        if self.metrics_ == None:
+            metrics = []
+            node_idx = 0
+            for m in self.model_.modules():
+                if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                    if self.args_.prune == 'intermittent':
+                        metric = getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                        metrics.append(metric)
+                    elif self.args_.prune == 'energy':
+                        metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                        metrics.append(metric)
+                    node_idx += 1
+            order = sorted(range(len(metrics)), key=lambda k : metrics[k])
+            self.metrics_ = metrics
+            self.prune_order_ = order
+        else:
+            metrics = self.metrics_
+            order = self.prune_order_
         sparsities = sorted(sparsities)
-        order = sorted(range(len(metrics)), key=lambda k : metrics[k])
         total_weight = 0
         total_weight_pruned = 0
         for i in range(len(sparsities)):
@@ -399,19 +411,25 @@ class SimulatedAnnealing():
 
     def apply_sparsities(self, sparsities):
         pruning_ratios = [0] * self.get_n_node()
-        metrics = []
-        node_idx = 0
-        for m in self.model_.modules():
-            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                if self.args_.prune == 'intermittent':
-                    metric = getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                    metrics.append(metric)
-                elif self.args_.prune == 'energy':
-                    metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                    metrics.append(metric)
-                node_idx += 1
+        if self.metrics_ == None:
+            metrics = []
+            node_idx = 0
+            for m in self.model_.modules():
+                if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                    if self.args_.prune == 'intermittent':
+                        metric = getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                        metrics.append(metric)
+                    elif self.args_.prune == 'energy':
+                        metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                        metrics.append(metric)
+                    node_idx += 1
+            order = sorted(range(len(metrics)), key=lambda k : metrics[k])
+            self.metrics_ = metrics
+            self.prune_order_ = order
+        else:
+            metrics = self.metrics_
+            order = self.prune_order_
         sparsities = sorted(sparsities)
-        order = sorted(range(len(metrics)), key=lambda k : metrics[k])
         for i in range(len(order)):
             pruning_ratios[order[i]] = sparsities[i]
         logger_.debug('Pruning order: {}'.format(order))
@@ -874,7 +892,7 @@ class ADMMPruner():
 class Prune_Op():
     def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=None, evaluate=False):
         global logger_
-        logger_ = set_logger(args.debug)
+        logger_ = set_logger(args)
         self.width = math.prod(args.group)
         self.train_loader = train_loader
         self.criterion = criterion

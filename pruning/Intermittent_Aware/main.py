@@ -33,17 +33,14 @@ def save_state(model, acc):
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
     subprocess.call('mkdir -p saved_models', shell=True)
-    subprocess.call('mkdir -p saved_models/intermittent', shell=True)
-    subprocess.call('mkdir -p saved_models/energy', shell=True)
+    subprocess.call('mkdir -p saved_models/'+args.prune, shell=True)
+    subprocess.call('mkdir -p saved_models/'+args.prune+'/'+args.arch, shell=True)
     subprocess.call('mkdir -p saved_models/with_sensitivity', shell=True)
     if args.prune:
         if args.with_sen:
             torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
         else:
-            if args.prune == 'intermittent':
-                torch.save(state, 'saved_models/intermittent/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
-            elif args.prune == 'energy':
-                torch.save(state, 'saved_models/energy/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
+            torch.save(state, 'saved_models/'+args.prune+'/'+args.arch+'/'+'stage_'+str(args.stage)+'.pth.tar')
     else:
         torch.save(state, 'saved_models/'+args.arch+'.origin1.pth.tar')
 
@@ -189,7 +186,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default=None,
-            help='the MNIST network structure: LeNet_300_100 | LeNet_5 | SqueezeNet')
+            help='the MNIST network structure: LeNet_5_p | LeNet_5 | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -235,7 +232,7 @@ if __name__=='__main__':
         torch.cuda.manual_seed(args.seed)
 
     # load data
-    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 8, 'pin_memory': True} if args.cuda else {}
 
     # generate the model
     if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
@@ -259,7 +256,7 @@ if __name__=='__main__':
 
         model = models.SqueezeNet(args.prune)
     else:
-        print('ERROR: specified arch is not suppported')
+        print('ERROR: {} arch is not suppported'.format(args.arch))
         exit()
 
     if not args.pretrained:
