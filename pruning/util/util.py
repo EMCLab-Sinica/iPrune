@@ -190,94 +190,170 @@ def nchw2nhwc(arr):
     # print(arr.shape)
     return arr.permute(0, 2, 3, 1) # NCHW -> NHWC
 
-def getJobs(args, node, group_size, output_shapes, node_idx):
-    width = math.prod(group_size)
-    shape = node.weight.data.shape
-    matrix = node.weight.data
-    if args.layout == 'nhwc' and isinstance(node, nn.Conv2d):
-        matrix = nchw2nhwc(matrix)
-    matrix = matrix.reshape(shape[0], -1)
-    append_size = width - matrix.shape[1]%width
-    matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
-    matrix = matrix.cpu()
-    bsr = csr_matrix(matrix).tobsr(group_size)
-    data = bsr.data
-    cols = bsr.indices
-    rows = bsr.indptr
-    if isinstance(node, nn.Linear):
-        job = len(cols)
-    elif isinstance(node, nn.Conv2d):
-        job = len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
-    return job
+class MetricsMaker:
+    def __init__(self, model, args, output_shapes):
+        self.model_ = model
+        self.args_ = args
+        self.output_shapes_ = output_shapes
+        self.layer_info_ = []
+        self.metrics_ = None
+        self.prune_order_ = None
 
-def getReuse(args, node, group_size, output_shapes, node_idx):
-    layer_config = config[args.arch][node_idx]
-    width = np.prod(args.group)
-    nvm_access_cost = 100
-    vm_access_cost = 1
+    def profile(self):
+        metrics = []
+        node_idx = 0
+        for m in self.model_.modules():
+            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                if self.args_.prune == 'intermittent':
+                    metric = self.getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                    metrics.append(metric)
+                elif self.args_.prune == 'energy':
+                    metric, (vm_access, nvm_access) = self.getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                    metrics.append(metric)
+                node_idx += 1
+        order = sorted(range(len(metrics)), key=lambda k : metrics[k])
+        self.metrics_ = metrics
+        self.prune_order_ = order
+        self.saveInfo()
 
-    shape = node.weight.data.shape
-    matrix = node.weight.data
-    matrix = matrix.reshape(shape[0], -1)
-    append_size = width - matrix.shape[1] % width
-    if append_size == width:
-        append_size = 0
-    matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1).cpu()
-    bsr = csr_matrix(matrix).tobsr(group_size)
-    data = bsr.data
-    cols = bsr.indices
-    rows = bsr.indptr
+    def getMetrics(self):
+        return self.metrics_, self.prune_order_
 
-    nvm_jobs = 0
-    nvm_read_weights = 0
-    nvm_read_inputs = 0
-    vm_jobs = 0
-    vm_read_psum = 0
-    vm_write_psum = 0
-    vm_read_weights = 0
-    vm_read_inputs = 0
-    if isinstance(node, nn.Linear):
-        logger_.debug("Node: {}".format(node_idx))
-        # input stationary
-        nvm_read_inputs += layer_config['input'][2]
-        for i in range(1, len(rows)):
-            if rows[i] - rows[i - 1] != 0:
-                # TODO: indexing cost
-                nvm_read_weights += (rows[i] - rows[i - 1]) * width
-                # XXX: All channels can't be loaded in a weight tile
-                nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
-                vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+    def getLayerInfo(self):
+        return self.layer_info_
 
-    elif isinstance(node, nn.Conv2d):
-        # weight stationary
-        n_input_nvm_access = min(math.ceil((len(cols) * width) / math.prod(layer_config['tile']['weight'])), layer_config['filter'][3] / layer_config['tile']['weight'][3])
-        logger_.debug("Node: {}".format(node_idx))
-        logger_.debug("n_nvm_input: {}".format(n_input_nvm_access))
-        # nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
-        nvm_access_per_ifm = n_input_nvm_access * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
-        nvm_read_inputs += math.prod(layer_config['input']) * nvm_access_per_ifm
-        for i in range(1, len(rows)):
-            if rows[i] != rows[i - 1]:
-                # TODO: indexing cost
-                nvm_read_weights += (rows[i] - rows[i - 1]) * width
-                # XXX: All channels can't be loaded in a wieght tile
-                nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
-                vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-    logger_.debug('nvm_read_weights: {}'.format(nvm_read_weights))
-    logger_.debug('nvm_read_inputs: {}'.format(nvm_read_inputs))
-    logger_.debug('nvm_jobs: {}'.format(nvm_jobs))
-    logger_.debug('vm_jobs: {}'.format(vm_jobs))
-    vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
-    nvm_access = (nvm_jobs + nvm_read_weights + nvm_read_inputs)
-    return vm_access * vm_access_cost + nvm_access * nvm_access_cost, (vm_access, nvm_access)
+    def saveInfo(self):
+        with open('logs/'+self.args_.prune+'/'+self.args_.arch+'/stage_'+str(self.args_.stage)+'.csv', 'w') as csvfile:
+            fields = [name for name in self.layer_info_[0]]
+            writer = csv.DictWriter(csvfile, fieldnames=fields)
+            writer.writeheader()
+            for item in self.layer_info_:
+                row = {}
+                for field in fields:
+                    row[field] = item[field]
+                writer.writerow(row)
+
+        with open('logs/'+self.args_.prune+'/'+self.args_.arch+'/stage_'+str(self.args_.stage)+'_pruning_order.csv', 'w') as csvfile:
+            fields = [str(idx) for idx, name in enumerate(self.prune_order_)]
+            writer = csv.DictWriter(csvfile, fieldnames=fields)
+            writer.writeheader()
+            row = {}
+            for idx, item in enumerate(self.prune_order_):
+                row[str(idx)] = item
+            writer.writerow(row)
+
+    def getJobs(self, args, node, group_size, output_shapes, node_idx):
+        width = np.prod(group_size)
+        shape = node.weight.data.shape
+        matrix = node.weight.data
+        if args.layout == 'nhwc' and isinstance(node, nn.Conv2d):
+            matrix = nchw2nhwc(matrix)
+        matrix = matrix.reshape(shape[0], -1)
+        append_size = width - matrix.shape[1]%width
+        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
+        matrix = matrix.cpu()
+        bsr = csr_matrix(matrix).tobsr(group_size)
+        data = bsr.data
+        cols = bsr.indices
+        rows = bsr.indptr
+        if isinstance(node, nn.Linear):
+            job = len(cols)
+            op_type = 'FC'
+        elif isinstance(node, nn.Conv2d):
+            job = len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
+            op_type = 'CONV'
+        self.layer_info_.append({
+            'node': node_idx,
+            'op_type': op_type,
+            'job': job
+        })
+        return job
+
+    def getReuse(self, args, node, group_size, output_shapes, node_idx):
+        layer_config = config[args.arch][node_idx]
+        width = np.prod(args.group)
+        nvm_access_cost = 100
+        vm_access_cost = 1
+
+        shape = node.weight.data.shape
+        matrix = node.weight.data
+        matrix = matrix.reshape(shape[0], -1)
+        append_size = width - matrix.shape[1] % width
+        if append_size == width:
+            append_size = 0
+        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1).cpu()
+        bsr = csr_matrix(matrix).tobsr(group_size)
+        data = bsr.data
+        cols = bsr.indices
+        rows = bsr.indptr
+
+        nvm_jobs = 0
+        nvm_read_weights = 0
+        nvm_read_inputs = 0
+        vm_jobs = 0
+        vm_read_psum = 0
+        vm_write_psum = 0
+        vm_read_weights = 0
+        vm_read_inputs = 0
+        op_type = None
+        if isinstance(node, nn.Linear):
+            logger_.debug("Node: {}".format(node_idx))
+            # input stationary
+            nvm_read_inputs += layer_config['input'][2]
+            for i in range(1, len(rows)):
+                if rows[i] - rows[i - 1] != 0:
+                    # TODO: indexing cost
+                    nvm_read_weights += (rows[i] - rows[i - 1]) * width
+                    # XXX: All channels can't be loaded in a weight tile
+                    nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
+                    vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+            op_type = 'FC'
+
+        elif isinstance(node, nn.Conv2d):
+            # weight stationary
+            n_input_nvm_access = min(math.ceil((len(cols) * width) / np.prod(layer_config['tile']['weight'])), layer_config['filter'][3] / layer_config['tile']['weight'][3])
+            logger_.debug("Node: {}".format(node_idx))
+            logger_.debug("n_nvm_input: {}".format(n_input_nvm_access))
+            # nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
+            nvm_access_per_ifm = n_input_nvm_access * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
+            nvm_read_inputs += np.prod(layer_config['input']) * nvm_access_per_ifm
+            for i in range(1, len(rows)):
+                if rows[i] != rows[i - 1]:
+                    # TODO: indexing cost
+                    nvm_read_weights += (rows[i] - rows[i - 1]) * width
+                    # XXX: All channels can't be loaded in a wieght tile
+                    nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
+                    vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                    vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+            op_type = 'CONV'
+        logger_.debug('nvm_read_weights: {}'.format(nvm_read_weights))
+        logger_.debug('nvm_read_inputs: {}'.format(nvm_read_inputs))
+        logger_.debug('nvm_jobs: {}'.format(nvm_jobs))
+        logger_.debug('vm_jobs: {}'.format(vm_jobs))
+        vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
+        nvm_access = (nvm_jobs + nvm_read_weights + nvm_read_inputs)
+        self.layer_info_.append({
+            'node': node_idx,
+            'op_type': op_type,
+            'nvm_read_inputs': nvm_read_inputs,
+            'nvm_read_weights': nvm_read_weights,
+            'nvm_jobs': nvm_jobs,
+            'vm_jobs': vm_jobs,
+            'vm_read_weights': vm_read_weights,
+            'vm_read_inputs': vm_read_inputs,
+            'vm_read_psum': vm_read_psum,
+            'vm_write_psum': vm_write_psum,
+            'nvm_access': nvm_access,
+            'vm_access': vm_access
+        })
+        return vm_access * vm_access_cost + nvm_access * nvm_access_cost, (vm_access, nvm_access)
 
 def prune_weight_layer(m, mask):
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
@@ -298,7 +374,7 @@ def prune_weight(model):
     return model
 
 class SimulatedAnnealing():
-    def __init__(self, model, start_temp, stop_temp, cool_down_rate, perturbation_magnitude, target_sparsity, args, evaluate_function, input_shape, output_shapes, mask_maker):
+    def __init__(self, model, start_temp, stop_temp, cool_down_rate, perturbation_magnitude, target_sparsity, args, evaluate_function, input_shape, output_shapes, mask_maker, metrics_maker):
         self.model_ = model
         self.start_temp_ = start_temp
         self.stop_temp_ = stop_temp
@@ -309,7 +385,6 @@ class SimulatedAnnealing():
         self.evaluator_ = evaluate_function
 
         self.sparsities_ = None
-        self.metrics_ = None
 
         self.cur_perf_ = -np.inf
         self.best_perf_ = -np.inf
@@ -319,6 +394,7 @@ class SimulatedAnnealing():
         self.input_shape_ = input_shape
         self.output_shapes_ = output_shapes
         self.mask_maker_ = mask_maker
+        self.metrics_maker_ = metrics_maker
         self.start()
 
     def get_n_node(self):
@@ -332,24 +408,7 @@ class SimulatedAnnealing():
         return self.best_sparsities_
 
     def rescale_sparsities(self, sparsities, target_sparsity):
-        if self.metrics_ == None:
-            metrics = []
-            node_idx = 0
-            for m in self.model_.modules():
-                if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                    if self.args_.prune == 'intermittent':
-                        metric = getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                        metrics.append(metric)
-                    elif self.args_.prune == 'energy':
-                        metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                        metrics.append(metric)
-                    node_idx += 1
-            order = sorted(range(len(metrics)), key=lambda k : metrics[k])
-            self.metrics_ = metrics
-            self.prune_order_ = order
-        else:
-            metrics = self.metrics_
-            order = self.prune_order_
+        metrics, order = self.metrics_maker_.getMetrics()
         sparsities = sorted(sparsities)
         total_weight = 0
         total_weight_pruned = 0
@@ -411,24 +470,7 @@ class SimulatedAnnealing():
 
     def apply_sparsities(self, sparsities):
         pruning_ratios = [0] * self.get_n_node()
-        if self.metrics_ == None:
-            metrics = []
-            node_idx = 0
-            for m in self.model_.modules():
-                if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                    if self.args_.prune == 'intermittent':
-                        metric = getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                        metrics.append(metric)
-                    elif self.args_.prune == 'energy':
-                        metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
-                        metrics.append(metric)
-                    node_idx += 1
-            order = sorted(range(len(metrics)), key=lambda k : metrics[k])
-            self.metrics_ = metrics
-            self.prune_order_ = order
-        else:
-            metrics = self.metrics_
-            order = self.prune_order_
+        metrics, order = self.metrics_maker_.getMetrics()
         sparsities = sorted(sparsities)
         for i in range(len(order)):
             pruning_ratios[order[i]] = sparsities[i]
@@ -438,7 +480,7 @@ class SimulatedAnnealing():
         return pruning_ratios
 
     def save_search_history(self):
-        with open("logs/search_history.csv", "w") as csvfile:
+        with open('logs/'+self.args_.prune+'/'+self.args_.arch+'/stage_'+str(self.args_.stage)+'_search_history.csv', 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=['sparsity', 'performance', 'pruning_ratios'])
             writer.writeheader()
             for item in self.search_history_:
@@ -504,12 +546,13 @@ class SimulatedAnnealing():
         self.save_search_history()
 
 class MaskMaker():
-    def __init__(self, model, args, input_shape):
+    def __init__(self, model, args, input_shape, metrics_maker):
         self.args_ = args
         self.model_ = model
         self.input_shape = input_shape
         _, self.output_shapes_ = activation_shapes(model, input_shape)
         self.weight_masks_ = []
+        self.metrics_maker_ = metrics_maker
         self.pruned_ratios_ = self.getPrunedRatios(model.weights_pruned, self.output_shapes_)
         self.generate_masks()
 
@@ -527,19 +570,7 @@ class MaskMaker():
     def setPruningRatios(self, model, candidates, output_shapes):
         # https://gist.github.com/georgesung/ddb3a0b0412513d8811696293d8b1771
         pruning_ratios = [0] * len(output_shapes)
-        metrics = []
-        node_idx = 0
-        width = np.prod(self.args_.group)
-        for m in model.modules():
-            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                if self.args_.prune == 'intermittent':
-                    metric = getJobs(self.args_, m, (1, width), output_shapes, node_idx)
-                    metrics.append(metric)
-                elif self.args_.prune == 'energy':
-                    metric, (vm_access, nvm_access) = getReuse(self.args_, m, (1, width), output_shapes, node_idx)
-                    metrics.append(metric)
-                node_idx += 1
-        order = sorted(range(len(metrics)), key=lambda k : metrics[k])
+        metrics, order = self.metrics_maker_.getMetrics()
         for i in range(len(order)):
             pruning_ratios[order[i]] = candidates[i]
         logger_.debug("Metrics : {}".format(metrics))
@@ -804,9 +835,10 @@ class MaskMaker():
         self.generate_masks_(sparsities_perturbated, self.pruned_ratios_)
         return self.weight_masks_
 
-    def gen_masks(self):
+    @staticmethod
+    def gen_masks(model):
         masks = []
-        for m in self.model_.modules():
+        for m in model.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 shape = m.weight.data.size()
                 masks.append(torch.zeros(shape, dtype=torch.bool))
@@ -893,17 +925,19 @@ class Prune_Op():
     def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=None, evaluate=False):
         global logger_
         logger_ = set_logger(args)
-        self.width = math.prod(args.group)
+        self.width = np.prod(args.group)
         self.train_loader = train_loader
         self.criterion = criterion
         self.args = args
         self.input_shape = input_shape
         self.names, self.output_shapes = activation_shapes(model, input_shape)
-        self.mask_maker = MaskMaker(model, args, input_shape)
         if model.weights_pruned == None:
-            model.weights_pruned = self.mask_maker.gen_masks()
+            model.weights_pruned = MaskMaker.gen_masks(model)
+        self.metrics_maker = MetricsMaker(model=model, args=args, output_shapes=self.output_shapes)
+        self.metrics_maker.profile()
+        self.mask_maker = MaskMaker(model, args, input_shape, metrics_maker=self.metrics_maker)
         if args.sa:
-            self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.35, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker)
+            self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.35, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
         if not evaluate:
             if args.sa:
                 if args.admm and admm_params != None:

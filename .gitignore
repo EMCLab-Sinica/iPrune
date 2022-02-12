@@ -36,4 +36,8 @@
 # Pruned models
 /pruning/Intermittent_Aware/saved_models/
 
+# Pruning logs
 /pruning/Intermittent_Aware/logs/
+
+# ipy
+/pruning/Intermittent_Aware/.ipynb_checkpoints/
