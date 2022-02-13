@@ -23,28 +23,28 @@ python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS
 
 # 70.3% pruned -- 70.30%
-python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS
+python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 2 \
 	--pretrained saved_models/$PRUNE_METHOD/$Model/stage_1.pth.tar \
 	--epochs 50 \
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS
 
 # 78.8% pruned -- 74.06%
-python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS
+python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 3 \
 	--pretrained saved_models/$PRUNE_METHOD/$Model/stage_2.pth.tar \
 	--epochs 50 \
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS
 
 # 83.9% pruned -- 72.59%
-python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS
+python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 4 \
 	--pretrained saved_models/$PRUNE_METHOD/$Model/stage_3.pth.tar \
 	--epochs 60 \
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS
 
 # 87.7% pruned -- 72.18%
-python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS\
+python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 5 \
 	--pretrained saved_models/$PRUNE_METHOD/$Model/stage_4.pth.tar \
 	--epochs 50 \
