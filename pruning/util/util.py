@@ -205,10 +205,12 @@ class MetricsMaker:
         for m in self.model_.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 if self.args_.prune == 'intermittent':
-                    metric = self.getJobs(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                    metric = self.profile_node(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)['vm_jobs']
                     metrics.append(metric)
                 elif self.args_.prune == 'energy':
-                    metric, (vm_access, nvm_access) = self.getReuse(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                    self.profile_node(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                    (nvm_access_cost, vm_access_cost) = (100, 1)
+                    metric = self.layer_info_[-1]['nvm_access'] * nvm_access_cost + self.layer_info_[-1]['vm_access'] * vm_access_cost
                     metrics.append(metric)
                 node_idx += 1
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
@@ -242,34 +244,7 @@ class MetricsMaker:
                 row[str(idx)] = item
             writer.writerow(row)
 
-    def getJobs(self, args, node, group_size, output_shapes, node_idx):
-        width = np.prod(group_size)
-        shape = node.weight.data.shape
-        matrix = node.weight.data
-        if args.layout == 'nhwc' and isinstance(node, nn.Conv2d):
-            matrix = nchw2nhwc(matrix)
-        matrix = matrix.reshape(shape[0], -1)
-        append_size = width - matrix.shape[1]%width
-        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1)
-        matrix = matrix.cpu()
-        bsr = csr_matrix(matrix).tobsr(group_size)
-        data = bsr.data
-        cols = bsr.indices
-        rows = bsr.indptr
-        if isinstance(node, nn.Linear):
-            job = len(cols)
-            op_type = 'FC'
-        elif isinstance(node, nn.Conv2d):
-            job = len(cols) * output_shapes[node_idx][2] * output_shapes[node_idx][3]
-            op_type = 'CONV'
-        self.layer_info_.append({
-            'node': node_idx,
-            'op_type': op_type,
-            'job': job
-        })
-        return job
-
-    def getReuse(self, args, node, group_size, output_shapes, node_idx):
+    def profile_node(self, args, node, group_size, output_shapes, node_idx):
         layer_config = config[args.arch][node_idx]
         width = np.prod(args.group)
         nvm_access_cost = 100
@@ -277,6 +252,8 @@ class MetricsMaker:
 
         shape = node.weight.data.shape
         matrix = node.weight.data
+        if args.layout == 'nhwc' and isinstance(node, nn.Conv2d):
+            matrix = nchw2nhwc(matrix)
         matrix = matrix.reshape(shape[0], -1)
         append_size = width - matrix.shape[1] % width
         if append_size == width:
@@ -300,19 +277,7 @@ class MetricsMaker:
             logger_.debug("Node: {}".format(node_idx))
             # input stationary
             nvm_read_inputs += layer_config['input'][2]
-            for i in range(1, len(rows)):
-                if rows[i] - rows[i - 1] != 0:
-                    # TODO: indexing cost
-                    nvm_read_weights += (rows[i] - rows[i - 1]) * width
-                    # XXX: All channels can't be loaded in a weight tile
-                    nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
-                    vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
             op_type = 'FC'
-
         elif isinstance(node, nn.Conv2d):
             # weight stationary
             n_input_nvm_access = min(math.ceil((len(cols) * width) / np.prod(layer_config['tile']['weight'])), layer_config['filter'][3] / layer_config['tile']['weight'][3])
@@ -321,18 +286,19 @@ class MetricsMaker:
             # nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
             nvm_access_per_ifm = n_input_nvm_access * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
             nvm_read_inputs += np.prod(layer_config['input']) * nvm_access_per_ifm
-            for i in range(1, len(rows)):
-                if rows[i] != rows[i - 1]:
-                    # TODO: indexing cost
-                    nvm_read_weights += (rows[i] - rows[i - 1]) * width
-                    # XXX: All channels can't be loaded in a wieght tile
-                    nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
-                    vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                    vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
             op_type = 'CONV'
+
+        for i in range(1, len(rows)):
+            if rows[i] - rows[i - 1] != 0:
+                # TODO: indexing cost
+                nvm_read_weights += (rows[i] - rows[i - 1]) * width
+                # XXX: All channels can't be loaded in a weight tile
+                nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
+                vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
+                vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
+                vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * width
+                vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * width
         logger_.debug('nvm_read_weights: {}'.format(nvm_read_weights))
         logger_.debug('nvm_read_inputs: {}'.format(nvm_read_inputs))
         logger_.debug('nvm_jobs: {}'.format(nvm_jobs))
@@ -353,7 +319,7 @@ class MetricsMaker:
             'nvm_access': nvm_access,
             'vm_access': vm_access
         })
-        return vm_access * vm_access_cost + nvm_access * nvm_access_cost, (vm_access, nvm_access)
+        return self.layer_info_[-1]
 
 def prune_weight_layer(m, mask):
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
