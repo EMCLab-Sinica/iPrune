@@ -915,7 +915,7 @@ class Prune_Op():
 
         self.weights_pruned = model.weights_pruned
         self.model = model
-        self.print_info()
+        self.print_info(self.weights_pruned)
         self.prune_weight()
         return
 
@@ -930,14 +930,15 @@ class Prune_Op():
                 index += 1
         return
 
-    def print_info(self):
+    @staticmethod
+    def print_info(weights_pruned):
         print('\n------------------------------------------------------------------')
         print('- Intermittent-aware weight pruning info:')
         pruned_acc = 0
         total_acc = 0
-        for i in range(len(self.weights_pruned)):
-            pruned = int(self.weights_pruned[i].sum())
-            total = int(self.weights_pruned[i].nelement())
+        for i in range(len(weights_pruned)):
+            pruned = int(weights_pruned[i].sum())
+            total = int(weights_pruned[i].nelement())
             pruned_acc += pruned
             total_acc += total
             print('- Layer '+str(i)+': '+'{0:10d}'.format(pruned)+' / '+\

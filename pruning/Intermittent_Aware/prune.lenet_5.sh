@@ -9,6 +9,7 @@ PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --group '$GROUP_SIZE' --sa '$MY_DEBU
 # original training -- 99.23%
 # python main.py $COMMON_FLAGS
 # 35% pruned -- 99.19%
+'''
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 0 \
 	--pretrained saved_models/LeNet_5.origin.pth.tar
@@ -17,6 +18,7 @@ python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 1 \
 	--pretrained saved_models/$PRUNE_METHOD/$Model/stage_0.pth.tar
+'''
 # xx% pruned -- 99.06%
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 2 \
