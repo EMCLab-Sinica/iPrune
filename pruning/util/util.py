@@ -16,7 +16,7 @@ import subprocess
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, bsr_matrix
 from torchsummary import summary
 from torch.autograd import Variable
 from itertools import chain
@@ -205,10 +205,10 @@ class MetricsMaker:
         for m in self.model_.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 if self.args_.prune == 'intermittent':
-                    metric = self.profile_node(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)['vm_jobs']
+                    metric = self.profile_node(self.args_, m, self.output_shapes_, node_idx)['vm_jobs']
                     metrics.append(metric)
                 elif self.args_.prune == 'energy':
-                    self.profile_node(self.args_, m, (1, np.prod(self.args_.group)), self.output_shapes_, node_idx)
+                    self.profile_node(self.args_, m, self.output_shapes_, node_idx)
                     (nvm_access_cost, vm_access_cost) = (100, 1)
                     metric = self.layer_info_[-1]['nvm_access'] * nvm_access_cost + self.layer_info_[-1]['vm_access'] * vm_access_cost
                     metrics.append(metric)
@@ -244,22 +244,22 @@ class MetricsMaker:
                 row[str(idx)] = item
             writer.writerow(row)
 
-    def profile_node(self, args, node, group_size, output_shapes, node_idx):
+    def profile_node(self, args, node, output_shapes, node_idx):
         layer_config = config[args.arch][node_idx]
-        width = np.prod(args.group)
-        nvm_access_cost = 100
-        vm_access_cost = 1
+        if isinstance(node, nn.Conv2d):
+            n_row, n_col = layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1]
+            group_size = (n_row, n_col)
+            width = n_col * n_row
+        elif isinstance(node, nn.Linear):
+            n_row, n_col = layer_config['group'][0], layer_config['group'][1]
+            group_size = (n_row, n_col)
+            width = n_col * n_row
+        (nvm_access_cost, vm_access_cost) = (100, 1)
 
         shape = node.weight.data.shape
         matrix = node.weight.data
-        if args.layout == 'nhwc' and isinstance(node, nn.Conv2d):
-            matrix = nchw2nhwc(matrix)
-        matrix = matrix.reshape(shape[0], -1)
-        append_size = width - matrix.shape[1] % width
-        if append_size == width:
-            append_size = 0
-        matrix = torch.cat((matrix, matrix[:, 0:append_size]), 1).cpu()
-        bsr = csr_matrix(matrix).tobsr(group_size)
+        matrix = matrix.reshape(shape[0], -1).cpu()
+        bsr = toBSR(matrix, group_size)
         data = bsr.data
         cols = bsr.indices
         rows = bsr.indptr
@@ -280,7 +280,7 @@ class MetricsMaker:
             op_type = 'FC'
         elif isinstance(node, nn.Conv2d):
             # weight stationary
-            n_input_nvm_access = min(math.ceil((len(cols) * width) / np.prod(layer_config['tile']['weight'])), layer_config['filter'][3] / layer_config['tile']['weight'][3])
+            n_input_nvm_access = min(math.ceil((len(cols) * group_size[0] * group_size[1]) / np.prod(layer_config['tile']['weight'])), layer_config['filter'][3] / layer_config['tile']['weight'][3])
             logger_.debug("Node: {}".format(node_idx))
             logger_.debug("n_nvm_input: {}".format(n_input_nvm_access))
             # nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
@@ -291,14 +291,15 @@ class MetricsMaker:
         for i in range(1, len(rows)):
             if rows[i] - rows[i - 1] != 0:
                 # TODO: indexing cost
-                nvm_read_weights += (rows[i] - rows[i - 1]) * width
+                nvm_read_weights += (rows[i] - rows[i - 1]) * group_size[0] * group_size[1]
                 # XXX: All channels can't be loaded in a weight tile
-                nvm_jobs += layer_config['output'][0] * layer_config['output'][1]
-                vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1]
-                vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * width
-                vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * width
+                nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * group_size[0]
+                vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
+                vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
+                vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
+                vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * group_size[0] * group_size[1]
+                vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * group_size[0] * group_size[1]
+        logger_.debug('group size: {}'.format(group_size))
         logger_.debug('nvm_read_weights: {}'.format(nvm_read_weights))
         logger_.debug('nvm_read_inputs: {}'.format(nvm_read_inputs))
         logger_.debug('nvm_jobs: {}'.format(nvm_jobs))
@@ -681,10 +682,9 @@ class MaskMaker():
         return PR, metrics_sort, indices
 
     def criteria(self, tmp_pruned, pruning_ratio, pruned_ratio):
-        values = tmp_pruned.pow(2.0).mean(2, keepdim=True).pow(0.5)
+        values = tmp_pruned.pow(2.0).mean(1, keepdim=True).pow(0.5)
         tmp_val = np.array(values.tolist()).flatten()
         n_values = len(tmp_val)
-        pruning_ratio = 1 - float(1 - pruning_ratio) * float(1 - pruned_ratio)
         sorted_idx = sorted(range(len(tmp_val)), key = lambda k : tmp_val[k])[: int(n_values * pruning_ratio)]
         mask = np.zeros(tmp_val.shape, dtype=bool)
         mask[sorted_idx] = True
@@ -713,84 +713,56 @@ class MaskMaker():
             pruning_ratios = self.setPruningRatios(self.model_, self.args_.candidates_pruning_ratios, output_shapes)
             self.generate_masks_(pruning_ratios, pruned_ratios)
 
+    def to_group_shape(self, tensor, group_size):
+        # group size: [2, 1], origin: [16, 8, 5, 5]
+        # [16, 8, 5, 5] -> [16, 8, 25] -> [16, 200] -> [64, 2, 25] -> [64, 50]
+        tensor = tensor.reshape(tensor.shape[0], -1).cpu() # ->[16, 200]
+        bsr = toBSR(tensor, group_size) # -> [64, 2, 25]
+        data = bsr.data
+        self.cols = bsr.indices
+        self.rows = bsr.indptr
+        self.bsr_shape = data.shape
+        self.matrix_shape = tensor.size()
+        data = data.reshape(data.shape[0], -1) # [64, 50]
+        return torch.tensor(data)
+
+    def recover_shape(self, tensor, original_size):
+        # group size: [2, 1], target: [16, 8, 5, 5], tensor: [64, 50]
+        # [64, 50] -> [64, 2, 25] -> [16, 200] -> [16, 8, 5, 5]
+        tensor = tensor.cpu().detach().numpy()
+        tensor = tensor.reshape(self.bsr_shape[0], self.bsr_shape[1], -1)# -> [64, 2, 25]
+        origin_matrix = torch.tensor(bsr_matrix((tensor, self.cols, self.rows), shape=self.matrix_shape).toarray()) # ->[16, 200]
+        origin_matrix = origin_matrix.view(original_size) # -> [16, 8, 5, 5]
+        return origin_matrix
 
     def generate_masks_(self, pruning_ratios, pruned_ratios=[]):
         logger_.info('Start generating masks ...')
         node_idx = 0
-        width = np.prod(self.args_.group)
         self.weight_masks_ = []
         if len(pruned_ratios) == 0:
             pruned_ratios = [0] * len(self.model_.weights_pruned)
         for m in self.model_.modules():
-            if isinstance(m, nn.Linear):
+            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                layer_config = config[self.args_.arch][node_idx]
                 tmp_pruned = m.weight.data.clone()
-                append_size = width - tmp_pruned.shape[1] % width
-                tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1)
-                tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, width)
-                shape = tmp_pruned.shape
-                if self.args_.with_sen:
-                    tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
-                else:
-                    tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
-                tmp_pruned = tmp_pruned.reshape(tmp_pruned.shape[0], -1)
-                tmp_pruned = tmp_pruned[:, 0:m.weight.data.shape[1]]
-                self.weight_masks_.append(tmp_pruned)
-                node_idx += 1
-
-            elif isinstance(m, nn.Conv2d):
-                logger_.info('start generating node {} mask...'.format(node_idx))
-                tmp_pruned = m.weight.data.clone()
-                if self.args_.layout == 'nhwc':
-                    tmp_pruned = tmp_pruned.permute(0, 2, 3, 1) # NCHW -> NHWC
                 original_size = tmp_pruned.size()
                 logger_.debug('original_size: {}'.format(original_size))
-                # Origin: im2col: [8, 1, 5, 5] -> [8, 25]
-                # Modified: [8, 5, 5, 1] -> [8, 25]
-                # For NHWC
-                if self.args_.layout == 'nhwc':
-                    if original_size[-1] % 2:
-                        logger_.debug('Before padding: {}'.format(tmp_pruned.size()))
-                        # pad: [8, 5, 5, 1] -> [8, 5, 5, 2]
-                        padding_shape = (tmp_pruned.shape[0], tmp_pruned.shape[1], tmp_pruned.shape[2], 1)
-                        padding_zeros = torch.zeros(padding_shape)
-                        tmp_pruned = torch.cat((tmp_pruned.cpu(), padding_zeros), 3)
-                        logger_.debug('After padding: {}'.format(tmp_pruned.size()))
-                padded_shape = tmp_pruned.size()
-
-                logger_.debug('Before reshapping: {}'.format(tmp_pruned.size()))
-                tmp_pruned = tmp_pruned.reshape(original_size[0], -1) # [8, 5, 5, 2] -> [8, 50]
-                logger_.debug('After reshapping: {}'.format(tmp_pruned.size()))
-                # tmp_pruned = tmp_pruned.view(original_size[0], -1)
-
-                if tmp_pruned.shape[1] != width:
-                    append_size = width - tmp_pruned.shape[1] % width
-                    if append_size != width:
-                        tmp_pruned = torch.cat((tmp_pruned, tmp_pruned[:, 0:append_size]), 1) # Append: [8, 50] -> [8, 50]
-                # Partition based on group size
-                logger_.debug('Before grouping: {}'.format(tmp_pruned.size()))
-                tmp_pruned = tmp_pruned.view(tmp_pruned.shape[0], -1, width) # Slice by width: [8,50] -> [8, 25, 2]
-                logger_.debug('After grouping: {}'.format(tmp_pruned.size()))
-                shape = tmp_pruned.shape
+                if isinstance(m, nn.Linear):
+                    group_size = (layer_config['group'][0], layer_config['group'][1])
+                elif isinstance(m, nn.Conv2d):
+                    group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1])
+                tmp_pruned = self.to_group_shape(tmp_pruned, group_size)
                 if self.args_.with_sen:
                     tmp_pruned = self.criteria2(tmp_pruned, sorted_idx[node_idx], first_unpruned_idx[node_idx])
                 else:
                     tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
                 logger_.debug('After pruning: {}'.format(tmp_pruned.size()))
-                tmp_pruned = tmp_pruned.reshape(original_size[0], -1)
-                if self.args_.layout == 'nhwc':
-                    tmp_pruned = tmp_pruned.view(padded_shape)
-                    if original_size[-1] % 2:
-                        logger_.debug('Before narrowing: {}'.format(tmp_pruned.size()))
-                        tmp_pruned = torch.narrow(tmp_pruned, -1, 0, original_size[-1])
-                        logger_.debug('After narrowing: {}'.format(tmp_pruned.size()))
-                    tmp_pruned = tmp_pruned.permute(0, 3, 1, 2) # NHWC -> NCHW
-                elif self.args_.layout == 'nchw':
-                    tmp_pruned = tmp_pruned[:, 0:m.weight.data[0].nelement()]
-                    tmp_pruned = tmp_pruned.view(original_size)
-
+                tmp_pruned = tmp_pruned.reshape(tmp_pruned.shape[0], -1)
+                tmp_pruned = self.recover_shape(tmp_pruned, original_size)
                 self.weight_masks_.append(tmp_pruned)
-                logger_.info('Finish generating node {} mask.\n'.format(node_idx))
                 node_idx += 1
+                logger_.info('Finish generating node {} mask.\n'.format(node_idx))
+        self.weight_masks_ = [torch.logical_or(x, y) for x, y in zip(self.weight_masks_, self.model_.weights_pruned)]
         logger_.info('Finish generating masks.')
 
     def get_masks(self, sparsities_perturbated=[]):
@@ -889,6 +861,7 @@ class ADMMPruner():
 
 class Prune_Op():
     def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=None, evaluate=False):
+        # args.group: [n_filter, n_channel]
         global logger_
         logger_ = set_logger(args)
         self.width = np.prod(args.group)
@@ -922,10 +895,7 @@ class Prune_Op():
     def prune_weight(self):
         index = 0
         for m in self.model.modules():
-            if isinstance(m, nn.Linear):
-                m.weight.data[self.weights_pruned[index]] = 0
-                index += 1
-            elif isinstance(m, nn.Conv2d):
+            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 m.weight.data[self.weights_pruned[index]] = 0
                 index += 1
         return

@@ -8,7 +8,7 @@ config = {
                 'input': [8,5,1],
                 'weight': [5,5,1,8]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1], # [n_filter, n_channel]
             'stride': 1
         },
         {
@@ -19,7 +19,7 @@ config = {
                 'input': [8,5,8],
                 'weight': [5,5,8,16]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         {
@@ -30,7 +30,7 @@ config = {
                 'input': [1,1,256],
                 'weight': [1,1,256,4]
             },
-            'group': [1, 1, 2],
+            'group': [1, 16],
             'stride': 1
         },
         {
@@ -41,7 +41,7 @@ config = {
                 'input': [1,1,256],
                 'weight': [1,1,256,4]
             },
-            'group': [1, 1, 2],
+            'group': [1, 16],
             'stride': 1
         }
     ],
@@ -101,7 +101,7 @@ config = {
                 'input': [8,3,3],
                 'weight': [3,3,3,64]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 2
         },
         #1
@@ -113,7 +113,7 @@ config = {
                 'input': [7,3,64],
                 'weight': [1,1,64,16]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #2
@@ -125,7 +125,7 @@ config = {
                 'input': [7,3,16],
                 'weight': [1,1,16,64]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #3
@@ -137,7 +137,7 @@ config = {
                 'input': [7,3,16],
                 'weight': [3,3,16,16]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #4
@@ -149,7 +149,7 @@ config = {
                 'input': [7,3,64],
                 'weight': [1,1,64,16]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #5
@@ -161,7 +161,7 @@ config = {
                 'input': [7,3,16],
                 'weight': [1,1,16,64]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #6
@@ -173,7 +173,7 @@ config = {
                 'input': [7,3,16],
                 'weight': [3,3,16,16]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #7
@@ -185,7 +185,7 @@ config = {
                 'input': [7,3,64],
                 'weight': [1,1,64,32]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #8
@@ -197,7 +197,7 @@ config = {
                 'input': [7,3,32],
                 'weight': [1,1,32,128]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #9
@@ -209,7 +209,7 @@ config = {
                 'input': [7,3,32],
                 'weight': [3,3,32,8]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         #10
@@ -221,7 +221,7 @@ config = {
                 'input': [7,3,128],
                 'weight': [1,1,128,10]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         }
     ]

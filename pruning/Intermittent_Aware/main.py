@@ -33,9 +33,10 @@ def save_state(model, acc):
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
     subprocess.call('mkdir -p saved_models', shell=True)
-    subprocess.call('mkdir -p saved_models/'+args.prune, shell=True)
-    subprocess.call('mkdir -p saved_models/'+args.prune+'/'+args.arch, shell=True)
-    subprocess.call('mkdir -p saved_models/with_sensitivity', shell=True)
+    if args.prune:
+        subprocess.call('mkdir -p saved_models/'+args.prune, shell=True)
+        subprocess.call('mkdir -p saved_models/'+args.prune+'/'+args.arch, shell=True)
+        subprocess.call('mkdir -p saved_models/with_sensitivity', shell=True)
     if args.prune:
         if args.with_sen:
             torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
@@ -232,7 +233,7 @@ if __name__=='__main__':
         torch.cuda.manual_seed(args.seed)
 
     # load data
-    kwargs = {'num_workers': 8, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
     # generate the model
     if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':

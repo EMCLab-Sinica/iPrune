@@ -22,11 +22,13 @@ def lowering(tensor, shape):
     matrix = tensor.reshape(shape[0], -1)
     return matrix
 
-def toBSR(matrix, dims, width):
+def toBSR(matrix, group_size):
+    '''
     append_size = width - matrix.shape[1] % width
     if append_size != width:
         matrix = np.concatenate((matrix, np.zeros((len(matrix), append_size))), 1)
-    bsr = csr_matrix(matrix).tobsr((1, width))
+    '''
+    bsr = csr_matrix(matrix).tobsr(group_size)
     return bsr
 
 def getVal(node, colIdx):
@@ -73,7 +75,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--onnx_model', action='store', default=None)
     parser.add_argument('--arch', action='store', default='LeNet_5', help='the network architecture: LeNet_5 | SqueezeNet')
-    parser.add_argument('--group', action='store', type=int, default=2, help='Group size')
+    parser.add_argument('--group', action='store', type=int, default=[2, 1], help='Group size')
     parser.add_argument('--layout', action='store', default='nchw', help='Select data layout: nhwc | nchw')
     args = parser.parse_args()
     printArgs(args)
@@ -91,20 +93,26 @@ if __name__ == '__main__':
     main_names = [n.input[1] for idx, n in enumerate(model.graph.node) if n.op_type == 'Conv' or n.op_type == 'Gemm']
 
     nodes = model.graph.initializer
+    node_idx = 0
     for idx, node in enumerate(nodes):
         shape = node.dims
         print(shape)
         matrix = onnx.numpy_helper.to_array(node)
         if node.name in main_names:
-            if len(shape) == 4 and args.layout == 'nhwc':
-                matrix = nchw2nhwc(matrix)
+            layer_config = config[args.arch][node_idx]
+            print(layer_config)
             matrix = lowering(matrix, shape)
-            matrix = toBSR(matrix, shape, args.group)
+            if len(shape) == 4:
+                group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1])
+            else:
+                group_size = (layer_config['group'][0], layer_config['group'][1])
+            matrix = toBSR(matrix, group_size)
             sparse_node = {
                 'dims': shape,
                 'weights': matrix
             }
             graph.append(sparse_node)
+            node_idx += 1
 
     # getVal(graph[], 0)
     # printGroups(graph[2])
