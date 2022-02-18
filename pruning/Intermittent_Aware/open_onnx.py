@@ -28,6 +28,7 @@ def toBSR(matrix, group_size):
     if append_size != width:
         matrix = np.concatenate((matrix, np.zeros((len(matrix), append_size))), 1)
     '''
+    print(group_size)
     bsr = csr_matrix(matrix).tobsr(group_size)
     return bsr
 

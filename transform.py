@@ -22,6 +22,7 @@ import onnx.numpy_helper
 import numpy as np
 
 from configs import configs
+from pruning.Intermittent_Aware.config import config as model_configs
 from utils import extract_data, find_initializer, find_node_by_output, find_tensor_value_info, load_model, get_model_ops, OPS_WITH_MERGE, DataLayout
 
 logging.basicConfig()
@@ -663,35 +664,33 @@ def decode_raw_data(params):
     }[params.data_type]
     return list(map(lambda t: t[0], struct.iter_unpack(format_char, params.raw_data)))
 
-def toBSR(matrix, dims, width):
-    #print('origin size: {}'.format(len(matrix)))
+def toBSR(matrix, config, dims, op_type):
+    shape = matrix.shape
     matrix = np.reshape(matrix, tuple(dims))
     matrix = np.reshape(matrix, (dims[0], -1))
-    shape = matrix.shape
-    # align the group size
-    append_size = width - shape[1] % width
-    if append_size != width:
-        matrix = np.concatenate((matrix, np.zeros((len(matrix), append_size), dtype=np.int8)), 1)
-    bsr = csr_matrix(matrix).tobsr((1, width))
+    if op_type == 'CONV':
+        group_size = (config['group'][0], config['group'][1] * dims[2] * dims[3])
+    elif op_type == 'GEMM':
+        group_size = (config['group'][0], config['group'][1])
+    bsr = csr_matrix(matrix).tobsr(group_size)
     # FIXME: discard the appended weights
-    '''
-    bsr.data = np.reshape(bsr.data, bsr.data.shape[0])
-    print(bsr.data.shape)
-    data = bsr.data[:, 0:shape[1]]
-    print(data.shape)
-    '''
     data = np.reshape(bsr.data, -1)
     cols = bsr.indices
     rows = bsr.indptr
-    print('modified size: {}'.format(len(data)))
-    print('Rows size: {}'.format(rows.shape))
-    print('Cols size: {}'.format(cols.shape))
-    #print('Data: {}'.format(data))
-    #print('Cols: {}'.format(cols))
-    #print('Rows: {}'.format(rows))
+    logger.info('modified size: {}'.format(len(data)))
+    logger.info('Rows size: {}'.format(rows.shape))
+    logger.info('Cols size: {}'.format(cols.shape))
+    # print('Data: {}'.format(data))
+    # print('Cols: {}'.format(cols))
+    # print('Rows: {}'.format(rows))
     return data, cols, rows
 
 model_parameters_info = outputs['model_parameters_info']
+if args.config == 'pruned_mnist':
+    model_config = model_configs['LeNet_5']
+elif args.config == 'pruned_cifar':
+    model_config = model_configs['SqueezeNet']
+node_idx = 0
 for params in parameters:
     if params is None:  # input
         # Actual data for test samples are added last
@@ -719,7 +718,7 @@ for params in parameters:
             else:
                 float_data = decode_raw_data(params)
             # TODO: handle data layout for sparse matrix
-            if params.name in conv_param_names:
+            if params.name in conv_param_names and not args.sparse:
                 logger.info('Reorder conv param %s', params.name)
                 float_data = nchw2nhwc(float_data, params.dims)
 
@@ -729,7 +728,12 @@ for params in parameters:
                 cols = []
                 rows = []
             if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
-                data, cols, rows = toBSR(int_data_Q15, params.dims, 2)
+                layer_config = model_config[node_idx]
+                node_idx += 1
+                if params.name in conv_param_names:
+                    data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'CONV')
+                elif params.name in gemm_param_names:
+                    data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'GEMM')
                 int_data_Q15 = data
 
             data_len = len(int_data_Q15)
