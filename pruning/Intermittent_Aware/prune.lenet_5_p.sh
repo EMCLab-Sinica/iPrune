@@ -1,10 +1,9 @@
 Model='LeNet_5_p'
 PRUNE_METHOD=$1
-GROUP_SIZE='1 1 1 2'
 COMMON_FLAGS='--arch LeNet_5_p --batch-size 64 --test-batch-size 1000'
 CANDIDATES_PRUNING_RATIOS='0.25 0.3 0.35 0.4'
 MY_DEBUG='--debug 1' # -1: none, 0: info, 1: debug
-PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --group '$GROUP_SIZE' --sa '$MY_DEBUG' --lr 1'
+PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --lr 1'
 
 # original training -- 99.20%
 #python main.py $COMMON_FLAGS --lr 1 --epochs 30

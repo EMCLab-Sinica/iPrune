@@ -1,10 +1,9 @@
 Model='SqueezeNet'
 PRUNE_METHOD=$1
-GROUP_SIZE='1 1 1 2'
 COMMON_FLAGS='--arch SqueezeNet --batch-size 32 --test-batch-size 32 --lr 0.001'
 CANDIDATES_PRUNING_RATIOS='0 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5'
 MY_DEBUG='--debug 1'
-PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --group '$GROUP_SIZE' --sa '$MY_DEBUG
+PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG
 
 # original training --73.93%
 # python main.py $COMMON_FLAGS --epochs 300

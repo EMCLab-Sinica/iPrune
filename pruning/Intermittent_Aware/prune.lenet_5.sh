@@ -1,15 +1,14 @@
 Model='LeNet_5'
 PRUNE_METHOD=$1
-GROUP_SIZE='1 1 1 2'
 COMMON_FLAGS='--arch LeNet_5'
 CANDIDATES_PRUNING_RATIOS='0.25 0.3 0.35 0.4'
 MY_DEBUG='--debug 1' # -1: none, 0: info, 1: debug
-PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --group '$GROUP_SIZE' --sa '$MY_DEBUG' --lr 0.01 --lr-epochs 20'
+PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --lr 0.01 --lr-epochs 20'
 
 # original training -- 99.23%
-# python main.py $COMMON_FLAGS
-# 35% pruned -- 99.19%
+#python main.py $COMMON_FLAGS
 '''
+# 35% pruned -- 99.19%
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 0 \
 	--pretrained saved_models/LeNet_5.origin.pth.tar

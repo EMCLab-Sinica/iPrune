@@ -36,12 +36,8 @@ def save_state(model, acc):
     if args.prune:
         subprocess.call('mkdir -p saved_models/'+args.prune, shell=True)
         subprocess.call('mkdir -p saved_models/'+args.prune+'/'+args.arch, shell=True)
-        subprocess.call('mkdir -p saved_models/with_sensitivity', shell=True)
     if args.prune:
-        if args.with_sen:
-            torch.save(state, 'saved_models/with_sensitivity/'+args.arch+'.prune.group_size5.' + str(args.stage)+'.pth.tar')
-        else:
-            torch.save(state, 'saved_models/'+args.prune+'/'+args.arch+'/'+'stage_'+str(args.stage)+'.pth.tar')
+        torch.save(state, 'saved_models/'+args.prune+'/'+args.arch+'/'+'stage_'+str(args.stage)+'.pth.tar')
     else:
         torch.save(state, 'saved_models/'+args.arch+'.origin1.pth.tar')
 
@@ -202,22 +198,14 @@ if __name__=='__main__':
             help='pruning stage')
     parser.add_argument('--debug', action='store', type=int, default=-1,
             help='set debug level')
-    parser.add_argument('--group', action='store', nargs='+', type=int, default=[1,1,1,2],
-            help='pruing granularity (group size)')
-    parser.add_argument('--pruning_ratio', action='store', type=float, default=0.0,
-            help='pruning ratio for Intermittent-aware weight pruning')
     parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0.25, 0.3, 0.35, 0.4],
             help='candidates of pruning ratios for weight pruning')
-    parser.add_argument('--with_sen', action='store_true', default=False,
-            help='w/ or w/o sensitivity analysis')
     parser.add_argument('--admm', action='store_true', default=False,
             help='w/ or w/o ADMM')
     parser.add_argument('--sa', action='store_true', default=False,
             help='w/ or w/o simulated annealling')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
             help='Learning rate step gamma (default: 0.7)')
-    parser.add_argument('--layout', default='nhwc',
-            help='Select data layout: nchw | nhwc')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -302,7 +290,6 @@ if __name__=='__main__':
         if args.prune:
             if not model.weights_pruned:
                 raise Exception ('weights_pruned is missing')
-            prune_op = Prune_Op(model, args.group, True)
         test(evaluate=True)
         exit()
 
