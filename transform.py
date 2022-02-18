@@ -468,12 +468,12 @@ def determine_conv_tile_c(n):
         node_flags.input_tile_c //= 2
         logger.debug('input_tile_c=%d', node_flags.input_tile_c)
     node_flags.output_tile_c = output_tile_c
+    # manually set tile size
+    node_flags.input_tile_c = 1
+    node_flags.output_tile_c = 2
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
     print('output_tile_c: {}'.format(node_flags.output_tile_c))
-    '''
-    node_flags.input_tile_c = 1
-    node_flags.output_tile_c = 1
-    '''
+
 def determine_gemm_tile_sizes(n):
     logger.debug('Determine tile size for Gemm node %s', n.name)
 
@@ -503,6 +503,10 @@ def determine_gemm_tile_sizes(n):
         logger.debug("tile_channel = %d", node_flags.tile_channel)
         if node_flags.tile_channel > 0:
             break
+    # manually set tile size
+    node_flags.tile_channel = 16
+    print('tile_channel: {}'.format(node_flags.tile_channel))
+    print('tile_size_unit: {}'.format(tile_size_unit))
 
     assert tile_size_unit * (node_flags.tile_channel + 2) <= Constants.ARM_PSTATE_LEN
 
@@ -668,13 +672,14 @@ def toBSR(matrix, config, dims, op_type):
     shape = matrix.shape
     matrix = np.reshape(matrix, tuple(dims))
     matrix = np.reshape(matrix, (dims[0], -1))
+    matrix = np.transpose(matrix)
     if op_type == 'CONV':
-        group_size = (config['group'][0], config['group'][1] * dims[2] * dims[3])
+        group_size = (config['group'][1] * dims[2] * dims[3], config['group'][0])
     elif op_type == 'GEMM':
-        group_size = (config['group'][0], config['group'][1])
+        group_size = (config['group'][1], config['group'][0])
     bsr = csr_matrix(matrix).tobsr(group_size)
-    # FIXME: discard the appended weights
-    data = np.reshape(bsr.data, -1)
+    data = np.transpose(bsr.data, axes=(0,2,1))
+    data = np.reshape(data, -1)
     cols = bsr.indices
     rows = bsr.indptr
     logger.info('modified size: {}'.format(len(data)))
@@ -746,10 +751,13 @@ for params in parameters:
             if args.sparse:
                 model_parameters_info.write(to_bytes(slot.cols_offset, size=32))  # cols_offset
                 model_parameters_info.write(to_bytes(slot.rows_offset, size=32))  # rows_offset
+                if len(cols) == 0:
+                    # +1 for bias
+                    cols = rows = [0]
                 slot.cols.write(to_bytes(cols))
                 slot.rows.write(to_bytes(rows))
-                slot.cols_offset += len(cols)
-                slot.rows_offset += len(rows)
+                slot.cols_offset += 2 * len(cols)
+                slot.rows_offset += 2 * len(rows)
 
             slot.target.write(to_bytes(int_data_Q15))
             slot.offset += 2 * len(int_data_Q15)
@@ -771,10 +779,13 @@ for params in parameters:
                 slot.target.write(to_bytes(param, size=64))
                 slot.offset += 8
                 if args.sparse:
+                    if len(cols) == 0:
+                        # +1 for bias
+                        cols = rows = [0]
                     slot.cols.write(to_bytes(cols))
                     slot.rows.write(to_bytes(rows))
-                    slot.cols_offset += len(cols)
-                    slot.rows_offset += len(rows)
+                    slot.cols_offset += 2 * len(cols)
+                    slot.rows_offset += 2 * len(rows)
             model_parameters_info.write(to_bytes(64, size=8)) # bitwidth
         else:
             assert False
