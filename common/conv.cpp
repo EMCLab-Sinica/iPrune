@@ -191,7 +191,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
         my_fill_q15(0, filter_tmp, fill_length);
 #if SPARSE
         // filter_len represents the number of data one DMA transfered
-        // TODO: Load fliter according to index
+        // Load fliter according to index
         uint16_t filter_offset = conv_params->kH * conv_params->kW * conv_params->cur_input_tile_c;
         uint16_t col_index = conv_params->cur_row_val + conv_params->cur_n_cols;
         uint16_t block_size = filter_offset * cur_output_tile_c;
@@ -812,7 +812,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             }
             conv_params->input_w = conv_params->input_w_first;
             // finish computing a weight tile
-            // TODO: update filter_tile_index according to cols
 #if SPARSE
             if(++conv_params->cur_n_cols >= conv_params->n_cols) {
                 break;
@@ -916,7 +915,7 @@ void ConvMergeOutputChunkHandler(uint32_t range_offset, uint16_t range_len, int8
 void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
     // Do not use conv_params here as its intialization in alloc_conv and
     // handle_conv might be skipped if the Conv node has finished.
-    const ParameterInfo *data = input[0];
+    const ParameterInfo *data = input[0], *conv_filter = input[1];
     uint16_t OUTPUT_CHANNEL = data->dims[1],
              OUTPUT_H = data->dims[2],
              OUTPUT_W = data->dims[3];
@@ -924,7 +923,10 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     my_printf_debug("ConvMerge!" NEWLINE);
 
     uint8_t n_tiles_c = data->params_len / sizeof(int16_t) / (OUTPUT_CHANNEL * OUTPUT_H * OUTPUT_W);
-
+#if SPARSE
+    uint16_t output_tile_c = node->flags.extra.conv.output_tile_c;
+    uint16_t n_output_tile_c = conv_filter->dims[0] / output_tile_c;
+#endif
     MY_ASSERT(n_tiles_c);
 
     uint32_t tiling_results_len = OUTPUT_CHANNEL * OUTPUT_H * OUTPUT_W;
@@ -965,11 +967,39 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     my_printf_debug("old_embedding_offset = %d" NEWLINE, old_embedding_offset);
 #endif
 
+#if SPARSE
+    uint16_t cols[MAX_COL_LEN] = {0};
+    uint16_t rows[MAX_TILE_C_LEN] = {0};
+    int16_t n_rows = n_tiles_c + 1;
+    my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
+    int16_t n_cols = rows[n_rows - 1]; // calculate from row values
+    my_memcpy_from_param_col(model, cols, conv_filter, 0, (n_cols) * sizeof(int16_t));
+    /* entry: the pruned states in each tile_c (n_tiles_c)
+     *  1: pruned filters in the tile_c
+     *  0: unpruned filters int the tile_c
+     */
+    // FIXME: can't allocate with variable length
+    int16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
+    for(int16_t idx = 1; idx < n_rows; ++idx) {
+        int16_t n_cols_ = rows[idx] - rows[idx - 1];
+        // printf("n_cols: %d\n", n_cols_);
+        // set unpruned filter to 1
+        for(int16_t offset = 0; offset < n_cols_; ++offset) {
+            int16_t filters_in_tile = cols[rows[idx - 1] + offset];
+            // printf("filters_in_tile: %d\n", filters_in_tile);
+            pruned_tile_c[idx - 1] |= 1 << filters_in_tile;
+        }
+        pruned_tile_c[idx - 1] = ~pruned_tile_c[idx - 1];
+    }
+#endif
     for (; output_h < OUTPUT_H;) {
         for (; output_w < OUTPUT_W; output_w++) {
             uint16_t real_chunk_len = chunk_len - chunk_offset;
             my_printf_debug("real_chunk_len = %d" NEWLINE, real_chunk_len);
             for (uint16_t input_tile_c_index = 0; input_tile_c_index < n_tiles_c; input_tile_c_index++) {
+#if SPARSE
+                // TODO: skip loading if all of filters in input_tile_c are pruned
+#endif
                 int16_t *to_add = lea_buffer + input_tile_c_index * chunk_len;
                 uint16_t cur_input_offset = input_tile_c_index * tiling_results_len + input_offset;
                 my_memcpy_from_param(model, to_add, data, cur_input_offset, real_chunk_len * sizeof(int16_t));
@@ -982,6 +1012,17 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                 my_printf_debug(NEWLINE "Input offset %d, input tile %d, output offset %d" NEWLINE, cur_input_offset, input_tile_c_index, output_offset);
                 my_printf_debug("Added chunk" NEWLINE);
                 dump_matrix_debug(to_add, real_chunk_len, ValueInfo(data));
+#if SPARSE
+                uint16_t tile_pruned_state = pruned_tile_c[input_tile_c_index];
+                for(uint8_t cur_n_filters = 0; cur_n_filters < n_output_tile_c; ++cur_n_filters) {
+                    if(tile_pruned_state & (1 << cur_n_filters)) {
+                        // set the value of pruned filters as 0
+                        for(uint8_t offset = 0; offset < output_tile_c; ++offset) {
+                            to_add[cur_n_filters * output_tile_c + offset] = 0;
+                        }
+                    }
+                }
+#endif
                 if (input_tile_c_index != 0) {
                     my_add_q15(lea_buffer, to_add, lea_buffer, real_chunk_len);
                 }

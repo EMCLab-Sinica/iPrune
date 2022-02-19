@@ -29,6 +29,15 @@ static void handle_node(Model *model, uint16_t node_idx) {
         input[j] = get_parameter_info(input_id[j]);
         // dump_params(input[j]);
     }
+#if SPARSE
+    // XXX: WTF, it works!!!!
+    if(cur_node->op_type == 1) {
+        // cur node is ConvMerge
+        input_id[1] = get_node(node_idx - 1)->inputs[1];
+        my_printf_debug("input_id[%d] = %d" NEWLINE, j, input_id[j]);
+        input[1] = get_parameter_info(input_id[1]);
+    }
+#endif
     my_printf_debug(NEWLINE);
 
     /* Allocate an ParameterInfo for output. Details are filled by

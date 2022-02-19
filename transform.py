@@ -45,6 +45,8 @@ class Constants:
     TURNING_POINTS_LEN = 8
     MODEL_NODES_LEN = 0
     INPUTS_DATA_LEN = 0
+    MAX_COL_LEN = 50
+    MAX_TILE_C_LEN = 256
     NUM_INPUTS = 0  # will be filled during parsing
     N_INPUT = 0
     # Match the size of external FRAM
@@ -514,6 +516,9 @@ graph = []
 for n in nodes:
     if n.op_type == 'Conv':
         determine_conv_tile_c(n)
+    if n.op_type == 'ConvMerge':
+        # XXX: insert conv_before_merge info into conv_merge
+        n.flags = graph[-1].flags
     if n.op_type == 'Gemm':
         determine_gemm_tile_sizes(n)
     graph.append(Node(name=n.name or n.op_type,
