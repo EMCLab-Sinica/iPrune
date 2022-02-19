@@ -744,6 +744,12 @@ class Prune_Op():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 m.weight.data[self.weights_pruned[index]] = 0
                 index += 1
+                # prune bias if entire filter are pruned
+                dims = m.weight.data.shape
+                for i in range(dims[0]):
+                    ans = torch.sum(m.weight.data[i])
+                    if ans == 0:
+                        m.bias.data[i] = 0
         return
 
     @staticmethod
