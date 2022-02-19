@@ -627,7 +627,13 @@ else:
         slot_id: int
 
 if args.sparse:
-    parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], cols_offset=0, cols=outputs['cols'], rows_offset=0, rows=outputs['rows'], slot_id=Constants.SLOT_PARAMETERS)
+    parameters_slot = ParametersSlot(offset=0, \
+                                     target=outputs['parameters'], \
+                                     cols_offset=0, \
+                                     cols=outputs['cols'], \
+                                     rows_offset=0, \
+                                     rows=outputs['rows'], \
+                                     slot_id=Constants.SLOT_PARAMETERS)
 else:
     parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], slot_id=Constants.SLOT_PARAMETERS)
 
@@ -686,8 +692,8 @@ def toBSR(matrix, config, dims, op_type):
     logger.info('Rows size: {}'.format(rows.shape))
     logger.info('Cols size: {}'.format(cols.shape))
     # print('Data: {}'.format(data))
-    # print('Cols: {}'.format(cols))
-    # print('Rows: {}'.format(rows))
+    print('Cols: {}'.format(cols))
+    print('Rows: {}'.format(rows))
     return data, cols, rows
 
 model_parameters_info = outputs['model_parameters_info']

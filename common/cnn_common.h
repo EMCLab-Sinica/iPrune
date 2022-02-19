@@ -54,7 +54,7 @@ typedef struct Node {
     char name[NODE_NAME_LEN];
     char output_name[NODE_NAME_LEN];
     uint16_t inputs_len;
-    int16_t inputs[NUM_INPUTS];
+    int16_t inputs[NUM_INPUTS]; // ifm, weight, bias
     uint16_t max_output_id;
     uint16_t op_type;
     NodeFlags flags;
@@ -165,6 +165,8 @@ extern ParameterInfo intermediate_parameters_info_vm[MODEL_NODES_LEN];
  * Helpers for the model & nodes  *
  **********************************/
 const uint8_t* get_param_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
+const uint8_t* get_param_row_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
+const uint8_t* get_param_col_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 int16_t get_q15_param(Model* model, const ParameterInfo *param, uint16_t offset_in_word);
 void put_q15_param(ParameterInfo *param, uint16_t offset_in_word, int16_t val);
 int64_t get_int64_param(const ParameterInfo *param, size_t i);
@@ -174,6 +176,8 @@ const Node* get_node(size_t i);
 const Node* get_node(const ParameterInfo* param);
 SlotInfo * get_slot_info(Model* model, uint8_t i);
 void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
+void my_memcpy_from_param_row(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
+void my_memcpy_from_param_col(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 
 /**********************************
  *       Operation handlers       *

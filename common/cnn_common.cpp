@@ -42,6 +42,30 @@ const uint8_t* get_param_base_pointer(const ParameterInfo *param, uint32_t *limi
     }
 }
 
+#if SPARSE
+const uint8_t* get_param_row_base_pointer(const ParameterInfo *param, uint32_t *limit_p) {
+    uint16_t slot_id = param->slot;
+    switch (slot_id) {
+        case SLOT_PARAMETERS:
+            *limit_p = ROWS_DATA_LEN;
+            return rows_data;
+        default:
+            ERROR_OCCURRED();
+    }
+}
+
+const uint8_t* get_param_col_base_pointer(const ParameterInfo *param, uint32_t *limit_p) {
+    uint16_t slot_id = param->slot;
+    switch (slot_id) {
+        case SLOT_PARAMETERS:
+            *limit_p = COLS_DATA_LEN;
+            return cols_data;
+        default:
+            ERROR_OCCURRED();
+    }
+}
+#endif
+
 int16_t get_q15_param(Model* model, const ParameterInfo *param, uint16_t i) {
     MY_ASSERT(param->bitwidth == 16);
     if (param->slot == SLOT_TEST_SET) {
@@ -110,6 +134,36 @@ uint16_t get_next_slot(Model *model, const ParameterInfo *param) {
     get_slot_info(model, next_slot_id)->user = model->layer_idx;
     return next_slot_id;
 }
+
+#if SPARSE
+void my_memcpy_from_param_col(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
+    if (param->slot == SLOT_TEST_SET) {
+        read_from_samples(dest, offset_in_word, n);
+    } else if (param->slot >= SLOT_CONSTANTS_MIN) {
+        uint32_t limit;
+        const uint8_t *baseptr = get_param_col_base_pointer(param, &limit);
+        uint32_t total_offset = param->params_cols_offset + offset_in_word * sizeof(int16_t);
+        MY_ASSERT(total_offset + n <= limit);
+        my_memcpy(dest, baseptr + total_offset, n);
+    } else {
+        my_memcpy_from_intermediate_values(dest, param, offset_in_word, n);
+    }
+}
+
+void my_memcpy_from_param_row(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
+    if (param->slot == SLOT_TEST_SET) {
+        read_from_samples(dest, offset_in_word, n);
+    } else if (param->slot >= SLOT_CONSTANTS_MIN) {
+        uint32_t limit;
+        const uint8_t *baseptr = get_param_row_base_pointer(param, &limit);
+        uint32_t total_offset = param->params_rows_offset + offset_in_word * sizeof(int16_t);
+        MY_ASSERT(total_offset + n <= limit);
+        my_memcpy(dest, baseptr + total_offset, n);
+    } else {
+        my_memcpy_from_intermediate_values(dest, param, offset_in_word, n);
+    }
+}
+#endif
 
 void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
     if (param->slot == SLOT_TEST_SET) {
