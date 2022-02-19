@@ -76,6 +76,7 @@ typedef struct ParameterInfo {
     /* Used to store sparse matrix */
     uint32_t params_cols_offset;
     uint32_t params_rows_offset;
+    uint32_t first_tile_index_offset; // for bias
 #endif
     /* Known bitwidth values:
      * 16: q15
@@ -97,7 +98,7 @@ typedef struct ParameterInfo {
 } ParameterInfo;
 
 #if SPARSE
-    static_assert(sizeof(ParameterInfo) == 36, "Unexpected size for ParameterInfo");
+    static_assert(sizeof(ParameterInfo) == 40, "Unexpected size for ParameterInfo");
 #else
     static_assert(sizeof(ParameterInfo) == 28, "Unexpected size for ParameterInfo");
 #endif
@@ -167,6 +168,7 @@ extern ParameterInfo intermediate_parameters_info_vm[MODEL_NODES_LEN];
 const uint8_t* get_param_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 const uint8_t* get_param_row_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 const uint8_t* get_param_col_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
+const uint8_t* get_param_first_tile_index_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 int16_t get_q15_param(Model* model, const ParameterInfo *param, uint16_t offset_in_word);
 void put_q15_param(ParameterInfo *param, uint16_t offset_in_word, int16_t val);
 int64_t get_int64_param(const ParameterInfo *param, size_t i);
@@ -178,6 +180,7 @@ SlotInfo * get_slot_info(Model* model, uint8_t i);
 void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_row(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_col(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
+void my_memcpy_from_param_first_tile_index(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 
 /**********************************
  *       Operation handlers       *

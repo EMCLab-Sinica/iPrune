@@ -64,6 +64,17 @@ const uint8_t* get_param_col_base_pointer(const ParameterInfo *param, uint32_t *
             ERROR_OCCURRED();
     }
 }
+
+const uint8_t* get_param_first_tile_index_base_pointer(const ParameterInfo *param, uint32_t *limit_p) {
+    uint16_t slot_id = param->slot;
+    switch (slot_id) {
+        case SLOT_PARAMETERS:
+            *limit_p = FIRST_TILE_INDEX_DATA_LEN;
+            return first_tile_index_data;
+        default:
+            ERROR_OCCURRED();
+    }
+}
 #endif
 
 int16_t get_q15_param(Model* model, const ParameterInfo *param, uint16_t i) {
@@ -157,6 +168,20 @@ void my_memcpy_from_param_row(Model* model, void *dest, const ParameterInfo *par
         uint32_t limit;
         const uint8_t *baseptr = get_param_row_base_pointer(param, &limit);
         uint32_t total_offset = param->params_rows_offset + offset_in_word * sizeof(int16_t);
+        MY_ASSERT(total_offset + n <= limit);
+        my_memcpy(dest, baseptr + total_offset, n);
+    } else {
+        my_memcpy_from_intermediate_values(dest, param, offset_in_word, n);
+    }
+}
+
+void my_memcpy_from_param_first_tile_index(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
+    if (param->slot == SLOT_TEST_SET) {
+        read_from_samples(dest, offset_in_word, n);
+    } else if (param->slot >= SLOT_CONSTANTS_MIN) {
+        uint32_t limit;
+        const uint8_t *baseptr = get_param_first_tile_index_base_pointer(param, &limit);
+        uint32_t total_offset = param->first_tile_index_offset + offset_in_word * sizeof(int16_t);
         MY_ASSERT(total_offset + n <= limit);
         my_memcpy(dest, baseptr + total_offset, n);
     } else {

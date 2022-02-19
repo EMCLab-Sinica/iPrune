@@ -581,6 +581,7 @@ if args.sparse:
         # for sparse model
         'rows': io.BytesIO(),
         'cols': io.BytesIO(),
+        'first_tile_index': io.BytesIO()
     }
 else:
     outputs = {
@@ -618,6 +619,8 @@ if args.sparse:
         cols: io.BytesIO
         rows_offset: int
         rows: io.BytesIO
+        first_tile_index_offset: int
+        first_tile_index: io.BytesIO
         slot_id: int
 else:
     @dataclasses.dataclass
@@ -633,6 +636,8 @@ if args.sparse:
                                      cols=outputs['cols'], \
                                      rows_offset=0, \
                                      rows=outputs['rows'], \
+                                     first_tile_index_offset=0, \
+                                     first_tile_index=outputs['first_tile_index'], \
                                      slot_id=Constants.SLOT_PARAMETERS)
 else:
     parameters_slot = ParametersSlot(offset=0, target=outputs['parameters'], slot_id=Constants.SLOT_PARAMETERS)
@@ -696,6 +701,26 @@ def toBSR(matrix, config, dims, op_type):
     print('Rows: {}'.format(rows))
     return data, cols, rows
 
+def find_first_tile_index(cols, rows, config, dims):
+    # Example:
+    #   Cols: [1 2 4 6 7 | 0 6  7 | 0 1 2 4 6 7 | 1 4 5 6 7 | 0 1 2 4 6 7 | 0 1 2 4 5 6 7 | 0 5 6 7 | 1 5 6 7]
+    #   Rows: [ 0  5  8 14 19 25 32 36 40]
+    slice_n_output_tile_c = int(dims[0] / config['group'][0])
+    row_len = len(rows)
+    first_tile_index = [-1] * slice_n_output_tile_c
+    for i in range(1, row_len):
+        n_cols = rows[i] - rows[i - 1]
+        cur_n_cols = 0
+        while cur_n_cols < n_cols:
+            col_index = rows[i - 1] + cur_n_cols
+            col_val = cols[col_index]
+            if first_tile_index[col_val] == -1:
+                first_tile_index[col_val] = i - 1
+            cur_n_cols += 1
+    logger.info('first_tile_index: {}'.format(first_tile_index))
+    return first_tile_index
+
+
 model_parameters_info = outputs['model_parameters_info']
 if args.config == 'pruned_mnist':
     model_config = model_configs['LeNet_5']
@@ -711,6 +736,7 @@ for params in parameters:
         if args.sparse:
             model_parameters_info.write(to_bytes(0, size=32))  # cols_offset, the place is used by sparse matrix
             model_parameters_info.write(to_bytes(0, size=32))  # rows_offset, the place is used by sparse matrix
+            model_parameters_info.write(to_bytes(0, size=32))  # first_tile_index_offset, the place is used by sparse matrix
         model_parameters_info.write(to_bytes(16, size=8))                # bitwidth
         model_parameters_info.write(to_bytes(Constants.SLOT_TEST_SET, size=8))     # slot
         model_parameters_info.write(to_bytes(0))                     # dummy
@@ -738,13 +764,16 @@ for params in parameters:
             if args.sparse:
                 cols = []
                 rows = []
+                first_tile_index = []
             if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
                 layer_config = model_config[node_idx]
                 node_idx += 1
                 if params.name in conv_param_names:
                     data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'CONV')
+                    first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims)
                 elif params.name in gemm_param_names:
                     data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'GEMM')
+                    first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims)
                 int_data_Q15 = data
 
             data_len = len(int_data_Q15)
@@ -757,13 +786,16 @@ for params in parameters:
             if args.sparse:
                 model_parameters_info.write(to_bytes(slot.cols_offset, size=32))  # cols_offset
                 model_parameters_info.write(to_bytes(slot.rows_offset, size=32))  # rows_offset
+                model_parameters_info.write(to_bytes(slot.first_tile_index_offset, size=32))  # first_tile_index_offset
                 if len(cols) == 0:
                     # +1 for bias
-                    cols = rows = [0]
+                    cols = rows = first_tile_index = [0]
                 slot.cols.write(to_bytes(cols))
                 slot.rows.write(to_bytes(rows))
+                slot.first_tile_index.write(to_bytes(first_tile_index))
                 slot.cols_offset += 2 * len(cols)
                 slot.rows_offset += 2 * len(rows)
+                slot.first_tile_index_offset += 2 * len(first_tile_index)
 
             slot.target.write(to_bytes(int_data_Q15))
             slot.offset += 2 * len(int_data_Q15)
@@ -781,17 +813,20 @@ for params in parameters:
             if args.sparse:
                 model_parameters_info.write(to_bytes(slot.cols_offset, size=32))  # cols_offset
                 model_parameters_info.write(to_bytes(slot.rows_offset, size=32))  # rows_offset
+                model_parameters_info.write(to_bytes(slot.first_tile_index_offset, size=32))  # first_tile_index_offset
             for param in int64_data:
                 slot.target.write(to_bytes(param, size=64))
                 slot.offset += 8
                 if args.sparse:
                     if len(cols) == 0:
                         # +1 for bias
-                        cols = rows = [0]
+                        cols = rows = first_tile_index = [0]
                     slot.cols.write(to_bytes(cols))
                     slot.rows.write(to_bytes(rows))
+                    slot.first_tile_index.write(to_bytes(first_tile_index))
                     slot.cols_offset += 2 * len(cols)
                     slot.rows_offset += 2 * len(rows)
+                    slot.first_tile_index_offset += 2 * len(first_tile_index)
             model_parameters_info.write(to_bytes(64, size=8)) # bitwidth
         else:
             assert False
@@ -824,6 +859,7 @@ for idx, n in enumerate(nodes):
     if args.sparse:
         intermediate_parameters_info.write(to_bytes(0, size=32))  # params_cols_offset
         intermediate_parameters_info.write(to_bytes(0, size=32))  # params_rows_offset
+        intermediate_parameters_info.write(to_bytes(0, size=32))  # first_tile_index_offset
     intermediate_parameters_info.write(to_bytes(0, size=8))  # bitwidth
     intermediate_parameters_info.write(to_bytes(0, size=8))  # slot
     intermediate_parameters_info.write(to_bytes(0))         # dummy

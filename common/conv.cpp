@@ -95,6 +95,12 @@ static ConvTaskParams conv_params_obj;
 
 int16_t * const matrix_mpy_results = lea_buffer + LEA_BUFFER_SIZE - OUTPUT_LEN;
 
+#if SPARSE
+static inline uint16_t get_col_first_tile_index(const ConvTaskParams *conv_params);
+static inline uint16_t get_next_row_val(const ConvTaskParams *conv_params);
+static inline uint16_t get_col_val(const ConvTaskParams *conv_params);
+#endif
+
 #if INDIRECT_RECOVERY
 static void flip_filter_state_bits(ConvTaskParams *conv_params, uint16_t n_filters, uint16_t len, uint8_t first_round) {
     start_cpu_counter();
@@ -240,7 +246,12 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
                 // XXX: why is this needed? Should already be zero with my_fill_q15 above
                 filter_tmp[conv_params->filter_offset - 1] = 0;
             }
+#if SPARSE
+            int16_t cols_first_tile_index = get_col_first_tile_index(conv_params);
+            if(conv_params->input_tile_c_index == cols_first_tile_index) {
+#else
             if (conv_params->input_tile_c_index == 0) {
+#endif
                 // convert int16_t to int32_t first as on MSP430, registers are 20 bit while there are only 16 bits when int16_t is converted to uint16_t
                 // If the dividend is negative, the quotient is wrong
                 int16_t bias_val = 0;
@@ -356,7 +367,19 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
 }
 
 #if SPARSE
-static inline uint16_t get_next_row_val(const ConvTaskParams* conv_params) {
+static inline uint16_t get_col_first_tile_index(const ConvTaskParams *conv_params) {
+    my_printf_debug("Load first tile index from cols %d", conv_params->filter_tile_index);
+    int16_t first_tile_index = 0;
+    my_memcpy_from_param_first_tile_index(
+            conv_params->model,
+            &first_tile_index,
+            conv_params->conv_filter,
+            conv_params->filter_tile_index,
+            sizeof(int16_t));
+    return first_tile_index;
+}
+
+static inline uint16_t get_next_row_val(const ConvTaskParams *conv_params) {
     my_printf_debug("Load row values from row index %d", conv_params->row_index);
     int16_t next_row_val = 0;
     my_memcpy_from_param_row(
@@ -368,8 +391,8 @@ static inline uint16_t get_next_row_val(const ConvTaskParams* conv_params) {
     return next_row_val;
 }
 
-static inline uint16_t get_col_val(const ConvTaskParams* conv_params) {
-    my_printf_debug("Load row values from row index %d", conv_params->row_index);
+static inline uint16_t get_col_val(const ConvTaskParams *conv_params) {
+    my_printf_debug("Load col values from col index %d", conv_params->cur_row_val + conv_params->cur_n_cols);
     int16_t col_val = 0;
     my_memcpy_from_param_col(
             conv_params->model,
@@ -690,15 +713,17 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->cur_n_cols = 0;
     conv_params->input_tile_c_offset = (conv_params->row_index - 1) * conv_params->flags->extra.conv.input_tile_c;
     conv_params->input_tile_c_index = conv_params->row_index - 1;
+    conv_params->filter_tile_index = get_col_val(conv_params);
+    conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
 #else
     conv_params->input_tile_c_offset = 0;
     conv_params->input_tile_c_index = 0;
+    conv_params->filter_tile_index = 0;
+    conv_params->filter_idx = 0;
 #endif
 
     conv_params->input_h = conv_params->input_h_first;
     conv_params->input_w = conv_params->input_w_first;
-    conv_params->filter_tile_index = 0;
-    conv_params->filter_idx = 0;
 #if INTERMITTENT
 
     uint32_t first_unfinished_job_idx = run_recovery(model, output);
