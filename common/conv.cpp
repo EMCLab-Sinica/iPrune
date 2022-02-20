@@ -703,7 +703,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->next_row_val = 0;
     conv_params->n_cols = 0;
     conv_params->cur_n_cols = 0;
-    // FIXME: prevent row_index out of range
     while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < input_channels) {
         conv_params->cur_row_val = conv_params->next_row_val;
         conv_params->next_row_val = get_next_row_val(conv_params);

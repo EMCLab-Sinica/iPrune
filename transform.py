@@ -45,7 +45,7 @@ class Constants:
     TURNING_POINTS_LEN = 8
     MODEL_NODES_LEN = 0
     INPUTS_DATA_LEN = 0
-    MAX_COL_LEN = 50
+    MAX_COL_LEN = 1350
     MAX_TILE_C_LEN = 256
     NUM_INPUTS = 0  # will be filled during parsing
     N_INPUT = 0
@@ -281,7 +281,10 @@ def replace_nodes():
         if inp:
             replace_handlers[n.op_type](n, inp)
             replaced_nodes_map[n.output[0]] = n.input[0]
-
+'''
+Transpose matrix B:
+dims: [n_filter, n_channel] -> [n_channel, n_filter]
+'''
 def transpose_gemm(onnx_model: onnx.ModelProto):
     for node in onnx_model.graph.node:
         if node.op_type != 'Gemm':
@@ -299,8 +302,7 @@ def transpose_gemm(onnx_model: onnx.ModelProto):
                 break
 
 replace_nodes()
-if not args.sparse:
-    transpose_gemm(onnx_model)
+transpose_gemm(onnx_model)
 
 # Split Conv/Gemm into Conv/Gemm and ConvMerge/GemmMerge (for OFM scaling up and merge of OFMs from channel tiling)
 new_nodes = []
@@ -688,22 +690,25 @@ def toBSR(matrix, config, dims, op_type):
     shape = matrix.shape
     matrix = np.reshape(matrix, tuple(dims))
     matrix = np.reshape(matrix, (dims[0], -1))
-    matrix = np.transpose(matrix)
     if op_type == 'CONV':
+        matrix = np.transpose(matrix)
         group_size = (config['group'][1] * dims[2] * dims[3], config['group'][0])
+        bsr = csr_matrix(matrix).tobsr(group_size)
+        data = np.transpose(bsr.data, axes=(0,2,1))
     elif op_type == 'GEMM':
+        # the dim of the GEMM matrix has been [n_channel, n_filter]
         group_size = (config['group'][1], config['group'][0])
-    bsr = csr_matrix(matrix).tobsr(group_size)
-    data = np.transpose(bsr.data, axes=(0,2,1))
+        bsr = csr_matrix(matrix).tobsr(group_size)
+        data = bsr.data
     data = np.reshape(data, -1)
     cols = bsr.indices
     rows = bsr.indptr
-    logger.info('modified size: {}'.format(len(data)))
+    logger.info('filter size: {}'.format(len(data)))
     logger.info('Rows size: {}'.format(rows.shape))
     logger.info('Cols size: {}'.format(cols.shape))
     # print('Data: {}'.format(data))
-    print('Cols: {}'.format(cols))
-    print('Rows: {}'.format(rows))
+    # print('Cols: {}'.format(cols))
+    # print('Rows: {}'.format(rows))
     return data, cols, rows
 
 def find_first_tile_index(cols, rows, config, dims):
@@ -722,7 +727,7 @@ def find_first_tile_index(cols, rows, config, dims):
             if first_tile_index[col_val] == -1:
                 first_tile_index[col_val] = i - 1
             cur_n_cols += 1
-    logger.info('first_tile_index: {}'.format(first_tile_index))
+    logger.info('first_tile_index length: {}'.format(len(first_tile_index)))
     return first_tile_index
 
 
