@@ -163,6 +163,10 @@ def to_onnx(source, name, args):
         model = models.LeNet_5(None)
         input_shape = (1,28,28)
         dummy_input = Variable(torch.randn(1, 1, 28, 28))
+    elif args.arch == 'LeNet_5':
+        model = models.LeNet_5_p(None)
+        input_shape = (1,28,28)
+        dummy_input = Variable(torch.randn(1, 1, 28, 28))
     elif args.arch == 'SqueezeNet':
         model = models.SqueezeNet(None)
         input_shape = (1,32,32)
@@ -290,12 +294,12 @@ class MetricsMaker:
             nvm_read_inputs += np.prod(layer_config['input']) * nvm_access_per_ifm
             op_type = 'CONV'
 
+        nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][0]
         for i in range(1, len(rows)):
             if rows[i] - rows[i - 1] != 0:
                 # TODO: indexing cost
                 nvm_read_weights += (rows[i] - rows[i - 1]) * group_size[0] * group_size[1]
                 # XXX: All channels can't be loaded in a weight tile
-                nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * group_size[0]
                 vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
                 vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
                 vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
@@ -722,7 +726,7 @@ class Prune_Op():
         self.metrics_maker.profile()
         self.mask_maker = MaskMaker(model, args, input_shape, metrics_maker=self.metrics_maker)
         if args.sa:
-            self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.35, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
+            self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.25, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
         if not evaluate:
             if args.sa:
                 if args.admm and admm_params != None:

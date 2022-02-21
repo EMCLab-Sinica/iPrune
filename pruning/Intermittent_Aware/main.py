@@ -49,10 +49,7 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        if args.arch == 'LeNet_5_p':
-            loss = F.nll_loss(output, target)
-        else:
-            loss = criterion(output, target)
+        loss = criterion(output, target)
         loss.backward()
         optimizer.step()
         if args.prune:
@@ -73,10 +70,7 @@ def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        if args.arch == 'LeNet_5_p':
-            loss = F.nll_loss(output, target)
-        else:
-            loss = criterion(output, target)
+        loss = criterion(output, target)
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -99,10 +93,7 @@ def test(evaluate=False):
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
         output = model(data)
-        if args.arch == 'LeNet_5_p':
-            test_loss += F.nll_loss(output, target, reduction='sum').item()
-        else:
-            test_loss += criterion(output, target).item()
+        test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -114,10 +105,12 @@ def test(evaluate=False):
 
     #if args.prune == None or evaluate:
     test_loss /= len(test_loader.dataset)
-    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-    #    test_loss * args.batch_size, correct, len(test_loader.dataset),
-    #    100. * correct / len(test_loader.dataset)))
-    # print('Best Accuracy: {:.2f}%\n'.format(best_acc))
+    '''
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        test_loss * args.batch_size, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+    print('Best Accuracy: {:.2f}%\n'.format(best_acc))
+    '''
     return (test_loss * args.batch_size, acc, best_acc)
 
 @torch.no_grad()
@@ -131,10 +124,7 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
         output = model(data)
-        if args.arch == 'LeNet_5_p':
-            test_loss += F.nll_loss(output, target, reduction='sum').item()
-        else:
-            test_loss += criterion(output, target).item()
+        test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -221,7 +211,7 @@ if __name__=='__main__':
         torch.cuda.manual_seed(args.seed)
 
     # load data
-    kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 2, 'pin_memory': True} if args.cuda else {}
 
     # generate the model
     if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
@@ -274,14 +264,11 @@ if __name__=='__main__':
             'weight_decay': args.weight_decay,
             'key':key}]
 
-    if args.arch == 'LeNet_5':
+    if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
         optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
                 weight_decay=args.weight_decay)
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
-    elif args.arch == 'LeNet_5_p':
-        optimizer = optim.Adadelta(params, lr=args.lr)
-        scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     criterion = nn.CrossEntropyLoss()
 
@@ -302,7 +289,7 @@ if __name__=='__main__':
     cur_loss = 0
     cur_acc = 0
     best_acc = 0
-
+    pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
     if args.prune:
         admm_params = None
         print('==> Start pruning ...')
@@ -323,9 +310,8 @@ if __name__=='__main__':
 
         prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=admm_params)
         if not args.admm:
-            pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
             for epoch in pbar:
-                if args.arch == 'LeNet_5':
+                if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
                     lr = adjust_learning_rate(optimizer, epoch)
                 elif args.arch == 'SqueezeNet':
                     # adjusted by ADAM
@@ -334,16 +320,16 @@ if __name__=='__main__':
                 cur_epoch = epoch
                 cur_loss, cur_acc, best_acc = test()
                 pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
-                if args.arch == 'LeNet_5_p':
-                    scheduler.step()
         test(evaluate=True)
         # prune_op.print_info()
     else:
         for epoch in trange(1, args.epochs + 1):
-            if args.arch == 'LeNet_5':
+            if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
                 adjust_learning_rate(optimizer, epoch)
             elif args.arch == 'SqueezeNet':
                 # adjusted by ADAM
                 pass
             train(epoch)
-            test()
+            cur_epoch = epoch
+            cur_loss, cur_acc, best_acc = test()
+            pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))

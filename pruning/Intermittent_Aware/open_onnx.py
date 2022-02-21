@@ -44,7 +44,8 @@ def getJob(node, output_shape):
     cols = bsr.indices
     rows = bsr.indptr
     if len(node['dims']) == 4:
-        print('cols: {}'.format(len(cols)))
+        print('rows: {}'.format(rows))
+        print('cols: {}'.format(cols))
         return len(cols) * output_shape[0] * output_shape[1]
     elif len(node['dims']) == 2:
         print('cols: {}'.format(len(cols)))

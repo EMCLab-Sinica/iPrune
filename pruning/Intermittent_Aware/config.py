@@ -30,7 +30,7 @@ config = {
                 'input': [1,1,256],
                 'weight': [1,1,256,4]
             },
-            'group': [1, 16],
+            'group': [2, 16],
             'stride': 1
         },
         {
@@ -41,53 +41,64 @@ config = {
                 'input': [1,1,256],
                 'weight': [1,1,256,4]
             },
-            'group': [1, 16],
+            'group': [2, 16],
             'stride': 1
         }
     ],
     'LeNet_5_p': [
         {
             'input': [28,28,1],
-            'filter': [3,3,1,8],
-            'output': [26,26,8],
+            'filter': [5,5,1,8],
+            'output': [28,28,8],
             'tile': {
-                'input': [8,3,1],
-                'weight': [3,3,1,8]
+                'input': [8,5,1],
+                'weight': [5,5,1,8]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         {
-            'input': [26,26,8],
-            'filter': [3,3,8,16],
-            'output': [24,24,16],
+            'input': [14,14,8],
+            'filter': [5,5,6,16],
+            'output': [14,14,16],
             'tile': {
                 'input': [8,3,8],
-                'weight': [3,3,8,16]
+                'weight': [5,5,8,16]
             },
-            'group': [1, 1, 2],
+            'group': [2, 1],
             'stride': 1
         },
         {
-            'input': [1,1,2304],
-            'filter': [1,1,2304,128],
+            'input': [1,1, 16*7*7],
+            'filter': [1,1,16*7*7,128],
             'output': [1,1,128],
             'tile': {
-                'input': [1,1,2172],
-                'weight': [1,1,2172,4]
+                'input': [1,1,16*7*7],
+                'weight': [1,1,16*7*7,4]
             },
-            'group': [1, 1, 2],
+            'group': [2, 16],
             'stride': 1
         },
         {
             'input': [1,1,128],
-            'filter': [1,1,128,10],
-            'output': [1,1,10],
+            'filter': [1,1,128,84],
+            'output': [1,1,84],
             'tile': {
                 'input': [1,1,128],
                 'weight': [1,1,128,4]
             },
-            'group': [1, 1, 2],
+            'group': [2,1],
+            'stride': 1
+        },
+        {
+            'input': [1,1,84],
+            'filter': [1,1,84,10],
+            'output': [1,1,10],
+            'tile': {
+                'input': [1,1,84],
+                'weight': [1,1,84,10]
+            },
+            'group': [2,1],
             'stride': 1
         }
     ],
