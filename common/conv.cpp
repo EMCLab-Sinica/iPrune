@@ -95,12 +95,6 @@ static ConvTaskParams conv_params_obj;
 
 int16_t * const matrix_mpy_results = lea_buffer + LEA_BUFFER_SIZE - OUTPUT_LEN;
 
-#if SPARSE
-static inline uint16_t get_col_first_tile_index(const ConvTaskParams *conv_params);
-static inline uint16_t get_next_row_val(const ConvTaskParams *conv_params);
-static inline uint16_t get_col_val(const ConvTaskParams *conv_params);
-#endif
-
 #if INDIRECT_RECOVERY
 static void flip_filter_state_bits(ConvTaskParams *conv_params, uint16_t n_filters, uint16_t len, uint8_t first_round) {
     start_cpu_counter();
@@ -247,7 +241,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
                 filter_tmp[conv_params->filter_offset - 1] = 0;
             }
 #if SPARSE
-            int16_t cols_first_tile_index = get_col_first_tile_index(conv_params);
+            int16_t cols_first_tile_index = get_col_first_tile_index(conv_params->model, conv_params->conv_filter, conv_params->filter_tile_index);
             if(conv_params->input_tile_c_index == cols_first_tile_index) {
 #else
             if (conv_params->input_tile_c_index == 0) {
@@ -365,44 +359,6 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
     }
 #endif
 }
-
-#if SPARSE
-static inline uint16_t get_col_first_tile_index(const ConvTaskParams *conv_params) {
-    my_printf_debug("Load first tile index from cols %d", conv_params->filter_tile_index);
-    int16_t first_tile_index = 0;
-    my_memcpy_from_param_first_tile_index(
-            conv_params->model,
-            &first_tile_index,
-            conv_params->conv_filter,
-            conv_params->filter_tile_index,
-            sizeof(int16_t));
-    return first_tile_index;
-}
-
-static inline uint16_t get_next_row_val(const ConvTaskParams *conv_params) {
-    my_printf_debug("Load row values from row index %d", conv_params->row_index);
-    int16_t next_row_val = 0;
-    my_memcpy_from_param_row(
-            conv_params->model,
-            &next_row_val,
-            conv_params->conv_filter,
-            conv_params->row_index + 1,
-            sizeof(int16_t));
-    return next_row_val;
-}
-
-static inline uint16_t get_col_val(const ConvTaskParams *conv_params) {
-    my_printf_debug("Load col values from col index %d", conv_params->cur_row_val + conv_params->cur_n_cols);
-    int16_t col_val = 0;
-    my_memcpy_from_param_col(
-            conv_params->model,
-            &col_val,
-            conv_params->conv_filter,
-            conv_params->cur_row_val + conv_params->cur_n_cols,
-            sizeof(int16_t));
-    return col_val;
-}
-#endif
 
 static inline uint16_t load_input_vector(uint32_t src_addr, int16_t* dest_addr, uint16_t len, const ConvTaskParams* conv_params) {
     my_printf_debug("Load %d IFM values from range [%d, %d) ",
@@ -705,14 +661,14 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->cur_n_cols = 0;
     while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < input_channels) {
         conv_params->cur_row_val = conv_params->next_row_val;
-        conv_params->next_row_val = get_next_row_val(conv_params);
+        conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
         conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
         conv_params->row_index++;
     }
     conv_params->cur_n_cols = 0;
     conv_params->input_tile_c_offset = (conv_params->row_index - 1) * conv_params->flags->extra.conv.input_tile_c;
     conv_params->input_tile_c_index = conv_params->row_index - 1;
-    conv_params->filter_tile_index = get_col_val(conv_params);
+    conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
     conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
 #else
     conv_params->input_tile_c_offset = 0;
@@ -774,7 +730,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     my_printf_debug("initial output C = %d" NEWLINE, conv_params->filter_idx);
     // = happens when all values are finished
     MY_ASSERT(conv_params->input_tile_c_index <= conv_params->n_tiles_c);
-#endif
+#endif // INTERMITTENT
 
 #if JAPARI
     if (conv_params->conv_input_has_footprints) {
@@ -815,7 +771,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             if(++conv_params->cur_n_cols >= conv_params->n_cols) {
                 break;
             }
-            conv_params->filter_tile_index = get_col_val(conv_params);
+            conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
 #else
             conv_params->filter_tile_index++;
             if (conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c >= conv_params->N_FILTERS) {
@@ -839,14 +795,14 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->cur_n_cols = 0;
         while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < input_channels) {
             conv_params->cur_row_val = conv_params->next_row_val;
-            conv_params->next_row_val = get_next_row_val(conv_params);
+            conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
             conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
             conv_params->row_index++;
         }
         if(conv_params->n_cols) {
             conv_params->input_tile_c_offset = (conv_params->row_index - 1) * conv_params->flags->extra.conv.input_tile_c;
             conv_params->input_tile_c_index = conv_params->row_index - 1;
-            conv_params->filter_tile_index = get_col_val(conv_params);
+            conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
             conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
         } else {
             conv_params->input_tile_c_offset = (conv_params->row_index) * conv_params->flags->extra.conv.input_tile_c;

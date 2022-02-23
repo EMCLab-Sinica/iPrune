@@ -181,6 +181,9 @@ void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, 
 void my_memcpy_from_param_row(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_col(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_first_tile_index(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
+uint16_t get_col_first_tile_index(Model *model, const ParameterInfo *params, uint16_t filter_tile_index);
+uint16_t get_row_val(Model *model, const ParameterInfo *params, uint16_t row_index);
+uint16_t get_col_val(Model *model, const ParameterInfo *params, uint16_t col_index);
 
 /**********************************
  *       Operation handlers       *

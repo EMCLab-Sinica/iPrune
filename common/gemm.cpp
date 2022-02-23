@@ -64,44 +64,6 @@ inline void clear_filter<BATCH_SIZE>(int16_t* filter) {
 }
 #endif
 
-#if SPARSE
-static inline uint16_t get_col_first_tile_index(Model *model, const ParameterInfo *params, uint16_t filter_tile_index) {
-    my_printf_debug("Load first tile index from cols %d", filter_tile_index);
-    int16_t first_tile_index = 0;
-    my_memcpy_from_param_first_tile_index(
-            model,
-            &first_tile_index,
-            params,
-            filter_tile_index,
-            sizeof(int16_t));
-    return first_tile_index;
-}
-
-static inline uint16_t get_next_row_val(Model *model, const ParameterInfo *params, uint16_t row_index) {
-    my_printf_debug("Load row values from row index %d", row_index + 1);
-    int16_t next_row_val = 0;
-    my_memcpy_from_param_row(
-            model,
-            &next_row_val,
-            params,
-            row_index + 1,
-            sizeof(int16_t));
-    return next_row_val;
-}
-
-static inline uint16_t get_col_val(Model *model, const ParameterInfo *params, uint16_t col_index) {
-    my_printf_debug("Load col values from col index %d", col_index);
-    int16_t col_val = 0;
-    my_memcpy_from_param_col(
-            model,
-            &col_val,
-            params,
-            col_index, // cur_row_val + cur_n_cols
-            sizeof(int16_t));
-    return col_val;
-}
-#endif // SPARSE
-
 void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
     const ParameterInfo *A = input[0], *B = input[1], *C = input[2];
     const NodeFlags* flags = &node->flags;
@@ -131,7 +93,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     uint16_t cur_n_cols = 0;
     while(!n_cols && row_index * flags->extra.gemm.tile_channel < B->dims[0]) {
         cur_row_val = next_row_val;
-        next_row_val = get_next_row_val(model, B, row_index);
+        next_row_val = get_row_val(model, B, row_index + 1);
         n_cols = next_row_val - cur_row_val;
         row_index++;
     }
@@ -139,12 +101,12 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     i = (row_index - 1) * flags->extra.gemm.tile_channel;
     tile = row_index - 1;
     uint16_t filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
-    j = filter_tile_index * OP_FILTERS;
+    j = j_with_footprints = filter_tile_index * OP_FILTERS;
 #endif
 
 #if INTERMITTENT
-    uint32_t first_unfinished_value_offset = job_index_to_offset(output, run_recovery(model, output));
-
+    uint16_t first_unfinished_value_idx = run_recovery(model, output);
+    uint32_t first_unfinished_value_offset = job_index_to_offset(output, first_unfinished_value_idx);
 #if INDIRECT_RECOVERY
     int16_t offset;
     uint16_t next_output_turning_point;
@@ -155,7 +117,6 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif
 
     first_unfinished_value_offset = batch_start(first_unfinished_value_offset);
-
     fix_first_unfinished_value_offset(model, &first_unfinished_value_offset);
 
     tile = first_unfinished_value_offset / output_len;
@@ -168,7 +129,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     j = j_with_footprints;
 #endif
 
-#endif
+#endif // INTERMITTENT
 
     for (; i < B->dims[0];) {
         const uint16_t tile_channels = MIN_VAL(flags->extra.gemm.tile_channel, B->dims[0] - i);
@@ -198,11 +159,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
         my_printf_debug("Tile for A" NEWLINE);
         dump_matrix_debug(buffer_a, 1, extended_tile_channels, ValueInfo(A, model));
-#if SPARSE
-        int16_t output_offset = tile * output_len + j_with_footprints + filter_tile_index * OP_FILTERS;
-#else // SPARSE
         int16_t output_offset = tile * output_len + j_with_footprints;
-#endif
         for (; j < B->dims[1];) {
             int16_t tile_width;
             // this variable is used only for JAPARI. Don't use [[maybe_unused]] until TI CGT support C++17.
@@ -345,7 +302,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             uint16_t col_val = get_col_val(model, B, cur_row_val + cur_n_cols);
             filter_tile_index = col_val;
             j = col_val * OP_FILTERS;
-            output_offset = tile * output_len + j_with_footprints + col_val * values_to_preserve;
+            output_offset = tile * output_len + j;
 #else // SPARSE
             j += OP_FILTERS;
             output_offset += values_to_preserve;
@@ -356,7 +313,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         cur_n_cols = 0;
         while(!n_cols && row_index * flags->extra.gemm.tile_channel < B->dims[0]) {
             cur_row_val = next_row_val;
-            next_row_val = get_next_row_val(model, B, row_index);
+            next_row_val = get_row_val(model, B, row_index + 1);
             n_cols = next_row_val - cur_row_val;
             row_index++;
         }
@@ -364,11 +321,10 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             i = (row_index - 1) * flags->extra.gemm.tile_channel;
             tile = row_index - 1;
             filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
-            // XXX: Does j_with_footprints need to be updated ?
-            j = filter_tile_index * OP_FILTERS;
+            j = j_with_footprints = filter_tile_index * OP_FILTERS;
         } else {
             i = row_index * flags->extra.gemm.tile_channel;
-            tile = row_index - 1;
+            tile = row_index;
             j = j_with_footprints = 0;
         }
 #else // SPARSE

@@ -190,6 +190,44 @@ void my_memcpy_from_param_first_tile_index(Model* model, void *dest, const Param
 }
 #endif
 
+#if SPARSE
+uint16_t get_col_first_tile_index(Model *model, const ParameterInfo *params, uint16_t filter_tile_index) {
+    my_printf_debug("Load first tile index from cols %d\n", filter_tile_index);
+    int16_t first_tile_index = 0;
+    my_memcpy_from_param_first_tile_index(
+            model,
+            &first_tile_index,
+            params,
+            filter_tile_index,
+            sizeof(int16_t));
+    return first_tile_index;
+}
+
+uint16_t get_row_val(Model *model, const ParameterInfo *params, uint16_t row_index) {
+    my_printf_debug("Load row values from row index %d\n", row_index);
+    int16_t next_row_val = 0;
+    my_memcpy_from_param_row(
+            model,
+            &next_row_val,
+            params,
+            row_index,
+            sizeof(int16_t));
+    return next_row_val;
+}
+
+uint16_t get_col_val(Model *model, const ParameterInfo *params, uint16_t col_index) {
+    my_printf_debug("Load col values from col index %d\n", col_index);
+    int16_t col_val = 0;
+    my_memcpy_from_param_col(
+            model,
+            &col_val,
+            params,
+            col_index, // cur_row_val + cur_n_cols
+            sizeof(int16_t));
+    return col_val;
+}
+#endif // SPARSE
+
 void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
     if (param->slot == SLOT_TEST_SET) {
         read_from_samples(dest, offset_in_word, n);
