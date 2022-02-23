@@ -442,7 +442,7 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
 #endif
 
     if (!is_conv) {
-        // TODO: Handle FC recovery
+        // Handle FC recovery
         uint16_t output_len = output->dims[0] * output->dims[1]; // 256
         uint16_t output_jobs = output_len / BATCH_SIZE; // 256
         uint16_t jobs_in_an_op = OP_FILTERS / BATCH_SIZE; // 2
@@ -473,7 +473,7 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
     uint16_t col_val = get_col_val(model, params_filter, cur_col_index); // [0 "2"]
     uint16_t filter_tile_c = col_val;
     uint16_t input_tile_c_index = row_index;
-    job_index = input_tile_c_index * input_tile_jobs + filter_tile_c * jobs_in_a_filter_tile + job_index % input_tile_jobs;
+    job_index = input_tile_c_index * input_tile_jobs + filter_tile_c * jobs_in_a_filter_tile + job_index % jobs_in_a_filter_tile;
 
     if (output_tile_c == OUTPUT_CHANNEL) {
         return job_index * BATCH_SIZE + (BATCH_SIZE - 1);

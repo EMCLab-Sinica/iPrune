@@ -682,8 +682,13 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if INTERMITTENT
 
     uint32_t first_unfinished_job_idx = run_recovery(model, output);
+    my_printf_debug("first_unfinished_job_idx: %d\n", first_unfinished_job_idx);
+#if SPARSE
+    uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset_sparse(model, conv_filter, output, first_unfinished_job_idx));
+#else // SPARSE
     uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, first_unfinished_job_idx));
-
+#endif //SPARSE
+    my_printf_debug("first_unfinished_value_offset: %d\n", first_unfinished_value_offset);
     fix_first_unfinished_value_offset(model, &first_unfinished_value_offset);
 
 #if INDIRECT_RECOVERY
@@ -724,6 +729,17 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
     conv_params->input_h += first_unfinished_value_offset * conv_params->stride;
 
+#if SPARSE
+    uint16_t jobs_in_a_filter_tile = conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c / BATCH_SIZE;
+    uint16_t cur_col_index = first_unfinished_job_idx / jobs_in_a_filter_tile; // 1
+
+    // find the input_tile_c_index via binary searching on "rows"
+    conv_params->row_index = find_row_index(model, conv_filter, output, node, cur_col_index, &(conv_params->cur_row_val));
+    conv_params->next_row_val = get_row_val(model, conv_filter, conv_params->row_index + 1);
+    conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
+    conv_params->cur_n_cols = cur_col_index - conv_params->cur_row_val;
+    conv_params->row_index++;
+#endif
     my_printf_debug("initial output N = %d" NEWLINE, conv_params->input_tile_c_index);
     my_printf_debug("initial output H = %d" NEWLINE, (conv_params->input_h - conv_params->input_h_first) / conv_params->stride);
     my_printf_debug("initial output W = %d" NEWLINE, (conv_params->input_w - conv_params->input_w_first) / conv_params->stride);
@@ -731,7 +747,18 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     // = happens when all values are finished
     MY_ASSERT(conv_params->input_tile_c_index <= conv_params->n_tiles_c);
 #endif // INTERMITTENT
-
+#if SPARSE
+    my_printf_debug("conv_params->row_index: %d\n", conv_params->row_index);
+    my_printf_debug("conv_params->cur_row_val: %d\n", conv_params->cur_row_val);
+    my_printf_debug("conv_params->next_row_val: %d\n", conv_params->next_row_val);
+    my_printf_debug("conv_params->n_cols: %d\n", conv_params->n_cols);
+    my_printf_debug("conv_params->cur_n_cols: %d\n", conv_params->cur_n_cols);
+    my_printf_debug("conv_params->input_tile_c_offset: %d\n", conv_params->input_tile_c_offset);
+    my_printf_debug("conv_params->input_tile_c_index: %d\n", conv_params->input_tile_c_index);
+    my_printf_debug("conv_params->filter_tile_index: %d\n", conv_params->filter_tile_index);
+    my_printf_debug("conv_params->filter_idx: %d\n", conv_params->filter_idx);
+    my_printf_debug("\n");
+#endif
 #if JAPARI
     if (conv_params->conv_input_has_footprints) {
         input_channels = input_channels / (BATCH_SIZE + 1) * BATCH_SIZE;
