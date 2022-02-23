@@ -106,7 +106,11 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
 #if INTERMITTENT
     uint16_t first_unfinished_value_idx = run_recovery(model, output);
+#if SPARSE
+    uint32_t first_unfinished_value_offset = job_index_to_offset_sparse(model, B, output, first_unfinished_value_idx);
+#else
     uint32_t first_unfinished_value_offset = job_index_to_offset(output, first_unfinished_value_idx);
+#endif
 #if INDIRECT_RECOVERY
     int16_t offset;
     uint16_t next_output_turning_point;
@@ -128,6 +132,17 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #else
     j = j_with_footprints;
 #endif
+
+#if SPARSE
+    row_index = tile + 1;
+    cur_row_val = get_row_val(model, B, row_index - 1);
+    next_row_val = get_row_val(model, B, row_index);
+    n_cols = next_row_val - cur_row_val;
+    uint16_t jobs_in_an_op = OP_FILTERS / BATCH_SIZE;
+    uint16_t cur_cols_index = first_unfinished_value_idx / jobs_in_an_op;
+    cur_n_cols = cur_cols_index - cur_row_val;
+    filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
+#endif // SPARSE
 
 #endif // INTERMITTENT
 
