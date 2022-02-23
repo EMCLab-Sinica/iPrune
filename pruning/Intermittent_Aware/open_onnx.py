@@ -38,7 +38,7 @@ def getVal(node, colIdx):
     cols = bsr.indices
     rows = bsr.indptr
 
-def getJob(node, output_shape):
+def getJob(node, output_shape, group_size):
     bsr = node['weights']
     data = bsr.data
     cols = bsr.indices
@@ -46,10 +46,10 @@ def getJob(node, output_shape):
     if len(node['dims']) == 4:
         print('rows: {}'.format(rows))
         print('cols: {}'.format(cols))
-        return len(cols) * output_shape[0] * output_shape[1]
+        return len(cols) * output_shape[0] * output_shape[1] * group_size[0]
     elif len(node['dims']) == 2:
         print('cols: {}'.format(len(cols)))
-        return len(cols)
+        return len(cols) * group_size[0]
 
 def printGroups(node):
     bsr = node['weights']
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     total_job = 0
     for idx, n in enumerate(model.graph.node):
         if n.op_type == 'Conv' or n.op_type == 'Gemm':
-            job = getJob(graph[node_idx], output_shapes[node_idx])
+            job = getJob(graph[node_idx], output_shapes[node_idx], config[args.arch][node_idx]['group'])
             total_job += job
             node_idx += 1
     print('total_job: {}'.format(total_job))
