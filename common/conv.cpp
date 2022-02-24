@@ -544,7 +544,7 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
     dump_matrix_debug(lea_buffer, inputs_len, ValueInfo(conv_params->real_conv_input, nullptr), false);
 
     uint16_t max_input_h = MIN_VAL(conv_params->input_h+conv_params->tile_h-1, conv_params->input_h_last);
-    for (int16_t cur_input_h = conv_params->input_h; cur_input_h <= max_input_h; cur_input_h += conv_params->stride) {
+    for (int32_t cur_input_h = conv_params->input_h; cur_input_h <= max_input_h; cur_input_h += conv_params->stride) {
         // filter_idx is set to initial_c in handle_conv
         convTask(cur_input_h, conv_params);
         // reset here for further processing
@@ -952,16 +952,16 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #if SPARSE
     uint16_t cols[MAX_COL_LEN] = {0};
     uint16_t rows[MAX_TILE_C_LEN] = {0};
-    int16_t n_rows = n_tiles_c + 1;
+    uint16_t n_rows = n_tiles_c + 1;
     my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
-    int16_t n_cols = rows[n_rows - 1]; // calculate from row values
+    uint16_t n_cols = rows[n_rows - 1]; // calculate from row values
     my_memcpy_from_param_col(model, cols, conv_filter, 0, (n_cols) * sizeof(int16_t));
     /* entry: the pruned states in each tile_c (n_tiles_c)
      *  1: pruned filters in the tile_c
      *  0: unpruned filters int the tile_c
      */
     // FIXME: can't allocate with variable length
-    int16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
+    uint16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
     for(int16_t idx = 1; idx < n_rows; ++idx) {
         int16_t n_cols_ = rows[idx] - rows[idx - 1];
         // printf("n_cols: %d\n", n_cols_);

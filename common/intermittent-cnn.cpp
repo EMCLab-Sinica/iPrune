@@ -474,6 +474,7 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
     uint16_t filter_tile_c = col_val;
     uint16_t input_tile_c_index = row_index;
     job_index = input_tile_c_index * input_tile_jobs + filter_tile_c * jobs_in_a_filter_tile + job_index % jobs_in_a_filter_tile;
+    my_printf_debug("fixed_jobs_index: %d\n", job_index);
 
     if (output_tile_c == OUTPUT_CHANNEL) {
         return job_index * BATCH_SIZE + (BATCH_SIZE - 1);
@@ -491,16 +492,15 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
     job_index %= jobs_in_a_filter_tile;
     uint32_t offset = input_tile_c_index * input_tile_len +
                       channel_offset;
-    printf("input_tile_len: %d\n", input_tile_len);
-    printf("input_tile_jobs: %d\n", input_tile_jobs);
-    printf("jobs_in_an_op: %d\n", jobs_in_an_op);
-    printf("cur_col_index: %d\n", cur_col_index);
-    printf("col_val: %d\n", col_val);
-    printf("cur_row_val: %d\n", cur_row_val);
-    printf("row_index: %d\n", row_index);
-    printf("filter_tile_c: %d\n", filter_tile_c);
-    printf("job_index & jobs_in_an_op: %d\n", (job_index & jobs_in_an_op));
-
+    my_printf_debug("input_tile_len: %d\n", input_tile_len);
+    my_printf_debug("input_tile_jobs: %d\n", input_tile_jobs);
+    my_printf_debug("jobs_in_an_op: %d\n", jobs_in_an_op);
+    my_printf_debug("cur_col_index: %d\n", cur_col_index);
+    my_printf_debug("col_val: %d\n", col_val);
+    my_printf_debug("cur_row_val: %d\n", cur_row_val);
+    my_printf_debug("row_index: %d\n", row_index);
+    my_printf_debug("filter_tile_c: %d\n", filter_tile_c);
+    my_printf_debug("job_index & jobs_in_an_op: %d\n", (job_index & jobs_in_an_op));
     // TODO: handle jobs in an op
     if (jobs_in_an_op) {
         // an op contains at least a batch

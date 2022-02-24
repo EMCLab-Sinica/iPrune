@@ -45,8 +45,8 @@ class Constants:
     TURNING_POINTS_LEN = 8
     MODEL_NODES_LEN = 0
     INPUTS_DATA_LEN = 0
-    MAX_COL_LEN = 1350
-    MAX_TILE_C_LEN = 256
+    MAX_COL_LEN = 0
+    MAX_TILE_C_LEN = 0
     NUM_INPUTS = 0  # will be filled during parsing
     N_INPUT = 0
     # Match the size of external FRAM
@@ -709,6 +709,8 @@ def toBSR(matrix, config, dims, op_type):
     # print('Data: {}'.format(data))
     # print('Cols: {}'.format(cols))
     # print('Rows: {}'.format(rows))
+    Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(rows) + 1)
+    Constants.MAX_COL_LEN = max(Constants.MAX_COL_LEN, len(cols) + 1)
     return data, cols, rows
 
 def find_first_tile_index(cols, rows, config, dims):
