@@ -11,6 +11,7 @@
 #pragma DATA_SECTION(".leaRAM")
 #endif
 int16_t lea_buffer[LEA_BUFFER_SIZE];
+int16_t cpu_buffer[CPU_BUFFER_SIZE];
 
 #if HAWAII
 static int16_t non_recorded_jobs = 0;
@@ -239,3 +240,37 @@ void my_offset_q15_batched(const int16_t *pSrc, int16_t offset, int16_t *pDst, u
         }
     }
 }
+#if STABLE_POWER
+void init_cpu_buffer(void) {
+    memset(cpu_buffer, 0, CPU_BUFFER_SIZE * sizeof(int16_t));
+    MY_ASSERT(cpu_buffer[CPU_BUFFER_SIZE - 1] == 0);
+}
+
+void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_idx) {
+    if(node->op_type == 0) {
+        // is conv op
+        uint32_t total_offset = filter_idx;
+        uint32_t output_len = output->dims[2] * output->dims[3];
+        for(uint16_t offset = 0; offset < output_len; offset++) {
+            my_memcpy_to_param(output, total_offset, cpu_buffer + offset * node->flags.extra.conv.output_tile_c, node->flags.extra.conv.output_tile_c * sizeof(int16_t), 0);
+            total_offset += output->dims[1];
+        }
+    } else if(node->op_type == 2) {
+        // is fc op
+        uint32_t total_offset = filter_idx;
+        my_memcpy_to_param(output, total_offset, cpu_buffer + total_offset, OP_FILTERS * sizeof(int16_t), 0);
+    }
+}
+
+void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
+    MY_ASSERT(param->bitwidth == 16);
+    MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
+    uint32_t total_offset = offset_in_word;
+    n /= sizeof(int16_t);
+    for(uint16_t offset = 0; offset < n; ++offset) {
+        // printf("accumulating value: %d\n", *(reinterpret_cast<const int16_t *>(src) + offset));
+        cpu_buffer[total_offset + offset] += *(reinterpret_cast<const int16_t *>(src) + offset);
+        // printf("cpu_buffer[total_offset + offset]: %d\n", cpu_buffer[total_offset + offset]);
+    }
+}
+#endif

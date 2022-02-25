@@ -46,6 +46,7 @@ class Constants:
     MODEL_NODES_LEN = 0
     INPUTS_DATA_LEN = 0
     MAX_COL_LEN = 0
+    MAX_ROW_LEN = 0
     MAX_TILE_C_LEN = 0
     NUM_INPUTS = 0  # will be filled during parsing
     N_INPUT = 0
@@ -55,6 +56,7 @@ class Constants:
     # to make the code clearer; used in Conv
     TEMP_FILTER_WIDTH = 1
     LEA_BUFFER_SIZE = 0
+    CPU_BUFFER_SIZE = 0
     ARM_PSTATE_LEN = 8704
     USE_ARM_CMSIS = 0
     CONFIG = None
@@ -70,6 +72,8 @@ class Constants:
     FIRST_SAMPLE_OUTPUTS = []
     # Sparse Matrix
     SPARSE = 0
+    # exeuction model on stable power
+    STABLE_POWER = 0
 
 # XXX: Transpose does nothing as we happens to need NHWC
 inplace_update_ops = ['Reshape', 'Softmax', 'Squeeze', 'Transpose', 'Unsqueeze']
@@ -186,6 +190,12 @@ lea_buffer_size = {
     'msp432': 18000,
 }
 
+cpu_buffer_size = {
+    # (4096 - 1518(.bss + .stack + .data)) / sizeof(int16_t)
+    'msp430': 1248,
+    'msp432': 18000,
+}
+
 parser = argparse.ArgumentParser()
 parser.add_argument('config', choices=configs.keys())
 parser.add_argument('--all-samples', action='store_true')
@@ -194,6 +204,7 @@ parser.add_argument('--batch-size', type=int, default=1)
 parser.add_argument('--target', choices=('msp430', 'msp432'), required=True)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--sparse', action='store_true')
+parser.add_argument('--stable-power', action='store_true')
 intermittent_methodology = parser.add_mutually_exclusive_group(required=True)
 intermittent_methodology.add_argument('--baseline', action='store_true')
 intermittent_methodology.add_argument('--hawaii', action='store_true')
@@ -228,11 +239,14 @@ if args.japari:
     config['intermediate_values_size'] *= 2
 if args.sparse:
     Constants.SPARSE = 1
+if args.stable_power:
+    Constants.STABLE_POWER = 1
 Constants.INTERMITTENT = Constants.STATEFUL | Constants.HAWAII | Constants.JAPARI
 Constants.INDIRECT_RECOVERY = Constants.STATEFUL | Constants.JAPARI
 if args.target == 'msp432':
     Constants.USE_ARM_CMSIS = 1
 Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
+Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
 
 onnx_model = load_model(config)
 # print(onnx_model)
@@ -434,7 +448,7 @@ def determine_conv_tile_c(n):
     CHANNEL = filter_info.dims[1]
     kH = filter_info.dims[2]
     kW = filter_info.dims[3]
-
+    '''
     max_continuous_channels = CHANNEL
     if is_separate_tiling:
         max_continuous_channels //= 2
@@ -472,9 +486,15 @@ def determine_conv_tile_c(n):
         node_flags.input_tile_c //= 2
         logger.debug('input_tile_c=%d', node_flags.input_tile_c)
     node_flags.output_tile_c = output_tile_c
+    '''
     # manually set tile size
     node_flags.input_tile_c = 1
     node_flags.output_tile_c = 2
+    '''
+    while node_flags.output_tile_c * OUTPUT_H * OUTPUT_W > Constants.CPU_BUFFER_SIZE:
+        node_flags.output_tile_c //= 2
+        assert node_flags.output_tile_c
+    '''
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
     print('output_tile_c: {}'.format(node_flags.output_tile_c))
 
@@ -691,11 +711,21 @@ def toBSR(matrix, config, dims, op_type):
     matrix = np.reshape(matrix, tuple(dims))
     matrix = np.reshape(matrix, (dims[0], -1))
     if op_type == 'CONV':
-        matrix = np.transpose(matrix)
-        group_size = (config['group'][1] * dims[2] * dims[3], config['group'][0])
-        bsr = csr_matrix(matrix).tobsr(group_size)
-        data = np.transpose(bsr.data, axes=(0,2,1))
+        if args.stable_power:
+            # rows: the number of filter groups
+            # cols: the number of input_tile_c
+            group_size = (config['group'][0], config['group'][1] * dims[2] * dims[3])
+            bsr = csr_matrix(matrix).tobsr(group_size)
+            data = bsr.data
+        else:
+            # rows: the number of input_tile_c
+            # cols: the numner of filter groups
+            matrix = np.transpose(matrix)
+            group_size = (config['group'][1] * dims[2] * dims[3], config['group'][0])
+            bsr = csr_matrix(matrix).tobsr(group_size)
+            data = np.transpose(bsr.data, axes=(0,2,1))
     elif op_type == 'GEMM':
+        # TODO: handle gemm format for stable power
         # the dim of the GEMM matrix has been [n_channel, n_filter]
         group_size = (config['group'][1], config['group'][0])
         bsr = csr_matrix(matrix).tobsr(group_size)
@@ -706,29 +736,41 @@ def toBSR(matrix, config, dims, op_type):
     logger.info('filter size: {}'.format(len(data)))
     logger.info('Rows size: {}'.format(rows.shape))
     logger.info('Cols size: {}'.format(cols.shape))
-    # print('Data: {}'.format(data))
-    # print('Cols: {}'.format(cols))
-    # print('Rows: {}'.format(rows))
-    Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(rows) + 1)
+    logger.debug('Data: {}'.format(data))
+    logger.debug('Cols: {}'.format(cols))
+    logger.debug('Rows: {}'.format(rows))
+    if args.stable_power:
+        Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(cols) + 1)
+    else:
+        Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(rows) + 1)
     Constants.MAX_COL_LEN = max(Constants.MAX_COL_LEN, len(cols) + 1)
+    Constants.MAX_ROW_LEN = max(Constants.MAX_ROW_LEN, len(rows) + 1)
     return data, cols, rows
 
 def find_first_tile_index(cols, rows, config, dims):
-    # Example:
-    #   Cols: [1 2 4 6 7 | 0 6  7 | 0 1 2 4 6 7 | 1 4 5 6 7 | 0 1 2 4 6 7 | 0 1 2 4 5 6 7 | 0 5 6 7 | 1 5 6 7]
-    #   Rows: [ 0  5  8 14 19 25 32 36 40]
-    slice_n_output_tile_c = int(dims[0] / config['group'][0])
-    row_len = len(rows)
-    first_tile_index = [-1] * slice_n_output_tile_c
-    for i in range(1, row_len):
-        n_cols = rows[i] - rows[i - 1]
-        cur_n_cols = 0
-        while cur_n_cols < n_cols:
-            col_index = rows[i - 1] + cur_n_cols
-            col_val = cols[col_index]
-            if first_tile_index[col_val] == -1:
-                first_tile_index[col_val] = i - 1
-            cur_n_cols += 1
+    if not args.stable_power:
+        # Example:
+        #   Cols: [1 2 4 6 7 | 0 6  7 | 0 1 2 4 6 7 | 1 4 5 6 7 | 0 1 2 4 6 7 | 0 1 2 4 5 6 7 | 0 5 6 7 | 1 5 6 7]
+        #   Rows: [ 0  5  8 14 19 25 32 36 40]
+        slice_n_output_tile_c = int(dims[0] / config['group'][0])
+        row_len = len(rows)
+        first_tile_index = [-1] * slice_n_output_tile_c
+        for i in range(1, row_len):
+            n_cols = rows[i] - rows[i - 1]
+            cur_n_cols = 0
+            while cur_n_cols < n_cols:
+                col_index = rows[i - 1] + cur_n_cols
+                col_val = cols[col_index]
+                if first_tile_index[col_val] == -1:
+                    first_tile_index[col_val] = i - 1
+                cur_n_cols += 1
+    else:
+        filter_tile_len = len(rows) - 1
+        first_tile_index = [-1] * filter_tile_len
+        for i in range(1, len(rows)):
+            if rows[i] - rows[i - 1] != 0:
+                first_tile_index[i - 1] = cols[rows[i - 1]]
+    logger.debug('first_tile_index: {}'.format(first_tile_index))
     logger.info('first_tile_index length: {}'.format(len(first_tile_index)))
     return first_tile_index
 

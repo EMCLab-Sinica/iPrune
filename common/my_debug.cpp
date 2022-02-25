@@ -256,6 +256,22 @@ void dump_matrix(const int16_t *mat, size_t rows, size_t cols, const ValueInfo& 
 
 static const uint16_t BUFFER_TEMP_SIZE = 256;
 static int16_t buffer_temp[BUFFER_TEMP_SIZE];
+#if STABLE_POWER
+void compare_vm_vm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint16_t output_offset, uint16_t blockSize) {
+    check_buffer_address(vm_data, blockSize);
+    MY_ASSERT(blockSize <= BUFFER_TEMP_SIZE);
+    // FIXME: The original cpu_buffer data have been accumulated with vm_data. Therefore, the assert will not pass!
+    /*
+    memset(buffer_temp, 0, blockSize * sizeof(int16_t));
+    for(uint16_t idx = 0; idx < blockSize; ++idx) {
+        buffer_temp[idx] = cpu_buffer[output_offset + idx];
+    }
+    for (uint16_t idx = 0; idx < blockSize; idx++) {
+        MY_ASSERT_ALWAYS(vm_data[idx] == buffer_temp[idx]);
+    }
+    */
+}
+#endif
 
 void compare_vm_nvm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint16_t output_offset, uint16_t blockSize) {
     check_buffer_address(vm_data, blockSize);

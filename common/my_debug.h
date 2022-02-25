@@ -76,6 +76,7 @@ void dump_params(Model *model, const ParameterInfo *cur_param, const char* layer
 void dump_params_nhwc(Model *model, const ParameterInfo *cur_param, const char* layer_name = nullptr);
 void dump_model(Model *model);
 void dump_turning_points(Model *model, const ParameterInfo *output);
+void compare_vm_vm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint16_t output_offset, uint16_t blockSize);
 void compare_vm_nvm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint16_t output_offset, uint16_t blockSize);
 void check_nvm_write_address_impl(uint32_t nvm_offset, size_t n);
 
@@ -112,6 +113,7 @@ void check_nvm_write_address_impl(uint32_t nvm_offset, size_t n);
 
 #if MY_DEBUG >= MY_DEBUG_NORMAL
 
+#define compare_vm_vm compare_vm_vm_impl
 #define compare_vm_nvm compare_vm_nvm_impl
 #define check_nvm_write_address check_nvm_write_address_impl
 

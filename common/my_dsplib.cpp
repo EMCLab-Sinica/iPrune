@@ -197,6 +197,44 @@ void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16
 #endif
 #endif
 }
+#if STABLE_POWER
+void my_matrix_mpy_q15_to_vm(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint16_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
+    // XXX: LEA doc requires all matrix dimensions to be even, while LEA
+    // appears to still give correct results when srcARows is odd
+    // srcBCols should really be even, though
+    // http://e2e.ti.com/support/microcontrollers/msp430/f/166/t/716353?MSP430FR5992-MSP-DSPLib-msp-matrix-mpy-q15
+    MY_ASSERT((A_cols & 1) || (B_cols & 1) == 0);
+    MY_ASSERT(B_rows * B_cols <= ARM_PSTATE_LEN);
+    MY_ASSERT(A_cols == B_rows);
+    check_buffer_address(pSrcA, A_rows * A_cols);
+    check_buffer_address(pSrcB, B_rows * B_cols);
+#if !USE_ARM_CMSIS
+    msp_matrix_mpy_q15_params matrix_mpy_params;
+    matrix_mpy_params.srcARows = A_rows;
+    matrix_mpy_params.srcACols = A_cols;
+    matrix_mpy_params.srcBRows = B_rows;
+    matrix_mpy_params.srcBCols = B_cols;
+    // TODO: Replace "my_memcpy_to_param" with the function of copying param to cpu buffer OR accumulating the partial in cpu_buffer
+    msp_status status = msp_matrix_mpy_q15(&matrix_mpy_params, pSrcA, pSrcB, pDst, my_accumulate_to_vm, param, offset_in_word, values_to_preserve, mask, n_keep_state_bits);
+    my_checkStatus(status);
+#else
+    arm_matrix_instance_q15 A, B, C;
+    arm_mat_init_q15(&A, A_rows, A_cols, pSrcA);
+    arm_mat_init_q15(&B, B_rows, B_cols, pSrcB);
+    arm_mat_init_q15(&C, A_rows, B_cols, pDst);
+#ifdef __MSP432__
+    arm_status status = arm_mat_mult_fast_q15(&A, &B, &C, pState, my_memcpy_to_param, param, offset_in_word, values_to_preserve, mask, n_keep_state_bits);
+    MY_ASSERT(status == ARM_MATH_SUCCESS);
+#else
+    arm_status status = arm_mat_mult_fast_q15(&A, &B, &C, pState, my_memcpy_to_param, NULL, 0, 0, mask, n_keep_state_bits);
+    MY_ASSERT(status == ARM_MATH_SUCCESS);
+    if (param) {
+        my_memcpy_to_param(param, offset_in_word, pDst, values_to_preserve * sizeof(int16_t), 0);
+    }
+#endif
+#endif
+}
+#endif // STABLE_POWER
 
 void my_scale_q15(const int16_t *pSrc, int16_t scaleFract, uint8_t shift, int16_t *pDst, uint32_t blockSize) {
 #if !USE_ARM_CMSIS
