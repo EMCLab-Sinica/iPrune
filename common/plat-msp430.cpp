@@ -150,7 +150,6 @@ void IntermittentCNNTest() {
         notify_model_finished();
 
         for (uint8_t idx = 0; idx < STABLE_POWER_ITERATIONS; idx++) {
-            my_printf("123444444" NEWLINE);
             run_cnn_tests(1);
         }
 

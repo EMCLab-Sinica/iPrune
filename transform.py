@@ -191,8 +191,8 @@ lea_buffer_size = {
 }
 
 cpu_buffer_size = {
-    # (4096 - 1518(.bss + .stack + .data)) / sizeof(int16_t)
-    'msp430': 1248,
+    # determined by trial and error
+    'msp430': 800,
     'msp432': 18000,
 }
 
@@ -725,8 +725,9 @@ def toBSR(matrix, config, dims, op_type):
             bsr = csr_matrix(matrix).tobsr(group_size)
             data = np.transpose(bsr.data, axes=(0,2,1))
     elif op_type == 'GEMM':
-        # TODO: handle gemm format for stable power
         # the dim of the GEMM matrix has been [n_channel, n_filter]
+        # rows: the number of filter groups
+        # cols: the number of input_tile_c
         group_size = (config['group'][1], config['group'][0])
         bsr = csr_matrix(matrix).tobsr(group_size)
         data = bsr.data
@@ -739,19 +740,19 @@ def toBSR(matrix, config, dims, op_type):
     logger.debug('Data: {}'.format(data))
     logger.debug('Cols: {}'.format(cols))
     logger.debug('Rows: {}'.format(rows))
-    if args.stable_power:
-        Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(cols) + 1)
-    else:
-        Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(rows) + 1)
+    if op_type == 'CONV':
+        if args.stable_power:
+            Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, int(dims[1] / config['group'][1]) + 1)
+        else:
+            Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(rows) + 1)
+    elif op_type == 'GEMM':
+        Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, int(dims[0] / config['group'][1]) + 1)
     Constants.MAX_COL_LEN = max(Constants.MAX_COL_LEN, len(cols) + 1)
     Constants.MAX_ROW_LEN = max(Constants.MAX_ROW_LEN, len(rows) + 1)
     return data, cols, rows
 
-def find_first_tile_index(cols, rows, config, dims):
-    if not args.stable_power:
-        # Example:
-        #   Cols: [1 2 4 6 7 | 0 6  7 | 0 1 2 4 6 7 | 1 4 5 6 7 | 0 1 2 4 6 7 | 0 1 2 4 5 6 7 | 0 5 6 7 | 1 5 6 7]
-        #   Rows: [ 0  5  8 14 19 25 32 36 40]
+def find_first_tile_index(cols, rows, config, dims, op_type):
+    if op_type == 'GEMM':
         slice_n_output_tile_c = int(dims[0] / config['group'][0])
         row_len = len(rows)
         first_tile_index = [-1] * slice_n_output_tile_c
@@ -765,11 +766,28 @@ def find_first_tile_index(cols, rows, config, dims):
                     first_tile_index[col_val] = i - 1
                 cur_n_cols += 1
     else:
-        filter_tile_len = len(rows) - 1
-        first_tile_index = [-1] * filter_tile_len
-        for i in range(1, len(rows)):
-            if rows[i] - rows[i - 1] != 0:
-                first_tile_index[i - 1] = cols[rows[i - 1]]
+        if not args.stable_power:
+            # Example:
+            #   Cols: [1 2 4 6 7 | 0 6  7 | 0 1 2 4 6 7 | 1 4 5 6 7 | 0 1 2 4 6 7 | 0 1 2 4 5 6 7 | 0 5 6 7 | 1 5 6 7]
+            #   Rows: [ 0  5  8 14 19 25 32 36 40]
+            slice_n_output_tile_c = int(dims[0] / config['group'][0])
+            row_len = len(rows)
+            first_tile_index = [-1] * slice_n_output_tile_c
+            for i in range(1, row_len):
+                n_cols = rows[i] - rows[i - 1]
+                cur_n_cols = 0
+                while cur_n_cols < n_cols:
+                    col_index = rows[i - 1] + cur_n_cols
+                    col_val = cols[col_index]
+                    if first_tile_index[col_val] == -1:
+                        first_tile_index[col_val] = i - 1
+                    cur_n_cols += 1
+        else:
+            filter_tile_len = len(rows) - 1
+            first_tile_index = [-1] * filter_tile_len
+            for i in range(1, len(rows)):
+                if rows[i] - rows[i - 1] != 0:
+                    first_tile_index[i - 1] = cols[rows[i - 1]]
     logger.debug('first_tile_index: {}'.format(first_tile_index))
     logger.info('first_tile_index length: {}'.format(len(first_tile_index)))
     return first_tile_index
@@ -824,10 +842,10 @@ for params in parameters:
                 node_idx += 1
                 if params.name in conv_param_names:
                     data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'CONV')
-                    first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims)
+                    first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims, 'CONV')
                 elif params.name in gemm_param_names:
                     data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'GEMM')
-                    first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims)
+                    first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims, 'GEMM')
                 int_data_Q15 = data
 
             data_len = len(int_data_Q15)

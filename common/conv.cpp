@@ -1096,7 +1096,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
      *  0: unpruned filters int the tile_c
      */
     uint16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
-    for(int16_t idx = 1; idx < n_rows; ++idx) {
+    for(int16_t idx = 1; idx <= n_rows; ++idx) {
         int16_t n_cols_ = rows[idx] - rows[idx - 1];
         if(n_cols_) {
             // set unpruned filter to 1
@@ -1106,7 +1106,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     pruned_tile_c[0] = ~pruned_tile_c[0];
 #else // STABLE_POWER
     uint16_t cols[MAX_COL_LEN] = {0};
-    uint16_t rows[MAX_TILE_C_LEN] = {0};
+    uint16_t rows[MAX_ROW_LEN] = {0};
     uint16_t n_rows = n_tiles_c + 1;
     my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
     uint16_t n_cols = rows[n_rows - 1]; // calculate from row values
@@ -1117,7 +1117,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
      *  0: unpruned filters int the tile_c
      */
     uint16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
-    for(int16_t idx = 1; idx < n_rows; ++idx) {
+    for(int16_t idx = 1; idx <= n_rows; ++idx) {
         int16_t n_cols_ = rows[idx] - rows[idx - 1];
         // printf("n_cols: %d\n", n_cols_);
         // set unpruned filter to 1

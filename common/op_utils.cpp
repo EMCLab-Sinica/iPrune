@@ -258,7 +258,8 @@ void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_id
     } else if(node->op_type == 2) {
         // is fc op
         uint32_t total_offset = filter_idx;
-        my_memcpy_to_param(output, total_offset, cpu_buffer + total_offset, OP_FILTERS * sizeof(int16_t), 0);
+        uint32_t output_len = output->dims[0] * output->dims[1];
+        my_memcpy_to_param(output, total_offset, cpu_buffer, output_len * sizeof(int16_t), 0);
     }
 }
 
@@ -267,10 +268,9 @@ void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const vo
     MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
     uint32_t total_offset = offset_in_word;
     n /= sizeof(int16_t);
+    MY_ASSERT(total_offset + n <= CPU_BUFFER_SIZE);
     for(uint16_t offset = 0; offset < n; ++offset) {
-        // printf("accumulating value: %d\n", *(reinterpret_cast<const int16_t *>(src) + offset));
         cpu_buffer[total_offset + offset] += *(reinterpret_cast<const int16_t *>(src) + offset);
-        // printf("cpu_buffer[total_offset + offset]: %d\n", cpu_buffer[total_offset + offset]);
     }
 }
 #endif

@@ -145,6 +145,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
 
 #endif // INTERMITTENT
+#if STABLE_POWER
+        init_cpu_buffer();
+#endif // STABLE_POWER
 
     for (; i < B->dims[0];) {
         const uint16_t tile_channels = MIN_VAL(flags->extra.gemm.tile_channel, B->dims[0] - i);
@@ -174,7 +177,12 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
         my_printf_debug("Tile for A" NEWLINE);
         dump_matrix_debug(buffer_a, 1, extended_tile_channels, ValueInfo(A, model));
+#if STABLE_POWER
+        int16_t output_offset = j_with_footprints;
+        MY_ASSERT(output_len < CPU_BUFFER_SIZE);
+#else // STABLE_POWER
         int16_t output_offset = tile * output_len + j_with_footprints;
+#endif // STABLE_POWER
         for (; j < B->dims[1];) {
             int16_t tile_width;
             // this variable is used only for JAPARI. Don't use [[maybe_unused]] until TI CGT support C++17.
@@ -194,7 +202,6 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             int16_t *filter_ptr = buffer_b;
             my_fill_q15(0, filter_ptr, extended_tile_channels * full_tile_width);
 #if SPARSE
-            // TODO: Load filter
             // Load fliter according to index
             uint16_t col_index = cur_row_val + cur_n_cols;
             uint16_t buffer_size = tile_width * tile_channels;
@@ -295,16 +302,25 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             my_matrix_mpy_q15(1, extended_tile_channels, extended_tile_channels, full_tile_width, buffer_a, buffer_b, buffer_temp,
                               output, output_offset, values_to_preserve, offset, tile_width_first);
 #else
+#if STABLE_POWER
+            MY_ASSERT(B->dims[0] / tile_channels * OP_FILTERS < CPU_BUFFER_SIZE);
+            my_matrix_mpy_q15_to_vm(1, extended_tile_channels, extended_tile_channels, full_tile_width, buffer_a, buffer_b, buffer_temp,
+                              output, output_offset, values_to_preserve, 0, 0);
+#else // STABLE_POWER
             my_matrix_mpy_q15(1, extended_tile_channels, extended_tile_channels, full_tile_width, buffer_a, buffer_b, buffer_temp,
                               output, output_offset, values_to_preserve, 0, 0);
+#endif // STABLE_POWER
 #endif
 
             my_printf_debug("matrix_mpy_results" NEWLINE);
             dump_matrix_debug(buffer_temp, full_tile_width, ValueInfo(output, model));
             my_printf_debug(NEWLINE);
 
+#if STABLE_POWER
+            compare_vm_vm(buffer_temp, model, output, output_offset, values_to_preserve);
+#else // STABLE_POWER
             compare_vm_nvm(buffer_temp, model, output, output_offset, values_to_preserve);
-
+#endif // STABLE_POWER
             my_printf_debug("output_offset=%d" NEWLINE, output_offset);
 #if HAWAII
             hawaii_record_footprints(model, values_to_preserve);
@@ -317,7 +333,11 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             uint16_t col_val = get_col_val(model, B, cur_row_val + cur_n_cols);
             filter_tile_index = col_val;
             j = col_val * OP_FILTERS;
+#if STABLE_POWER
+            output_offset = j;
+#else // STABLE_POWER
             output_offset = tile * output_len + j;
+#endif // STABLE_POWER
 #else // SPARSE
             j += OP_FILTERS;
             output_offset += values_to_preserve;
@@ -347,7 +367,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         i += flags->extra.gemm.tile_channel, tile++;
 #endif // SPARSE
     }
-
+#if STABLE_POWER
+    preserve_output(node, output, 0);
+#endif // STABLE_POWER
     flip_state_bit(model, output);
 
     my_printf_debug("handle_gemm output" NEWLINE);
@@ -392,7 +414,7 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     MY_ASSERT(n_tiles);
 #if SPARSE
     uint16_t cols[MAX_COL_LEN] = {0};
-    uint16_t rows[MAX_TILE_C_LEN] = {0};
+    uint16_t rows[MAX_ROW_LEN] = {0};
     int16_t n_rows = n_tiles + 1;
     my_memcpy_from_param_row(model, rows, params, 0, (n_rows) * sizeof(int16_t));
     int16_t n_cols = rows[n_rows - 1]; // calculate from row values
@@ -403,7 +425,13 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
      */
     // FIXME: can't allocate with variable length
     std::bitset<128> pruned_tile_c[MAX_TILE_C_LEN] = {0};
-    for(int16_t idx = 1; idx < n_rows; ++idx) {
+#if STABLE_POWER
+    for(int16_t idx = 0; idx < n_cols; ++idx) {
+        pruned_tile_c[0][cols[idx]] = 1;
+    }
+    pruned_tile_c[0].flip();
+#else // STABLE_POWER
+    for(int16_t idx = 1; idx <= n_rows; ++idx) {
         int16_t n_cols_ = rows[idx] - rows[idx - 1];
         // set unpruned filter to 1
         for(int16_t offset = 0; offset < n_cols_; ++offset) {
@@ -412,8 +440,13 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
         }
         pruned_tile_c[idx - 1].flip();
     }
+#endif // STABLE_POWER
 #endif // SPARSE
 
+#if STABLE_POWER
+    // All partial sums have been accumulated.
+    n_tiles = 1;
+#endif
     for (; merge_offset < output_len; merge_offset += output_tile_size) {
         int16_t cur_tile_size = MIN_VAL(output_tile_size, output_len - merge_offset);
         my_fill_q15(0, buffer_gemm, cur_tile_size);
