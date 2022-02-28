@@ -248,6 +248,11 @@ if args.target == 'msp432':
 Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
 
+if args.config == 'pruned_mnist':
+    model_config = model_configs['LeNet_5']
+elif args.config == 'pruned_cifar':
+    model_config = model_configs['SqueezeNet']
+
 onnx_model = load_model(config)
 # print(onnx_model)
 names = {}
@@ -428,7 +433,7 @@ class Node:
 def extend_for_footprints(n):
     return n + n // Constants.BATCH_SIZE
 
-def determine_conv_tile_c(n):
+def determine_conv_tile_c(n, node_idx):
     logger.debug('Determine tile size for Conv node %s', n.name)
 
     output_value_info = find_tensor_value_info(onnx_model, n.output[0])
@@ -488,8 +493,8 @@ def determine_conv_tile_c(n):
     node_flags.output_tile_c = output_tile_c
     '''
     # manually set tile size
-    node_flags.input_tile_c = 1
-    node_flags.output_tile_c = 2
+    node_flags.input_tile_c = model_config[node_idx]['group'][1]
+    node_flags.output_tile_c = model_config[node_idx]['group'][0]
     '''
     while node_flags.output_tile_c * OUTPUT_H * OUTPUT_W > Constants.CPU_BUFFER_SIZE:
         node_flags.output_tile_c //= 2
@@ -498,7 +503,7 @@ def determine_conv_tile_c(n):
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
     print('output_tile_c: {}'.format(node_flags.output_tile_c))
 
-def determine_gemm_tile_sizes(n):
+def determine_gemm_tile_sizes(n, node_idx):
     logger.debug('Determine tile size for Gemm node %s', n.name)
 
     A = find_tensor_value_info(onnx_model, n.input[0])
@@ -511,7 +516,7 @@ def determine_gemm_tile_sizes(n):
 
     # writing a batch at a time is simpler and faster
     tile_size_unit = config['op_filters']
-
+    '''
     while True:
         # LEA wants addresses to be 4 byte-aligned, or 2 Q15-aligned
         node_flags.tile_channel = min([(Constants.ARM_PSTATE_LEN / tile_size_unit) / 2 * 2 - 2, B_rows,
@@ -527,22 +532,26 @@ def determine_gemm_tile_sizes(n):
         logger.debug("tile_channel = %d", node_flags.tile_channel)
         if node_flags.tile_channel > 0:
             break
+    '''
     # manually set tile size
-    node_flags.tile_channel = 16
+    node_flags.tile_channel = model_config[node_idx]['group'][1]
     print('tile_channel: {}'.format(node_flags.tile_channel))
     print('tile_size_unit: {}'.format(tile_size_unit))
 
     assert tile_size_unit * (node_flags.tile_channel + 2) <= Constants.ARM_PSTATE_LEN
 
 graph = []
+node_idx = 0
 for n in nodes:
     if n.op_type == 'Conv':
-        determine_conv_tile_c(n)
+        determine_conv_tile_c(n, node_idx)
+        node_idx += 1
     if n.op_type == 'ConvMerge':
         # XXX: insert conv_before_merge info into conv_merge
         n.flags = graph[-1].flags
     if n.op_type == 'Gemm':
-        determine_gemm_tile_sizes(n)
+        determine_gemm_tile_sizes(n, node_idx)
+        node_idx += 1
     graph.append(Node(name=n.name or n.op_type,
                       output_name=n.output[0],
                       inputs=[names[i] for i in n.input],
@@ -726,8 +735,8 @@ def toBSR(matrix, config, dims, op_type):
             data = np.transpose(bsr.data, axes=(0,2,1))
     elif op_type == 'GEMM':
         # the dim of the GEMM matrix has been [n_channel, n_filter]
-        # rows: the number of filter groups
-        # cols: the number of input_tile_c
+        # rows: the number of input_tile_c
+        # cols: the number of filter groups
         group_size = (config['group'][1], config['group'][0])
         bsr = csr_matrix(matrix).tobsr(group_size)
         data = bsr.data
@@ -794,10 +803,6 @@ def find_first_tile_index(cols, rows, config, dims, op_type):
 
 
 model_parameters_info = outputs['model_parameters_info']
-if args.config == 'pruned_mnist':
-    model_config = model_configs['LeNet_5']
-elif args.config == 'pruned_cifar':
-    model_config = model_configs['SqueezeNet']
 node_idx = 0
 for params in parameters:
     if params is None:  # input

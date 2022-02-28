@@ -210,13 +210,13 @@ class MetricsMaker:
         node_idx = 0
         for m in self.model_.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                metric_all = self.profile_node(self.args_, m, self.output_shapes_, node_idx)
                 if self.args_.prune == 'intermittent':
-                    metric = self.profile_node(self.args_, m, self.output_shapes_, node_idx)['vm_jobs']
+                    metric = metric_all['vm_jobs'] + metric_all['vm_read_psum'] + metric_all['vm_write_psum'] + metric_all['nvm_jobs']
                     metrics.append(metric)
                 elif self.args_.prune == 'energy':
-                    self.profile_node(self.args_, m, self.output_shapes_, node_idx)
                     (nvm_access_cost, vm_access_cost) = (100, 1)
-                    metric = self.layer_info_[-1]['nvm_access'] * nvm_access_cost + self.layer_info_[-1]['vm_access'] * vm_access_cost
+                    metric = metric_all['nvm_access'] * nvm_access_cost + metric_all['vm_access'] * vm_access_cost
                     metrics.append(metric)
                 node_idx += 1
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
@@ -252,19 +252,24 @@ class MetricsMaker:
 
     def profile_node(self, args, node, output_shapes, node_idx):
         layer_config = config[args.arch][node_idx]
+        shape = node.weight.data.shape
+        matrix = node.weight.data
+        matrix = matrix.reshape(shape[0], -1).cpu()
+        # group: [n_filters, n_channels]
         if isinstance(node, nn.Conv2d):
+            # rows: the number of filter groups
+            # cols: the number of input_tile_c
             n_row, n_col = layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1]
             group_size = (n_row, n_col)
             width = n_col * n_row
         elif isinstance(node, nn.Linear):
-            n_row, n_col = layer_config['group'][0], layer_config['group'][1]
+            # rows: the number of input_tile_c
+            # cols: the number of filter filters
+            n_row, n_col = layer_config['group'][1], layer_config['group'][0]
             group_size = (n_row, n_col)
             width = n_col * n_row
-        (nvm_access_cost, vm_access_cost) = (100, 1)
+            matrix = np.transpose(matrix)
 
-        shape = node.weight.data.shape
-        matrix = node.weight.data
-        matrix = matrix.reshape(shape[0], -1).cpu()
         bsr = toBSR(matrix, group_size)
         data = bsr.data
         cols = bsr.indices
@@ -279,32 +284,39 @@ class MetricsMaker:
         vm_read_weights = 0
         vm_read_inputs = 0
         op_type = None
-        if isinstance(node, nn.Linear):
-            logger_.debug("Node: {}".format(node_idx))
-            # input stationary
-            nvm_read_inputs += layer_config['input'][2]
-            op_type = 'FC'
-        elif isinstance(node, nn.Conv2d):
-            # weight stationary
-            n_input_nvm_access = min(math.ceil((len(cols) * group_size[0] * group_size[1]) / np.prod(layer_config['tile']['weight'])), layer_config['filter'][3] / layer_config['tile']['weight'][3])
-            logger_.debug("Node: {}".format(node_idx))
-            logger_.debug("n_nvm_input: {}".format(n_input_nvm_access))
-            # nvm_access_per_ifm = (layer_config['filter'][3] / layer_config['tile']['weight'][3]) * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
-            nvm_access_per_ifm = n_input_nvm_access * math.ceil(layer_config['tile']['weight'][1]/layer_config['stride'])
-            nvm_read_inputs += np.prod(layer_config['input']) * nvm_access_per_ifm
-            op_type = 'CONV'
 
-        nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][0]
-        for i in range(1, len(rows)):
-            if rows[i] - rows[i - 1] != 0:
-                # TODO: indexing cost
-                nvm_read_weights += (rows[i] - rows[i - 1]) * group_size[0] * group_size[1]
-                # XXX: All channels can't be loaded in a weight tile
-                vm_jobs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
-                vm_read_psum += 2 * ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
-                vm_write_psum += ((rows[i] - rows[i - 1]) - 1) * layer_config['output'][0] * layer_config['output'][1] * group_size[0]
-                vm_read_weights += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * group_size[0] * group_size[1]
-                vm_read_inputs += (rows[i] - rows[i - 1]) * layer_config['output'][0] * layer_config['output'][1] * group_size[0] * group_size[1]
+        logger_.debug("Node: {}".format(node_idx))
+        if isinstance(node, nn.Linear):
+            op_type = 'FC'
+            # input stationary
+            for i in range(1, len(rows)):
+                if rows[i] - rows[i - 1] != 0:
+                    nvm_read_inputs += n_row
+            nvm_read_weights += len(cols) * n_row * n_col
+            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2]
+            vm_read_inputs += len(cols) * n_row * n_col
+            vm_read_weights += len(cols) * n_row * n_col
+            vm_read_psum += 2 * (len(rows) - 1) * layer_config['output'][2]
+            vm_write_psum += (len(rows) - 1) * layer_config['output'][2]
+            vm_jobs += (len(rows) - 1) * layer_config['output'][2]
+        elif isinstance(node, nn.Conv2d):
+            op_type = 'CONV'
+            # weight stationary
+            per_input_nvm_read_for_a_weight_group = math.ceil(layer_config['tile']['weight'][1] / layer_config['stride']) # e.g. 5 / 1 = 5
+            nvm_read_inputs_for_a_weight_group = layer_config['input'][0] * layer_config['input'][1] * per_input_nvm_read_for_a_weight_group # H * W * (5 / 1)
+            nvm_read_inputs += len(cols) * nvm_read_inputs_for_a_weight_group
+            nvm_read_weights += len(cols) * n_row * n_col
+            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2]
+            vm_read_inputs += len(cols) * n_row * layer_config['output'][0] * layer_config['output'][1]
+            vm_read_weights += len(cols) * n_row * layer_config['output'][0] * layer_config['output'][1]
+            for i in range(1, len(rows)):
+                n_tile_c = rows[i] - rows[i - 1]
+                vm_read_psum += 2 * n_tile_c * n_row * \
+                    layer_config['output'][0] * layer_config['output'][1]
+                vm_write_psum += n_tile_c * n_row * \
+                    layer_config['output'][0] * layer_config['output'][1]
+                vm_jobs += n_tile_c * n_row * \
+                    layer_config['output'][0] * layer_config['output'][1]
         logger_.debug('group size: {}'.format(group_size))
         logger_.debug('nvm_read_weights: {}'.format(nvm_read_weights))
         logger_.debug('nvm_read_inputs: {}'.format(nvm_read_inputs))
