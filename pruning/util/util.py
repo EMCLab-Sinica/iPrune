@@ -259,9 +259,16 @@ class MetricsMaker:
         matrix = matrix.reshape(shape[0], -1).cpu()
         # group: [n_filters, n_channels]
         if isinstance(node, nn.Conv2d):
-            # rows: the number of filter groups
-            # cols: the number of input_tile_c
-            n_row, n_col = layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1]
+            if self.args_.prune_shape == 'channel':
+                # rows: the number of filter groups
+                # cols: the number of input_tile_c
+                n_row, n_col = layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1]
+            elif self.args_.prune_shape == 'vector':
+                # rows: the number of filter groups
+                # cols: input_tile_c * K * K
+                n_row, n_col = layer_config['group'][0], layer_config['group'][1]
+                matrix = nchw2nhwc(matrix.view(shape))
+                matrix = matrix.reshape(shape[0], -1)
             group_size = (n_row, n_col)
             width = n_col * n_row
         elif isinstance(node, nn.Linear):
@@ -304,13 +311,16 @@ class MetricsMaker:
         elif isinstance(node, nn.Conv2d):
             op_type = 'CONV'
             # weight stationary
-            per_input_nvm_read_for_a_weight_group = math.ceil(layer_config['tile']['weight'][1] / layer_config['stride']) # e.g. 5 / 1 = 5
+            if self.args_.prune_shape == 'channel':
+                per_input_nvm_read_for_a_weight_group = math.ceil(layer_config['tile']['weight'][1] / layer_config['stride']) # e.g. 5 / 1 = 5
+            elif self.args_.prune_shape == 'vector':
+                per_input_nvm_read_for_a_weight_group = 1
             nvm_read_inputs_for_a_weight_group = layer_config['input'][0] * layer_config['input'][1] * per_input_nvm_read_for_a_weight_group # H * W * (5 / 1)
             nvm_read_inputs += len(cols) * nvm_read_inputs_for_a_weight_group
             nvm_read_weights += len(cols) * n_row * n_col
             nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2]
-            vm_read_inputs += len(cols) * n_row * layer_config['output'][0] * layer_config['output'][1]
-            vm_read_weights += len(cols) * n_row * layer_config['output'][0] * layer_config['output'][1]
+            vm_read_inputs += len(cols) * n_row * n_col * layer_config['output'][0] * layer_config['output'][1]
+            vm_read_weights += len(cols) * n_row * n_col * layer_config['output'][0] * layer_config['output'][1]
             for i in range(1, len(rows)):
                 n_tile_c = rows[i] - rows[i - 1]
                 vm_read_psum += 2 * n_tile_c * n_row * \
