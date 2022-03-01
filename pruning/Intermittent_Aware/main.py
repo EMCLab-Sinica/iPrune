@@ -182,6 +182,8 @@ if __name__=='__main__':
             help='retrain the pruned network')
     parser.add_argument('--prune', action='store', default=None,
             help='pruning mechanism: None | intermittent | energy')
+    parser.add_argument('--prune_shape', action='store', default='vector',
+            help='pruning shape: vector | channel')
     parser.add_argument('--prune-target', action='store', default=None,
             help='pruning target: default=None | conv | ip')
     parser.add_argument('--stage', action='store', type=int, default=0,

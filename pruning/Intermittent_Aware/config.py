@@ -19,7 +19,7 @@ config = {
                 'input': [8,5,8],
                 'weight': [5,5,8,16]
             },
-            'group': [2, 1],
+            'group': [4, 8],
             'stride': 1
         },
         {
@@ -49,7 +49,7 @@ config = {
         {
             'input': [28,28,1],
             'filter': [5,5,1,8],
-            'output': [28,28,8],
+            'output': [24,24,8],
             'tile': {
                 'input': [8,5,1],
                 'weight': [5,5,1,8]
@@ -58,23 +58,23 @@ config = {
             'stride': 1
         },
         {
-            'input': [14,14,8],
+            'input': [12,12,8],
             'filter': [5,5,6,16],
-            'output': [14,14,16],
+            'output': [8,8,16],
             'tile': {
-                'input': [8,3,8],
+                'input': [8,5,8],
                 'weight': [5,5,8,16]
             },
             'group': [2, 1],
             'stride': 1
         },
         {
-            'input': [1,1, 16*7*7],
-            'filter': [1,1,16*7*7,128],
+            'input': [1,1, 16*4*4],
+            'filter': [1,1,16*4*4,128],
             'output': [1,1,128],
             'tile': {
-                'input': [1,1,16*7*7],
-                'weight': [1,1,16*7*7,4]
+                'input': [1,1,16*4*4],
+                'weight': [1,1,16*4*4,4]
             },
             'group': [2, 16],
             'stride': 1
@@ -87,7 +87,7 @@ config = {
                 'input': [1,1,128],
                 'weight': [1,1,128,4]
             },
-            'group': [2,1],
+            'group': [2,16],
             'stride': 1
         },
         {
@@ -98,7 +98,7 @@ config = {
                 'input': [1,1,84],
                 'weight': [1,1,84,10]
             },
-            'group': [2,1],
+            'group': [2,21],
             'stride': 1
         }
     ],

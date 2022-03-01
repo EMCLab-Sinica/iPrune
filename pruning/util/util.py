@@ -193,8 +193,10 @@ def load_state(model, state_dict):
     return
 
 def nchw2nhwc(arr):
-    # print(arr.shape)
     return arr.permute(0, 2, 3, 1) # NCHW -> NHWC
+
+def nhwc2nchw(arr):
+    return arr.permute(0, 3, 1, 2) # NHWC -> NCHW
 
 class MetricsMaker:
     def __init__(self, model, args, output_shapes):
@@ -579,26 +581,52 @@ class MaskMaker():
         pruning_ratios = self.setPruningRatios(self.model_, self.args_.candidates_pruning_ratios, output_shapes)
         self.generate_masks_(pruning_ratios, pruned_ratios)
 
-    def to_group_shape(self, tensor, group_size):
-        # group size: [2, 1], origin: [16, 8, 5, 5]
-        # [16, 8, 5, 5] -> [16, 8, 25] -> [16, 200] -> [64, 2, 25] -> [64, 50]
-        tensor = tensor.reshape(tensor.shape[0], -1).cpu() # ->[16, 200]
-        bsr = toBSR(tensor, group_size) # -> [64, 2, 25]
-        data = bsr.data
-        self.cols = bsr.indices
-        self.rows = bsr.indptr
-        self.bsr_shape = data.shape
-        self.matrix_shape = tensor.size()
-        data = data.reshape(data.shape[0], -1) # [64, 50]
+    def to_group_shape(self, tensor, group_size, m):
+        if self.args_.prune_shape == 'channel':
+            # group size: [2, 1], origin: [16, 8, 5, 5]
+            # [16, 8, 5, 5] -> [16, 8, 25] -> [16, 200] -> [64, 2, 25] -> [64, 50]
+            tensor = tensor.reshape(tensor.shape[0], -1).cpu() # ->[16, 200]
+            bsr = toBSR(tensor, group_size) # -> [64, 2, 25]
+            data = bsr.data
+            self.cols = bsr.indices
+            self.rows = bsr.indptr
+            self.bsr_shape = data.shape
+            self.matrix_shape = tensor.size()
+            data = data.reshape(data.shape[0], -1) # [64, 50]
+        elif self.args_.prune_shape == 'vector':
+            # group size: [2, 1], origin: [16, 8, 5, 5]
+            # [16, 8, 5, 5] -> [16, 5, 5, 8] -> [16, 5x5x8] -> [200, 2, 8] -> [200, 16]
+            if isinstance(m, nn.Conv2d):
+                tensor = nchw2nhwc(tensor)
+                self.nhwc_shape = tensor.shape
+            tensor = tensor.reshape(tensor.shape[0], -1).cpu()
+            bsr = toBSR(tensor, group_size)
+            data = bsr.data
+            self.cols = bsr.indices
+            self.rows = bsr.indptr
+            self.bsr_shape = data.shape # [200, 2, 8]
+            self.matrix_shape = tensor.size() # [16, 5x5x8]
+            data = data.reshape(data.shape[0], -1) # [200, 16]
         return torch.tensor(data)
 
-    def recover_shape(self, tensor, original_size):
-        # group size: [2, 1], target: [16, 8, 5, 5], tensor: [64, 50]
-        # [64, 50] -> [64, 2, 25] -> [16, 200] -> [16, 8, 5, 5]
-        tensor = tensor.cpu().detach().numpy()
-        tensor = tensor.reshape(self.bsr_shape[0], self.bsr_shape[1], -1)# -> [64, 2, 25]
-        origin_matrix = torch.tensor(bsr_matrix((tensor, self.cols, self.rows), shape=self.matrix_shape).toarray()) # ->[16, 200]
-        origin_matrix = origin_matrix.view(original_size) # -> [16, 8, 5, 5]
+    def recover_shape(self, tensor, original_size, m):
+        if self.args_.prune_shape == 'channel':
+            # group size: [2, 1], target: [16, 8, 5, 5], tensor: [64, 50]
+            # [64, 50] -> [64, 2, 25] -> [16, 200] -> [16, 8, 5, 5]
+            tensor = tensor.cpu().detach().numpy()
+            tensor = tensor.reshape(self.bsr_shape[0], self.bsr_shape[1], -1)# -> [64, 2, 25]
+            origin_matrix = torch.tensor(bsr_matrix((tensor, self.cols, self.rows), shape=self.matrix_shape).toarray()) # ->[16, 200]
+            origin_matrix = origin_matrix.view(original_size) # -> [16, 8, 5, 5]
+        elif self.args_.prune_shape == 'vector':
+            # [200, 16] -> [200, 2, 8] -> [16, 200] -> [16, 5, 5, 8] -> [16, 8, 5, 5]
+            tensor = tensor.cpu().detach().numpy()
+            tensor = tensor.reshape(self.bsr_shape[0], self.bsr_shape[1], -1)# -> [200, 2, 8]
+            origin_matrix = torch.tensor(bsr_matrix((tensor, self.cols, self.rows), shape=self.matrix_shape).toarray()) # ->[16, 200]
+            if isinstance(m, nn.Conv2d):
+                origin_matrix = origin_matrix.view(self.nhwc_shape) # -> [16, 5, 5, 8]
+                origin_matrix = nhwc2nchw(origin_matrix) # -> [16, 8, 5, 5]
+            elif isinstance(m, nn.Linear):
+                origin_matrix = origin_matrix.view(original_size)
         return origin_matrix
 
     def generate_masks_(self, pruning_ratios, pruned_ratios=[]):
@@ -616,12 +644,15 @@ class MaskMaker():
                 if isinstance(m, nn.Linear):
                     group_size = (layer_config['group'][0], layer_config['group'][1])
                 elif isinstance(m, nn.Conv2d):
-                    group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1])
-                tmp_pruned = self.to_group_shape(tmp_pruned, group_size)
+                    if self.args_.prune_shape == 'channel':
+                        group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1])
+                    elif self.args_.prune_shape == 'vector':
+                        group_size = (layer_config['group'][0], layer_config['group'][1])
+                tmp_pruned = self.to_group_shape(tmp_pruned, group_size, m)
                 tmp_pruned = self.criteria(tmp_pruned, pruning_ratios[node_idx], pruned_ratios[node_idx])
                 logger_.debug('After pruning: {}'.format(tmp_pruned.size()))
                 tmp_pruned = tmp_pruned.reshape(tmp_pruned.shape[0], -1)
-                tmp_pruned = self.recover_shape(tmp_pruned, original_size)
+                tmp_pruned = self.recover_shape(tmp_pruned, original_size, m)
                 self.weight_masks_.append(tmp_pruned)
                 node_idx += 1
                 logger_.info('Finish generating node {} mask.\n'.format(node_idx))
