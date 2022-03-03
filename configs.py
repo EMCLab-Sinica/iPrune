@@ -12,7 +12,7 @@ configs = {
         'scale': 4,
         'input_scale': 4,
         'num_slots': 2,
-        'intermediate_values_size': 26000,
+        'intermediate_values_size': 65000,
         'data_loader': load_data_mnist,
         'n_all_samples': 10000,
         'sample_size': [1, 28, 28],
@@ -25,7 +25,7 @@ configs = {
         'scale': 4,
         'input_scale': 4,
         'num_slots': 2,
-        'intermediate_values_size': 52000,
+        'intermediate_values_size': 320000,
         'data_loader': load_data_mnist,
         'n_all_samples': 10000,
         'sample_size': [1, 28, 28],
@@ -33,7 +33,7 @@ configs = {
         # 'first_sample_outputs': [-0.603953, -0.099769, -0.226438, 0.090364, 0.235120, -0.055192, -0.766948, 0.888632, 0.108483, 0.441478],
         'first_sample_outputs': [-0.556942, -0.221270, -0.297040, -0.065473, 0.153532, 0.105087, -0.488914, 0.932622, 0.297344, 0.325804],
         'fp32_accuracy': 0.9919,
-    },
+    }, #   -186    -68    129    178   -125   -199   -343    747    -93     -2 (intermittent stage 5)
     'pruned_cifar10': {
         'onnx_model': 'pruning/Intermittent_Aware/onnx_models/SqueezeNet.onnx',
         'scale': 2,

@@ -8,7 +8,7 @@ config = {
                 'input': [8,5,1],
                 'weight': [5,5,1,8]
             },
-            'group': [2, 1], # [n_filter, n_channel]
+            'group': [8, 1], # [n_filter, n_channel]
             'stride': 1
         },
         {

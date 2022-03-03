@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import os
 import sys
+import logging
 from scipy.sparse import csr_matrix
 from config import config
 
@@ -10,6 +11,26 @@ cwd = os.getcwd()
 sys.path.append(cwd+'/../')
 
 from util import *
+
+logger = logging.getLogger(__name__)
+def set_logger(args):
+    formatter = logging.Formatter(
+        '[%(levelname)s %(asctime)s %(module)s:%(lineno)d] %(message)s',
+        datefmt='%Y%m%d %H:%M:%S')
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    level = args.debug
+    if level == 1:
+        # debug
+        logger.setLevel(logging.DEBUG)
+        ch.setLevel(logging.DEBUG)
+    elif level == 0:
+        # info
+        logger.setLevel(logging.INFO)
+        ch.setLevel(logging.INFO)
+
+    logger.addHandler(ch)
+    return logger
 
 def printArgs(args):
     print('\n => Setting params:')
@@ -23,14 +44,13 @@ def lowering(tensor, shape):
     return matrix
 
 def toBSR(matrix, group_size):
-    '''
-    append_size = width - matrix.shape[1] % width
-    if append_size != width:
-        matrix = np.concatenate((matrix, np.zeros((len(matrix), append_size))), 1)
-    '''
-    print(group_size)
     bsr = csr_matrix(matrix).tobsr(group_size)
     return bsr
+
+def print_matrix(matrix):
+    for row in matrix:
+        logger.info(" ".join("{:.2f}".format(x) for x in row))
+        logger.info("\n")
 
 def getVal(node, colIdx):
     bsr = node['weights']
@@ -44,11 +64,14 @@ def getJob(node, output_shape, group_size):
     cols = bsr.indices
     rows = bsr.indptr
     if len(node['dims']) == 4:
-        print('rows: {}'.format(rows))
-        print('cols: {}'.format(cols))
+        logger.debug('data: {}'.format(data))
+        logger.info('cols: {}'.format(cols))
+        logger.info('rows: {}'.format(rows))
         return len(cols) * output_shape[0] * output_shape[1] * group_size[0]
     elif len(node['dims']) == 2:
-        print('cols: {}'.format(len(cols)))
+        logger.debug('data: {}'.format(data))
+        logger.info('cols: {}'.format(cols))
+        logger.info('rows: {}'.format(rows))
         return len(cols) * group_size[0]
 
 def printGroups(node):
@@ -79,7 +102,9 @@ if __name__ == '__main__':
     parser.add_argument('--arch', action='store', default='LeNet_5', help='the network architecture: LeNet_5 | SqueezeNet')
     parser.add_argument('--group', action='store', type=int, default=[2, 1], help='Group size')
     parser.add_argument('--layout', action='store', default='nhwc', help='Select data layout: nhwc | nchw')
+    parser.add_argument('--debug', action='store_true', help='Select data layout: nhwc | nchw')
     args = parser.parse_args()
+    set_logger(args)
     printArgs(args)
 
     graph = []
@@ -98,11 +123,11 @@ if __name__ == '__main__':
     node_idx = 0
     for idx, node in enumerate(nodes):
         shape = node.dims
-        print(shape)
+        logger.info(shape)
         matrix = onnx.numpy_helper.to_array(node)
         if node.name in main_names:
             layer_config = config[args.arch][node_idx]
-            print(layer_config)
+            logger.debug(layer_config)
             if len(shape) == 4:
                 if args.layout == 'nchw':
                     group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1])
@@ -113,6 +138,7 @@ if __name__ == '__main__':
             else:
                 group_size = (layer_config['group'][0], layer_config['group'][1])
                 matrix = lowering(matrix, shape)
+            # print_matrix(matrix)
             matrix = toBSR(matrix, group_size)
             sparse_node = {
                 'dims': shape,
@@ -125,7 +151,7 @@ if __name__ == '__main__':
     # printGroups(graph[2])
     model_info = config[args.arch]
     output_shapes = [layer['output'] for layer in model_info]
-    print(output_shapes)
+    logger.info(output_shapes)
     node_idx = 0;
     total_job = 0
     for idx, n in enumerate(model.graph.node):
