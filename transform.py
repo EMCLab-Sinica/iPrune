@@ -607,6 +607,14 @@ def nchw2nhwc(arr, dims):
     arr = np.transpose(arr, axes=(0, 2, 3, 1))  # NCHW -> NHWC
     return arr.flatten()  # Change it back to flattened
 
+def nchw2nhwc_without_flatten(arr):
+    arr = np.transpose(arr, axes=(0, 2, 3, 1))  # NCHW -> NHWC
+    return arr
+
+def im2col(arr, dims):
+    arr = np.reshape(arr, (dims[0], -1))
+    return arr
+
 if args.sparse:
     outputs = {
         'parameters': io.BytesIO(),
@@ -717,11 +725,17 @@ def decode_raw_data(params):
     }[params.data_type]
     return list(map(lambda t: t[0], struct.iter_unpack(format_char, params.raw_data)))
 
+def dump_matrix(arr):
+    logger.debug(arr.shape)
+    for row in arr:
+        logger.debug(" ".join("{:>10d}".format(x) for x in row))
+
 def toBSR(matrix, config, dims, op_type):
     shape = matrix.shape
     matrix = np.reshape(matrix, tuple(dims))
-    matrix = np.reshape(matrix, (dims[0], -1))
     if op_type == 'CONV':
+        matrix = nchw2nhwc_without_flatten(matrix)
+        matrix = im2col(matrix, dims)
         if args.stable_power:
             # rows: the number of filter groups
             # cols: the number of input_tile_c
@@ -732,9 +746,12 @@ def toBSR(matrix, config, dims, op_type):
             # rows: the number of input_tile_c
             # cols: the numner of filter groups
             matrix = np.transpose(matrix)
-            group_size = (config['group'][1] * dims[2] * dims[3], config['group'][0])
+            group_size = (config['group'][1], config['group'][0])
+            dump_matrix(matrix)
             bsr = csr_matrix(matrix).tobsr(group_size)
+            logger.debug('Data(before transpose):\n{}'.format(bsr.data))
             data = np.transpose(bsr.data, axes=(0,2,1))
+            logger.debug('Data(after transpose):\n{}'.format(data))
     elif op_type == 'GEMM':
         # the dim of the GEMM matrix has been [n_channel, n_filter]
         # rows: the number of input_tile_c
@@ -745,12 +762,12 @@ def toBSR(matrix, config, dims, op_type):
     data = np.reshape(data, -1)
     cols = bsr.indices
     rows = bsr.indptr
+    logger.debug('Data:\n{}'.format(data))
+    logger.debug('Cols: {}'.format(cols))
+    logger.debug('Rows: {}'.format(rows))
     logger.info('filter size: {}'.format(len(data)))
     logger.info('Rows size: {}'.format(rows.shape))
     logger.info('Cols size: {}'.format(cols.shape))
-    logger.debug('Data: {}'.format(data))
-    logger.debug('Cols: {}'.format(cols))
-    logger.debug('Rows: {}'.format(rows))
     if op_type == 'CONV':
         if args.stable_power:
             Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, int(dims[1] / config['group'][1]) + 1)
@@ -845,6 +862,7 @@ for params in parameters:
                 rows = []
                 first_tile_index = []
             if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
+                # layout: NHWC
                 layer_config = model_config[node_idx]
                 node_idx += 1
                 if params.name in conv_param_names:
