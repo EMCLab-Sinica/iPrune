@@ -77,7 +77,8 @@ void dump_params_nhwc(Model *model, const ParameterInfo *cur_param, const char* 
 void dump_model(Model *model);
 void dump_turning_points(Model *model, const ParameterInfo *output);
 void compare_vm_vm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint16_t output_offset, uint16_t blockSize);
-void compare_vm_nvm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint16_t output_offset, uint16_t blockSize);
+// FIXME: common/platform.cpp
+void compare_vm_nvm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint32_t output_offset, uint16_t blockSize);
 void check_nvm_write_address_impl(uint32_t nvm_offset, size_t n);
 
 #if MY_DEBUG >= MY_DEBUG_VERBOSE

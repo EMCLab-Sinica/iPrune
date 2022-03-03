@@ -118,7 +118,7 @@ void copy_samples_data(void) {
 #define GPIO_RESET_PIN GPIO_PIN5
 #endif
 
-#define STABLE_POWER_ITERATIONS 10
+#define STABLE_POWER_ITERATIONS 1
 
 void IntermittentCNNTest() {
     GPIO_setAsOutputPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);

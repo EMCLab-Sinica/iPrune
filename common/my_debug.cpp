@@ -273,7 +273,8 @@ void compare_vm_vm_impl(int16_t* vm_data, Model* model, const ParameterInfo* out
 }
 #endif
 
-void compare_vm_nvm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint16_t output_offset, uint16_t blockSize) {
+// FIXME: in common/platform.cpp
+void compare_vm_nvm_impl(int16_t* vm_data, Model* model, const ParameterInfo* output, uint32_t output_offset, uint16_t blockSize) {
     check_buffer_address(vm_data, blockSize);
     MY_ASSERT(blockSize <= BUFFER_TEMP_SIZE);
 
