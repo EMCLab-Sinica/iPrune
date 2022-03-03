@@ -857,117 +857,118 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif
 
 #if STABLE_POWER
-    for (; conv_params->filter_idx < conv_params->OUTPUT_CHANNEL;) {
-        my_printf_debug("filter_idx: %d\n", conv_params->filter_idx);
-        init_cpu_buffer();
-        conv_params->cur_input_tile_c = MIN_VAL(conv_params->flags->extra.conv.input_tile_c, input_channels - conv_params->input_tile_c_offset);
-        conv_params->cur_filter_tile_c = conv_params->cur_input_tile_c;
-        my_printf_debug("cur_input_tile_c = %d" NEWLINE, conv_params->cur_input_tile_c);
-        conv_params->dest_offset = conv_params->kW * conv_params->cur_input_tile_c;
-        // conv_params->dest_offset = 1 * conv_params->cur_input_tile_c; // only process one position
-        // +1 for bias
-        conv_params->dest_offset++;
-        /* MSP430 LEA requires length to be even */
-        conv_params->truncated = (conv_params->dest_offset / 2 * 2 != conv_params->dest_offset); // conv_params->dest_offset & 1 ?
-        if (conv_params->truncated) {
-            // when CHANNEL * kH * kW is odd, CHANNEL * kW (dest_offset) is
-            // also odd, so dummy values are needed between slices to make
-            // addresses even.
-            // a dummy value for each slice (kW * CHANNEL q15 values)
-            conv_params->dest_offset++;
-        }
-        conv_params->filter_offset = conv_params->kH * conv_params->dest_offset;
-
-        while (true) {
-            for (; conv_params->input_w <= conv_params->input_w_last; conv_params->input_w += conv_params->stride) {
-                for (; conv_params->input_h <= conv_params->input_h_last; conv_params->input_h += conv_params->tile_h) {
-                    handle_conv_inner_loop(model, conv_params);
+            for (; conv_params->filter_idx < conv_params->OUTPUT_CHANNEL;) {
+                my_printf_debug("filter_idx: %d\n", conv_params->filter_idx);
+                init_cpu_buffer();
+                conv_params->cur_input_tile_c = MIN_VAL(conv_params->flags->extra.conv.input_tile_c, input_channels - conv_params->input_tile_c_offset);
+                conv_params->cur_filter_tile_c = conv_params->cur_input_tile_c;
+                my_printf_debug("cur_input_tile_c = %d" NEWLINE, conv_params->cur_input_tile_c);
+                conv_params->dest_offset = conv_params->kW * conv_params->cur_input_tile_c;
+                // conv_params->dest_offset = 1 * conv_params->cur_input_tile_c; // only process one position
+                // +1 for bias
+                conv_params->dest_offset++;
+                /* MSP430 LEA requires length to be even */
+                conv_params->truncated = (conv_params->dest_offset / 2 * 2 != conv_params->dest_offset); // conv_params->dest_offset & 1 ?
+                if (conv_params->truncated) {
+                    // when CHANNEL * kH * kW is odd, CHANNEL * kW (dest_offset) is
+                    // also odd, so dummy values are needed between slices to make
+                    // addresses even.
+                    // a dummy value for each slice (kW * CHANNEL q15 values)
+                    conv_params->dest_offset++;
                 }
-                conv_params->input_h = conv_params->input_h_first;
-            }
-            conv_params->input_w = conv_params->input_w_first;
-            // finish computing a weight tile
+                conv_params->filter_offset = conv_params->kH * conv_params->dest_offset;
+
+                while (true) {
+                    for (; conv_params->input_w <= conv_params->input_w_last; conv_params->input_w += conv_params->stride) {
+                        for (; conv_params->input_h <= conv_params->input_h_last; conv_params->input_h += conv_params->tile_h) {
+                            handle_conv_inner_loop(model, conv_params);
+                        }
+                        conv_params->input_h = conv_params->input_h_first;
+                    }
+                    conv_params->input_w = conv_params->input_w_first;
+                    // finish computing a weight tile
 #if SPARSE
-            if(++conv_params->cur_n_cols >= conv_params->n_cols) {
-                // break when the weight tiles in the same filters are finished.
-                break;
-            }
-            // find the next weight tiles in the same filters
-            conv_params->input_tile_c_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
+                    if(++conv_params->cur_n_cols >= conv_params->n_cols) {
+                        // break when the weight tiles in the same filters are finished.
+                        break;
+                    }
+                    // find the next weight tiles in the same filters
+                    conv_params->input_tile_c_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
 #else // SPARSE
-            conv_params->input_tile_c_index++;
-            if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
-                break;
-            }
+                    conv_params->input_tile_c_index++;
+                    if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
+                        break;
+                    }
 #endif // SPARSE
-            conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-        }
-        if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c < CPU_BUFFER_SIZE) {
-            // TODO: preserve the output element to NVM
-            preserve_output(node, output, conv_params->filter_idx);
-        }
+                    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+                }
+                if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c < CPU_BUFFER_SIZE) {
+                    // TODO: preserve the output element to NVM
+                    preserve_output(node, output, conv_params->filter_idx);
+                }
 #if SPARSE
-        conv_params->n_cols = 0;
-        conv_params->cur_n_cols = 0;
-        while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < conv_params->OUTPUT_CHANNEL) {
-            conv_params->cur_row_val = conv_params->next_row_val;
-            conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-            conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-            conv_params->row_index++;
-        }
-        if(conv_params->n_cols) {
-            conv_params->filter_tile_index = conv_params->row_index - 1;
-            conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-            conv_params->input_tile_c_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-            conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+                conv_params->n_cols = 0;
+                conv_params->cur_n_cols = 0;
+                while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < conv_params->OUTPUT_CHANNEL) {
+                    conv_params->cur_row_val = conv_params->next_row_val;
+                    conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
+                    conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
+                    conv_params->row_index++;
+                }
+                if(conv_params->n_cols) {
+                    conv_params->filter_tile_index = conv_params->row_index - 1;
+                    conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+                    conv_params->input_tile_c_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
+                    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
 
-        } else {
-            conv_params->filter_tile_index = conv_params->row_index;
-            conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-            conv_params->input_tile_c_index = conv_params->input_tile_c_offset = 0;
-        }
+                } else {
+                    conv_params->filter_tile_index = conv_params->row_index;
+                    conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+                    conv_params->input_tile_c_index = conv_params->input_tile_c_offset = 0;
+                }
 #else // SPARSE
-        conv_params->input_tile_c_index = conv_params->input_tile_c_offset = 0;
+                conv_params->input_tile_c_index = conv_params->input_tile_c_offset = 0;
 
-        conv_params->filter_tile_index = conv_params->row_index;
-        conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+                conv_params->filter_tile_index = conv_params->row_index;
+                conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
 #endif // SPARSE
-    }
-    flip_state_bit(model, output);
+            }
+            flip_state_bit(model, output);
 
-    my_printf_debug("handle_conv output" NEWLINE);
-    dump_params_nhwc_debug(model, output, node->output_name);
+            my_printf_debug("handle_conv output" NEWLINE);
+            dump_params_nhwc_debug(model, output, node->output_name);
 #else // STABLE_POWER
-    for (; conv_params->input_tile_c_offset < input_channels;) {
-        conv_params->cur_input_tile_c = MIN_VAL(conv_params->flags->extra.conv.input_tile_c, input_channels - conv_params->input_tile_c_offset);
-        conv_params->cur_filter_tile_c = conv_params->cur_input_tile_c;
+    // XXX: add (x, y) position for weight kernel
+    for(; conv_params->kX < conv_params->kH; conv_params->kX++) {
+        for(; conv_params->kY < conv_params->kW; conv_params->kY++) {
+            my_printf_debug("(%d, %d)" NEWLINE, conv_params->kX, conv_params->kY);
+            // XXX: should recover input_h, input_w before considering kX, kY
+            conv_params->input_h += conv_params->kX;
+            conv_params->input_w += conv_params->kY;
+            for (; conv_params->input_tile_c_offset < input_channels;) {
+                conv_params->cur_input_tile_c = MIN_VAL(conv_params->flags->extra.conv.input_tile_c, input_channels - conv_params->input_tile_c_offset);
+                conv_params->cur_filter_tile_c = conv_params->cur_input_tile_c;
 #if JAPARI
-        conv_params->input_tile_c_offset_with_footprints = extend_for_footprints(conv_params->input_tile_c_offset);
+                conv_params->input_tile_c_offset_with_footprints = extend_for_footprints(conv_params->input_tile_c_offset);
 #endif
-        my_printf_debug("cur_input_tile_c = %d" NEWLINE, conv_params->cur_input_tile_c);
-        // conv_params->dest_offset = conv_params->kW * conv_params->cur_input_tile_c;
-        conv_params->dest_offset = 1 * conv_params->cur_input_tile_c;
-        // +1 for bias
-        conv_params->dest_offset++;
-        /* MSP430 LEA requires length to be even */
-        conv_params->truncated = (conv_params->dest_offset / 2 * 2 != conv_params->dest_offset); // conv_params->dest_offset & 1 ?
-        if (conv_params->truncated) {
-            // when CHANNEL * kH * kW is odd, CHANNEL * kW (dest_offset) is
-            // also odd, so dummy values are needed between slices to make
-            // addresses even.
-            // a dummy value for each slice (kW * CHANNEL q15 values)
-            conv_params->dest_offset++;
-        }
-        // conv_params->filter_offset = conv_params->kH * conv_params->dest_offset;
-        conv_params->filter_offset = 1 * conv_params->dest_offset;
+                my_printf_debug("cur_input_tile_c = %d" NEWLINE, conv_params->cur_input_tile_c);
+                // conv_params->dest_offset = conv_params->kW * conv_params->cur_input_tile_c;
+                conv_params->dest_offset = 1 * conv_params->cur_input_tile_c;
+                // +1 for bias
+                conv_params->dest_offset++;
+                /* MSP430 LEA requires length to be even */
+                conv_params->truncated = (conv_params->dest_offset / 2 * 2 != conv_params->dest_offset); // conv_params->dest_offset & 1 ?
+                if (conv_params->truncated) {
+                    // when CHANNEL * kH * kW is odd, CHANNEL * kW (dest_offset) is
+                    // also odd, so dummy values are needed between slices to make
+                    // addresses even.
+                    // a dummy value for each slice (kW * CHANNEL q15 values)
+                    conv_params->dest_offset++;
+                }
+                // conv_params->filter_offset = conv_params->kH * conv_params->dest_offset;
+                conv_params->filter_offset = 1 * conv_params->dest_offset;
 
-        // XXX: add (x, y) position for weight kernel
-        for(; conv_params->kX < conv_params->kH; conv_params->kX++) {
-            for(; conv_params->kY < conv_params->kW; conv_params->kY++) {
-                my_printf_debug("(%d, %d)" NEWLINE, conv_params->kX, conv_params->kY);
-                // XXX: should recover input_h, input_w before considering kX, kY
-                conv_params->input_h += conv_params->kX;
-                conv_params->input_w += conv_params->kY;
+
                 while (true) {
                     my_printf_debug("input_h: %d/input_w: %d" NEWLINE, conv_params->input_h, conv_params->input_w);
                     // TODO: update input_w_last according to (x, y)
@@ -1006,46 +1007,44 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                                            new_output_offset, model, output);
 #endif
                 }
-                // reset filter_idx every (x, y) position
+#if SPARSE
+                conv_params->n_cols = 0;
+                conv_params->cur_n_cols = 0;
+                while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < input_channels) {
+                    conv_params->cur_row_val = conv_params->next_row_val;
+                    conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
+                    conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
+                    conv_params->row_index++;
+                }
+                if(conv_params->n_cols) {
+                    conv_params->input_tile_c_offset = (conv_params->row_index - 1) * conv_params->flags->extra.conv.input_tile_c;
+                    conv_params->input_tile_c_index = conv_params->row_index - 1;
+                    conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
+                    conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+                } else {
+                    conv_params->input_tile_c_offset = (conv_params->row_index) * conv_params->flags->extra.conv.input_tile_c;
+                    conv_params->input_tile_c_index = conv_params->row_index;
+                    conv_params->filter_idx = conv_params->filter_tile_index = 0;
+                }
+#else
                 conv_params->filter_idx = conv_params->filter_tile_index = 0;
-                conv_params->cached_filter_idx = -1;
-                conv_params->cached_input_tile_c_offset = -1;
-                conv_params->input_h = conv_params->input_h_first;
-                conv_params->input_w = conv_params->input_w_first;
+
+                conv_params->input_tile_c_index++;
+                conv_params->input_tile_c_offset += conv_params->flags->extra.conv.input_tile_c;
+#endif
+#if INDIRECT_RECOVERY
+                find_initial_state_bit(&conv_params->old_output_offset, &conv_params->turning_point_idx, &conv_params->next_turning_point, &conv_params->cur_slot_info,
+                                       conv_params->input_tile_c_index * conv_params->OUTPUT_CHANNEL * conv_params->OUTPUT_H * conv_params->OUTPUT_W, model, output);
+#endif
             }
-            conv_params->kY = 0;
+            // reset filter_idx every (x, y) position
+            conv_params->filter_idx = conv_params->filter_tile_index = 0;
+            conv_params->input_tile_c_offset = conv_params->input_tile_c_index = 0;
+            conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
             conv_params->input_h = conv_params->input_h_first;
             conv_params->input_w = conv_params->input_w_first;
         }
-#if SPARSE
-        conv_params->n_cols = 0;
-        conv_params->cur_n_cols = 0;
-        while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < input_channels) {
-            conv_params->cur_row_val = conv_params->next_row_val;
-            conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-            conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-            conv_params->row_index++;
-        }
-        if(conv_params->n_cols) {
-            conv_params->input_tile_c_offset = (conv_params->row_index - 1) * conv_params->flags->extra.conv.input_tile_c;
-            conv_params->input_tile_c_index = conv_params->row_index - 1;
-            conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-            conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-        } else {
-            conv_params->input_tile_c_offset = (conv_params->row_index) * conv_params->flags->extra.conv.input_tile_c;
-            conv_params->input_tile_c_index = conv_params->row_index;
-            conv_params->filter_idx = conv_params->filter_tile_index = 0;
-        }
-#else
-        conv_params->filter_idx = conv_params->filter_tile_index = 0;
-
-        conv_params->input_tile_c_index++;
-        conv_params->input_tile_c_offset += conv_params->flags->extra.conv.input_tile_c;
-#endif
-#if INDIRECT_RECOVERY
-        find_initial_state_bit(&conv_params->old_output_offset, &conv_params->turning_point_idx, &conv_params->next_turning_point, &conv_params->cur_slot_info,
-                               conv_params->input_tile_c_index * conv_params->OUTPUT_CHANNEL * conv_params->OUTPUT_H * conv_params->OUTPUT_W, model, output);
-#endif
+        conv_params->kY = 0;
     }
     flip_state_bit(model, output);
 
