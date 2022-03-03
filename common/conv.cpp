@@ -182,7 +182,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
              channel_offset_c;                                                                                                  // c
     */
     uint32_t cur_output_data_offset =
-        conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL * (conv_params->kW * conv_params->kH) * conv_params->input_tile_c_index + conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL * (conv_params->kX * conv_params->kW + conv_params->kY) + // n
+        conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL * (conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + // n
         output_w * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL +                                                   // w
         output_h * conv_params->OUTPUT_CHANNEL +                                                                           // h
         channel_offset_c;                                                                                                  // c
@@ -213,7 +213,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
 #if SPARSE
         // buffer_size represents the number of data one DMA transfered
         // Load fliter according to index
-        uint16_t filter_offset = conv_params->kH * conv_params->kW * conv_params->cur_input_tile_c;
+        uint16_t filter_offset = conv_params->cur_input_tile_c;
         uint16_t col_index = conv_params->cur_row_val + conv_params->cur_n_cols;
         uint16_t block_size = filter_offset * cur_output_tile_c;
         uint16_t buffer_size = sizeof(int16_t) * filter_offset;
@@ -232,7 +232,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
             if(conv_params->filter_offset != filter_offset) {
                 // conv_params->dest_offset pads one 0
                 for(int i = conv_params->filter_offset - 1, j = filter_offset - 1; i >= 0; --i) {
-                    if((filter_offset - 1 - j) % conv_params->kH == 0) {
+                    if(filter_offset - 1 - j == 0) {
                         filter_tmp[i--] = 0;
                     }
                     filter_tmp[i] = filter_tmp[j--];
@@ -276,11 +276,11 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
             }
 #if SPARSE
             int16_t cols_first_tile_index = get_col_first_tile_index(conv_params->model, conv_params->conv_filter, conv_params->filter_tile_index);
-            if(conv_params->input_tile_c_index == cols_first_tile_index) {
+            if((conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + conv_params->input_tile_c_index == cols_first_tile_index) {
 #else // SPARSE
             if (conv_params->input_tile_c_index == 0 && conv_params->kX == 0 && conv_params->kY == 0) {
-                my_printf_debug("Append bias!" NEWLINE);
 #endif // SPARSE
+                my_printf_debug("Append bias!" NEWLINE);
                 // convert int16_t to int32_t first as on MSP430, registers are 20 bit while there are only 16 bits when int16_t is converted to uint16_t
                 // If the dividend is negative, the quotient is wrong
                 int16_t bias_val = 0;
@@ -715,8 +715,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->cached_filter_idx = -1;
     conv_params->H = H;
     conv_params->W = W;
-    conv_params->kX = 0;
-    conv_params->kY = 0;
+
 #if JAPARI
     conv_params->conv_input_has_footprints = has_footprints(conv_input);
 #endif
@@ -745,25 +744,29 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->input_tile_c_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
     conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
 #else // STABLE_POWER
-    // rows: the number of input_tile_c
-    // cols: the number of filter groups
-    while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < input_channels) {
+    // len(rows): the number of input_tile_c * K * K
+    // cols: #filter groups
+    while(!conv_params->n_cols && conv_params->row_index < conv_params->n_tiles_c * conv_params->kH * conv_params->kW) {
         conv_params->cur_row_val = conv_params->next_row_val;
         conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
         conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
         conv_params->row_index++;
     }
     conv_params->cur_n_cols = 0;
-    conv_params->input_tile_c_offset = (conv_params->row_index - 1) * conv_params->flags->extra.conv.input_tile_c;
-    conv_params->input_tile_c_index = conv_params->row_index - 1;
+    conv_params->input_tile_c_index = (conv_params->row_index - 1) / (conv_params->kH * conv_params->kW);
+    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
     conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
     conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+    conv_params->kX = (conv_params->row_index - 1) / conv_params->kW;
+    conv_params->kY = (conv_params->row_index - 1) % conv_params->kW;
 #endif // STABLE_POWER
 #else
     conv_params->input_tile_c_offset = 0;
     conv_params->input_tile_c_index = 0;
     conv_params->filter_tile_index = 0;
     conv_params->filter_idx = 0;
+    conv_params->kX = 0;
+    conv_params->kY = 0;
 #endif
 
     conv_params->input_h = conv_params->input_h_first;
@@ -939,8 +942,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             dump_params_nhwc_debug(model, output, node->output_name);
 #else // STABLE_POWER
     // XXX: add (x, y) position for weight kernel
-    for(; conv_params->kX < conv_params->kH; conv_params->kX++) {
-        for(; conv_params->kY < conv_params->kW; conv_params->kY++) {
+    for(; conv_params->kX < conv_params->kH;) {
+        for(; conv_params->kY < conv_params->kW;) {
             my_printf_debug("(%d, %d)" NEWLINE, conv_params->kX, conv_params->kY);
             // XXX: should recover input_h, input_w before considering kX, kY
             conv_params->input_h += conv_params->kX;
@@ -1008,17 +1011,18 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif
                 }
 #if SPARSE
+                uint16_t row_index_offset = (conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c;
                 conv_params->n_cols = 0;
                 conv_params->cur_n_cols = 0;
-                while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < input_channels) {
+                while(!conv_params->n_cols && conv_params->row_index - row_index_offset < conv_params->n_tiles_c) {
                     conv_params->cur_row_val = conv_params->next_row_val;
                     conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
                     conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
                     conv_params->row_index++;
                 }
                 if(conv_params->n_cols) {
-                    conv_params->input_tile_c_offset = (conv_params->row_index - 1) * conv_params->flags->extra.conv.input_tile_c;
-                    conv_params->input_tile_c_index = conv_params->row_index - 1;
+                    conv_params->input_tile_c_index = (conv_params->row_index - 1) / (conv_params->kH * conv_params->kW);
+                    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
                     conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
                     conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
                 } else {
@@ -1037,14 +1041,39 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                                        conv_params->input_tile_c_index * conv_params->OUTPUT_CHANNEL * conv_params->OUTPUT_H * conv_params->OUTPUT_W, model, output);
 #endif
             }
+#if SPARSE
+            while(!conv_params->n_cols && conv_params->row_index < conv_params->n_tiles_c * conv_params->kH * conv_params->kW) {
+                conv_params->cur_row_val = conv_params->next_row_val;
+                conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
+                conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
+                conv_params->row_index++;
+            }
+            if(conv_params->n_cols) {
+                conv_params->cur_n_cols = 0;
+                conv_params->input_tile_c_index = (conv_params->row_index - 1) / (conv_params->kH * conv_params->kW);
+                conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+                conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
+                conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+                conv_params->kX = (conv_params->row_index - 1) / conv_params->kW;
+                conv_params->kY = (conv_params->row_index - 1) % conv_params->kW;
+            } else {
+                // exit loop
+                conv_params->input_tile_c_offset = conv_params->input_tile_c_index = 0;
+                conv_params->kX = conv_params->kH;
+                conv_params->kY = conv_params->kW;
+            }
+#else // SPARSE
             // reset filter_idx every (x, y) position
-            conv_params->filter_idx = conv_params->filter_tile_index = 0;
             conv_params->input_tile_c_offset = conv_params->input_tile_c_index = 0;
-            conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
+            conv_params->filter_idx = conv_params->filter_tile_index = 0;
+            ++conv_params->kY;
+#endif // SPARSE
             conv_params->input_h = conv_params->input_h_first;
             conv_params->input_w = conv_params->input_w_first;
+            conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
         }
         conv_params->kY = 0;
+        ++conv_params->kX;
     }
     flip_state_bit(model, output);
 
