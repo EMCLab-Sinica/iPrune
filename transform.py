@@ -728,7 +728,7 @@ def decode_raw_data(params):
 def dump_matrix(arr):
     logger.debug(arr.shape)
     for row in arr:
-        logger.debug(" ".join("{:>10d}".format(x) for x in row))
+        logger.debug(" ".join("{:>6d}".format(x) for x in row))
 
 def toBSR(matrix, config, dims, op_type):
     shape = matrix.shape
@@ -737,14 +737,16 @@ def toBSR(matrix, config, dims, op_type):
         matrix = nchw2nhwc_without_flatten(matrix)
         matrix = im2col(matrix, dims)
         if args.stable_power:
-            # rows: the number of filter groups
-            # cols: the number of input_tile_c
-            group_size = (config['group'][0], config['group'][1] * dims[2] * dims[3])
+            # len(rows): #filter groups
+            # len(cols): the number of input_tile_c * K * K
+            group_size = (config['group'][0], config['group'][1])
+            dump_matrix(matrix)
             bsr = csr_matrix(matrix).tobsr(group_size)
+            logger.debug('Data(transposed):\n{}'.format(bsr.data))
             data = bsr.data
         else:
-            # rows: the number of input_tile_c
-            # cols: the numner of filter groups
+            # len(rows): the number of input_tile_c * K * K
+            # len(cols): #filter groups
             matrix = np.transpose(matrix)
             group_size = (config['group'][1], config['group'][0])
             dump_matrix(matrix)
@@ -754,8 +756,8 @@ def toBSR(matrix, config, dims, op_type):
             logger.debug('Data(after transpose):\n{}'.format(data))
     elif op_type == 'GEMM':
         # the dim of the GEMM matrix has been [n_channel, n_filter]
-        # rows: the number of input_tile_c
-        # cols: the number of filter groups
+        # len(rows): the number of input_tile_c
+        # len(cols): the number of filter groups
         group_size = (config['group'][1], config['group'][0])
         bsr = csr_matrix(matrix).tobsr(group_size)
         data = bsr.data

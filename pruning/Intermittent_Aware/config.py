@@ -19,7 +19,7 @@ config = {
                 'input': [8,5,8],
                 'weight': [5,5,8,16]
             },
-            'group': [4, 8],
+            'group': [4, 4],
             'stride': 1
         },
         {
