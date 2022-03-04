@@ -772,7 +772,7 @@ def toBSR(matrix, config, dims, op_type):
     logger.info('Cols size: {}'.format(cols.shape))
     if op_type == 'CONV':
         if args.stable_power:
-            Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, int(dims[1] / config['group'][1]) + 1)
+            Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(cols) + 1)
         else:
             Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(rows) + 1)
     elif op_type == 'GEMM':

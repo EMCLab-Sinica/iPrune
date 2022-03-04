@@ -1180,7 +1180,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 
 #if SPARSE
 #if STABLE_POWER
-    uint16_t cols[MAX_TILE_C_LEN] = {0};
+    uint16_t cols[MAX_COL_LEN] = {0};
     uint16_t rows[MAX_ROW_LEN] = {0};
     uint16_t n_rows = n_output_tile_c  + 1;
     my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
@@ -1191,14 +1191,29 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
      *  0: unpruned filters int the tile_c
      */
     uint16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
-    for(int16_t idx = 1; idx <= n_rows; ++idx) {
-        int16_t n_cols_ = rows[idx] - rows[idx - 1];
-        if(n_cols_) {
-            // set unpruned filter to 1
-            pruned_tile_c[0] |= 1 << (idx - 1);
+    if(OUTPUT_H * OUTPUT_W * output_tile_c < CPU_BUFFER_SIZE) {
+        // psums are cached in VM
+        for(int16_t idx = 1; idx <= n_rows; ++idx) {
+            int16_t n_cols_ = rows[idx] - rows[idx - 1];
+            if(n_cols_) {
+                // set unpruned filter to 1
+                pruned_tile_c[0] |= 1 << (idx - 1);
+            }
+        }
+        pruned_tile_c[0] = ~pruned_tile_c[0];
+    } else {
+        for(int16_t idx = 1; idx <= n_rows; ++idx) {
+            int16_t n_cols_ = rows[idx] - rows[idx - 1];
+            for(int16_t offset = 0; offset < n_cols_; ++offset) {
+                int16_t tile_c_index = cols[rows[idx - 1] + offset];
+                // printf("filters_in_tile: %d\n", filters_in_tile);
+                pruned_tile_c[tile_c_index] |= 1 << (idx - 1);
+            }
+        }
+        for(int16_t idx = 0; idx < MAX_TILE_C_LEN; ++idx) {
+            pruned_tile_c[idx] = ~pruned_tile_c[idx];
         }
     }
-    pruned_tile_c[0] = ~pruned_tile_c[0];
 #else // STABLE_POWER
     uint16_t cols[MAX_COL_LEN] = {0};
     uint16_t rows[MAX_ROW_LEN] = {0};
