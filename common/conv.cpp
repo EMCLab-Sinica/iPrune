@@ -155,10 +155,6 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
         n_filters = padding_for_lea(values_to_preserve);
     }
 #endif
-    /*
-    uint16_t output_h = (cur_input_h - conv_params->input_h_first) / conv_params->stride,
-             output_w = (conv_params->input_w - conv_params->input_w_first) / conv_params->stride;
-    */
     uint16_t output_h = (cur_input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride,
              output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride;
     // use NWHC so that output is written continuously on the address space
@@ -174,13 +170,6 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
              output_h * conv_params->OUTPUT_CHANNEL +                                                                           // h
              channel_offset_c;                                                                                                  // c
 #else // STABLE_POWER
-    /*
-    uint16_t cur_output_data_offset =
-             conv_params->OUTPUT_W * conv_params->OUTPUT_H * (conv_params->input_tile_c_index * conv_params->OUTPUT_CHANNEL) +  // n
-             output_w * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL +                                                   // w
-             output_h * conv_params->OUTPUT_CHANNEL +                                                                           // h
-             channel_offset_c;                                                                                                  // c
-    */
     uint32_t cur_output_data_offset =
         conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL * (conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + // n
         output_w * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL +                                                   // w
@@ -229,15 +218,6 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
             // XXX: Need re-checking
             uint16_t cur_filter_src_offset = filter_src_offset + idx * filter_offset;
             my_memcpy_from_param(conv_params->model, filter_dest_ptr, conv_params->conv_filter, cur_filter_src_offset, buffer_size);
-            if(conv_params->filter_offset != filter_offset) {
-                // conv_params->dest_offset pads one 0
-                for(int i = conv_params->filter_offset - 1, j = filter_offset - 1; i >= 0; --i) {
-                    if(filter_offset - 1 - j == 0) {
-                        filter_tmp[i--] = 0;
-                    }
-                    filter_tmp[i] = filter_tmp[j--];
-                }
-            }
 #else
             uint16_t filter_src_offset = (conv_params->filter_idx + idx) * filter_len;
             // TODO: only load one vector
@@ -245,17 +225,6 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
             uint16_t cur_filter_src_offset = filter_src_offset + conv_params->kX * conv_params->kW * conv_params->CHANNEL + conv_params->input_tile_c_offset;
             cur_filter_src_offset += conv_params->kY * conv_params->CHANNEL;
             my_memcpy_from_param(conv_params->model, filter_dest_ptr, conv_params->conv_filter, cur_filter_src_offset, buffer_size);
-            /*
-            for (uint16_t h = 0; h < conv_params->kH; h++) {
-                int16_t *filter_dest_ptr = filter_tmp + h * conv_params->dest_offset;
-                uint16_t cur_filter_src_offset = filter_src_offset + h * conv_params->kW * conv_params->CHANNEL + conv_params->input_tile_c_offset;
-                for (uint16_t w = 0; w < conv_params->kW; w++) {
-                    my_memcpy_from_param(conv_params->model, filter_dest_ptr, conv_params->conv_filter, cur_filter_src_offset, buffer_size);
-                    filter_dest_ptr += conv_params->cur_filter_tile_c;
-                    cur_filter_src_offset += conv_params->CHANNEL;
-                }
-            }
-            */
 #endif
 #if STATEFUL
             start_cpu_counter();
@@ -497,20 +466,12 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
         LEA_BUFFER_SIZE - OUTPUT_LEN - (max_n_filters + TEMP_FILTER_WIDTH) * conv_params->filter_offset,
         (conv_params->tile_h) * conv_params->dest_offset
     );
-    /*
-    uint16_t inputs_len = MIN_VAL(
-        LEA_BUFFER_SIZE - OUTPUT_LEN - (max_n_filters + TEMP_FILTER_WIDTH) * conv_params->filter_offset,
-        (conv_params->tile_h + 2 * field_size) * conv_params->dest_offset
-    );
-    */
     MY_ASSERT(inputs_len < LEA_BUFFER_SIZE); // make sure no overflow occurs in the previous line
 
     dest = lea_buffer;
 
-    // XXX: (x, y) is the position of weight kernl
     int32_t h_start = int16_max(conv_params->input_h,                                                           0             ),
             h_end =   int16_min(conv_params->input_h+conv_params->tile_h, conv_params->H)-1;
-            // h_end =   int16_min(conv_params->input_h+conv_params->tile_h+(conv_params->kH-conv_params->stride), conv_params->H)-1;
 
     my_printf_debug("Reinitialize input buffer" NEWLINE "inputs_len = %d" NEWLINE, inputs_len);
 
@@ -550,12 +511,10 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
 #endif
     for (int32_t h = h_start; h <= h_end; h++) {
         // reserve space for padding 0
-        // int16_t *dest_addr = dest + (w_start-conv_params->input_w) * im2col_channel_offset;
         int16_t *dest_addr = conv_params->input_w >= 0 ? dest : dest + im2col_channel_offset;
 #if STATEFUL
         int16_t *orig_dest_addr = dest_addr;
 #endif
-        // uint16_t input_row_len = (w_end - w_start + 1) * cur_input_tile_c;
         uint16_t input_row_len = cur_input_tile_c;
         uint32_t src_addr = input_src_offset;
         if (cur_input_tile_c == cur_input_channel) {
@@ -941,7 +900,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             my_printf_debug("handle_conv output" NEWLINE);
             dump_params_nhwc_debug(model, output, node->output_name);
 #else // STABLE_POWER
-    // XXX: add (x, y) position for weight kernel
     for(; conv_params->kX < conv_params->kH;) {
         for(; conv_params->kY < conv_params->kW;) {
             my_printf_debug("(%d, %d)" NEWLINE, conv_params->kX, conv_params->kY);
@@ -974,17 +932,16 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
                 while (true) {
                     my_printf_debug("input_h: %d/input_w: %d" NEWLINE, conv_params->input_h, conv_params->input_w);
-                    // TODO: update input_w_last according to (x, y)
                     for (; conv_params->input_w <= conv_params->input_w_last + (conv_params->kY); conv_params->input_w += conv_params->stride) {
                         for (; conv_params->input_h <= conv_params->input_h_last + (conv_params->kX); conv_params->input_h += conv_params->tile_h) {
                             handle_conv_inner_loop(model, conv_params);
                         }
                         conv_params->input_h = conv_params->input_h_first;
-                        // XXX: fix position according to (x, y)
+                        // fix position according to (x, y)
                         conv_params->input_h += conv_params->kX;
                     }
                     conv_params->input_w = conv_params->input_w_first;
-                    // XXX: fix position according to (x, y)
+                    // fix position according to (x, y)
                     conv_params->input_w += conv_params->kY;
                     // finish computing a weight tile
 #if SPARSE
@@ -1252,6 +1209,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                 dump_matrix_debug(to_add, real_chunk_len, ValueInfo(data));
 #if SPARSE
                 uint16_t tile_pruned_state = pruned_tile_c[input_tile_c_index];
+                my_printf_debug("tile_pruned_state: %u" NEWLINE, tile_pruned_state);
                 for(uint8_t cur_n_filters = 0; cur_n_filters < n_output_tile_c; ++cur_n_filters) {
                     if(tile_pruned_state & (1 << cur_n_filters)) {
                         // set the value of pruned filters as 0
@@ -1260,6 +1218,8 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                         }
                     }
                 }
+                my_printf_debug("After masking" NEWLINE);
+                dump_matrix_debug(to_add, real_chunk_len, ValueInfo(data));
 #endif
                 if (input_tile_c_index != 0) {
                     my_add_q15(lea_buffer, to_add, lea_buffer, real_chunk_len);
