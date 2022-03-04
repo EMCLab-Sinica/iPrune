@@ -171,7 +171,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
              channel_offset_c;                                                                                                  // c
 #else // STABLE_POWER
     uint32_t cur_output_data_offset =
-        conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL * (conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + // n
+        conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL * ((conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + conv_params->input_tile_c_index) + // n
         output_w * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL +                                                   // w
         output_h * conv_params->OUTPUT_CHANNEL +                                                                           // h
         channel_offset_c;                                                                                                  // c
@@ -245,7 +245,9 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
             }
 #if SPARSE
             int16_t cols_first_tile_index = get_col_first_tile_index(conv_params->model, conv_params->conv_filter, conv_params->filter_tile_index);
-            if((conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + conv_params->input_tile_c_index == cols_first_tile_index) {
+            my_printf_debug("cols_first_tile_index: %d" NEWLINE, cols_first_tile_index);
+            my_printf_debug("row_index: %d" NEWLINE, conv_params->row_index);
+            if(conv_params->row_index - 1 == cols_first_tile_index) {
 #else // SPARSE
             if (conv_params->input_tile_c_index == 0 && conv_params->kX == 0 && conv_params->kY == 0) {
 #endif // SPARSE
@@ -712,12 +714,12 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->row_index++;
     }
     conv_params->cur_n_cols = 0;
-    conv_params->input_tile_c_index = (conv_params->row_index - 1) / (conv_params->kH * conv_params->kW);
+    conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
     conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
     conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
     conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-    conv_params->kX = (conv_params->row_index - 1) / conv_params->kW;
-    conv_params->kY = (conv_params->row_index - 1) % conv_params->kW;
+    conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
+    conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
 #endif // STABLE_POWER
 #else
     conv_params->input_tile_c_offset = 0;
@@ -978,18 +980,17 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                     conv_params->row_index++;
                 }
                 if(conv_params->n_cols) {
-                    conv_params->input_tile_c_index = (conv_params->row_index - 1) / (conv_params->kH * conv_params->kW);
+                    conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
                     conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
                     conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
                     conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
                 } else {
-                    conv_params->input_tile_c_offset = (conv_params->row_index) * conv_params->flags->extra.conv.input_tile_c;
                     conv_params->input_tile_c_index = conv_params->row_index;
+                    conv_params->input_tile_c_offset = (conv_params->input_tile_c_index) * conv_params->flags->extra.conv.input_tile_c;
                     conv_params->filter_idx = conv_params->filter_tile_index = 0;
                 }
 #else
                 conv_params->filter_idx = conv_params->filter_tile_index = 0;
-
                 conv_params->input_tile_c_index++;
                 conv_params->input_tile_c_offset += conv_params->flags->extra.conv.input_tile_c;
 #endif
@@ -1007,12 +1008,12 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             }
             if(conv_params->n_cols) {
                 conv_params->cur_n_cols = 0;
-                conv_params->input_tile_c_index = (conv_params->row_index - 1) / (conv_params->kH * conv_params->kW);
+                conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
                 conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
                 conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
                 conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-                conv_params->kX = (conv_params->row_index - 1) / conv_params->kW;
-                conv_params->kY = (conv_params->row_index - 1) % conv_params->kW;
+                conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
+                conv_params->kY = (conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c) / conv_params->n_tiles_c;
             } else {
                 // exit loop
                 conv_params->input_tile_c_offset = conv_params->input_tile_c_index = 0;
