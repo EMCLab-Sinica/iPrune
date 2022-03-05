@@ -91,6 +91,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     uint16_t next_row_val = 0;
     uint16_t n_cols = 0;
     uint16_t cur_n_cols = 0;
+    uint16_t filter_tile_index = 0;
     while(!n_cols && row_index * flags->extra.gemm.tile_channel < B->dims[0]) {
         cur_row_val = next_row_val;
         next_row_val = get_row_val(model, B, row_index + 1);
@@ -100,7 +101,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     cur_n_cols = 0;
     i = (row_index - 1) * flags->extra.gemm.tile_channel;
     tile = row_index - 1;
-    uint16_t filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
+    filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
     j = j_with_footprints = filter_tile_index * OP_FILTERS;
 #endif
 

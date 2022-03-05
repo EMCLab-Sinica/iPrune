@@ -652,6 +652,64 @@ void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
 #endif
 }
 
+#if SPARSE
+/* The method find the next nonzero block(or sub-tile)
+ * Directly set the config of next nonzero block in conv_params.
+ *
+ * Following members of conv_params wiil be modified:
+ * 1. n_cols
+ * 2. cur_n_cols
+ * 3. cur_row_val
+ * 4. next_row_val
+ * 5. row_index
+ * 6. filter_tile_index
+ * 7. filter_idx
+ * 8. input_tile_c_index
+ * 9. input_tile_c_offset
+ *
+ * Note: Some members, such as "kX" and "kY", will not be modified in this method. Therefore,
+ * you should change them after calling this method.
+ */
+#if STABLE_POWER
+void next_nonzero_value(ConvTaskParams *conv_params, int16_t *col_val) {
+    // rows: the number of filter groups
+    // cols: the number of input_tile_c
+    while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.output_tile_c <conv_params->OUTPUT_CHANNEL) {
+        conv_params->cur_row_val = conv_params->next_row_val;
+        conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
+        conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
+        conv_params->row_index++;
+    }
+    if(conv_params->n_cols) {
+        conv_params->cur_n_cols = 0;
+        conv_params->filter_tile_index = conv_params->row_index - 1;
+        conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+        *col_val = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
+        conv_params->input_tile_c_index = *col_val % conv_params->n_tiles_c;
+        conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+    }
+}
+#else // STABLE_POWER
+void next_nonzero_value(ConvTaskParams *conv_params, int16_t row_index_offset) {
+    // len(rows): the number of input_tile_c * K * K
+    // cols: #filter groups
+    while(!conv_params->n_cols && conv_params->row_index - row_index_offset < 0) {
+        conv_params->cur_row_val = conv_params->next_row_val;
+        conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
+        conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
+        conv_params->row_index++;
+    }
+    if(conv_params->n_cols) {
+        conv_params->cur_n_cols = 0;
+        conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
+        conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+        conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
+        conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+    }
+}
+#endif // STABLE_POWER
+#endif // SPARSE
+
 void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
     const ParameterInfo *conv_input = input[0], *conv_filter = input[1], *conv_bias = (node->inputs_len == 3) ? input[2] : nullptr;
     my_printf_debug("Conv!" NEWLINE);
@@ -690,47 +748,24 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->n_cols = 0;
     conv_params->cur_n_cols = 0;
 #if STABLE_POWER
-    // rows: the number of filter groups
-    // cols: the number of input_tile_c
-    while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.output_tile_c <conv_params->OUTPUT_CHANNEL) {
-        conv_params->cur_row_val = conv_params->next_row_val;
-        conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-        conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-        conv_params->row_index++;
-    }
-    conv_params->cur_n_cols = 0;
-    conv_params->filter_tile_index = conv_params->row_index - 1;
-    conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-    uint16_t col_val = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-    conv_params->input_tile_c_index = col_val % conv_params->n_tiles_c;
-    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+    int16_t col_val;
+    next_nonzero_value(conv_params, &col_val);
     conv_params->kX = col_val / (conv_params->kW * conv_params->n_tiles_c);
     conv_params->kY = (col_val % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
 #else // STABLE_POWER
-    // len(rows): the number of input_tile_c * K * K
-    // cols: #filter groups
-    while(!conv_params->n_cols && conv_params->row_index < conv_params->n_tiles_c * conv_params->kH * conv_params->kW) {
-        conv_params->cur_row_val = conv_params->next_row_val;
-        conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-        conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-        conv_params->row_index++;
-    }
-    conv_params->cur_n_cols = 0;
-    conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
-    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-    conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-    conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+    int16_t row_index_offset = conv_params->n_tiles_c * conv_params->kH * conv_params->kW;
+    next_nonzero_value(conv_params, row_index_offset);
     conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
     conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
 #endif // STABLE_POWER
-#else
+#else // SPARSE
     conv_params->input_tile_c_offset = 0;
     conv_params->input_tile_c_index = 0;
     conv_params->filter_tile_index = 0;
     conv_params->filter_idx = 0;
     conv_params->kX = 0;
     conv_params->kY = 0;
-#endif
+#endif // SPARSE
 
     conv_params->input_h = conv_params->input_h_first;
     conv_params->input_w = conv_params->input_w_first;
@@ -898,25 +933,13 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             if(conv_params->cur_n_cols >= conv_params->n_cols) break;
         }
         if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c < CPU_BUFFER_SIZE) {
-            // TODO: preserve the output element to NVM
+            // preserve the output element to NVM
             preserve_output(node, output, conv_params->filter_idx);
         }
 #if SPARSE
-        conv_params->n_cols = 0;
-        conv_params->cur_n_cols = 0;
-        while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.input_tile_c < conv_params->OUTPUT_CHANNEL) {
-            conv_params->cur_row_val = conv_params->next_row_val;
-            conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-            conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-            conv_params->row_index++;
-        }
+        conv_params->n_cols = conv_params->cur_n_cols = 0;
+        next_nonzero_value(conv_params, &col_val);
         if(conv_params->n_cols) {
-            conv_params->filter_tile_index = conv_params->row_index - 1;
-            conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-            col_val = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-            conv_params->input_tile_c_index = col_val % conv_params->n_tiles_c;
-            conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-            // TODO: update (x, y)
             conv_params->kX = col_val / (conv_params->kW * conv_params->n_tiles_c);
             conv_params->kY = (col_val % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
         } else {
@@ -1007,21 +1030,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif
                 }
 #if SPARSE
-                uint16_t row_index_offset = (conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c;
-                conv_params->n_cols = 0;
-                conv_params->cur_n_cols = 0;
-                while(!conv_params->n_cols && conv_params->row_index - row_index_offset < conv_params->n_tiles_c) {
-                    conv_params->cur_row_val = conv_params->next_row_val;
-                    conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-                    conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-                    conv_params->row_index++;
-                }
-                if(conv_params->n_cols) {
-                    conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
-                    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-                    conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-                    conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-                } else {
+                uint16_t row_index_offset_ = (conv_params->kX * conv_params->kW + conv_params->kY + 1) * conv_params->n_tiles_c;
+                conv_params->n_cols = conv_params->cur_n_cols = 0;
+                next_nonzero_value(conv_params, row_index_offset_);
+                if(!conv_params->n_cols) {
                     conv_params->input_tile_c_index = conv_params->row_index;
                     conv_params->input_tile_c_offset = (conv_params->input_tile_c_index) * conv_params->flags->extra.conv.input_tile_c;
                     conv_params->filter_idx = conv_params->filter_tile_index = 0;
@@ -1037,20 +1049,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif
             }
 #if SPARSE
-            while(!conv_params->n_cols && conv_params->row_index < conv_params->n_tiles_c * conv_params->kH * conv_params->kW) {
-                conv_params->cur_row_val = conv_params->next_row_val;
-                conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-                conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-                conv_params->row_index++;
-            }
+            conv_params->n_cols = conv_params->cur_n_cols = 0;
+            next_nonzero_value(conv_params, row_index_offset);
             if(conv_params->n_cols) {
-                conv_params->cur_n_cols = 0;
-                conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
-                conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-                conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-                conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
                 conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
-                conv_params->kY = (conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c) / conv_params->n_tiles_c;
+                conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
             } else {
                 // exit loop
                 conv_params->input_tile_c_offset = conv_params->input_tile_c_index = 0;
@@ -1067,8 +1070,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             conv_params->input_w = conv_params->input_w_first;
             conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
         }
+#if !SPARSE
         conv_params->kY = 0;
         ++conv_params->kX;
+#endif // SPARSE
     }
     flip_state_bit(model, output);
 
@@ -1117,6 +1122,57 @@ void ConvMergeOutputChunkHandler(uint32_t range_offset, uint16_t range_len, int8
     my_interleave_q15(footprint_buffer, BATCH_SIZE - (range_offset % (BATCH_SIZE + 1)), BATCH_SIZE + 1, to_offset, n_footprints);
 }
 #endif
+
+#if SPARSE
+void set_pruned_state(Model *model, const ParameterInfo *conv_filter, uint16_t OUTPUT_H, uint16_t OUTPUT_W, uint16_t output_tile_c, uint16_t n_output_tile_c, uint16_t n_tiles_c, uint16_t *pruned_tile_c) {
+#if STABLE_POWER
+    uint16_t cols[MAX_COL_LEN] = {0};
+    uint16_t rows[MAX_ROW_LEN] = {0};
+    uint16_t n_rows = n_output_tile_c  + 1;
+    my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
+    uint16_t n_cols = rows[n_rows - 1]; // calculate from row values
+    my_memcpy_from_param_col(model, cols, conv_filter, 0, (n_cols) * sizeof(int16_t));
+    if(OUTPUT_H * OUTPUT_W * output_tile_c < CPU_BUFFER_SIZE) {
+        // psums are cached in VM
+        for(int16_t idx = 1; idx <= n_rows; ++idx) {
+            int16_t n_cols_ = rows[idx] - rows[idx - 1];
+            if(n_cols_) {
+                // set unpruned filter to 1
+                pruned_tile_c[0] |= 1 << (idx - 1);
+            }
+        }
+        pruned_tile_c[0] = ~pruned_tile_c[0];
+    } else {
+        for(int16_t idx = 1; idx <= n_rows; ++idx) {
+            int16_t n_cols_ = rows[idx] - rows[idx - 1];
+            for(int16_t offset = 0; offset < n_cols_; ++offset) {
+                int16_t tile_c_index = cols[rows[idx - 1] + offset];
+                pruned_tile_c[tile_c_index] |= 1 << (idx - 1);
+            }
+        }
+        for(int16_t idx = 0; idx < MAX_TILE_C_LEN; ++idx) {
+            pruned_tile_c[idx] = ~pruned_tile_c[idx];
+        }
+    }
+#else // STABLE_POWER
+    uint16_t cols[MAX_COL_LEN] = {0};
+    uint16_t rows[MAX_ROW_LEN] = {0};
+    uint16_t n_rows = n_tiles_c + 1;
+    my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
+    uint16_t n_cols = rows[n_rows - 1]; // calculate from row values
+    my_memcpy_from_param_col(model, cols, conv_filter, 0, (n_cols) * sizeof(int16_t));
+    for(int16_t idx = 1; idx <= n_rows; ++idx) {
+        int16_t n_cols_ = rows[idx] - rows[idx - 1];
+        // set unpruned filter to 1
+        for(int16_t offset = 0; offset < n_cols_; ++offset) {
+            int16_t filters_in_tile = cols[rows[idx - 1] + offset];
+            pruned_tile_c[idx - 1] |= 1 << filters_in_tile;
+        }
+        pruned_tile_c[idx - 1] = ~pruned_tile_c[idx - 1];
+    }
+#endif // STABLE_POWER
+}
+#endif // SPARSE
 
 void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
     // Do not use conv_params here as its intialization in alloc_conv and
@@ -1179,66 +1235,12 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #endif
 
 #if SPARSE
-#if STABLE_POWER
-    uint16_t cols[MAX_COL_LEN] = {0};
-    uint16_t rows[MAX_ROW_LEN] = {0};
-    uint16_t n_rows = n_output_tile_c  + 1;
-    my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
-    uint16_t n_cols = rows[n_rows - 1]; // calculate from row values
-    my_memcpy_from_param_col(model, cols, conv_filter, 0, (n_cols) * sizeof(int16_t));
     /* entry: the pruned states in each tile_c (n_tiles_c)
      *  1: pruned filters in the tile_c
      *  0: unpruned filters int the tile_c
      */
     uint16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
-    if(OUTPUT_H * OUTPUT_W * output_tile_c < CPU_BUFFER_SIZE) {
-        // psums are cached in VM
-        for(int16_t idx = 1; idx <= n_rows; ++idx) {
-            int16_t n_cols_ = rows[idx] - rows[idx - 1];
-            if(n_cols_) {
-                // set unpruned filter to 1
-                pruned_tile_c[0] |= 1 << (idx - 1);
-            }
-        }
-        pruned_tile_c[0] = ~pruned_tile_c[0];
-    } else {
-        for(int16_t idx = 1; idx <= n_rows; ++idx) {
-            int16_t n_cols_ = rows[idx] - rows[idx - 1];
-            for(int16_t offset = 0; offset < n_cols_; ++offset) {
-                int16_t tile_c_index = cols[rows[idx - 1] + offset];
-                // printf("filters_in_tile: %d\n", filters_in_tile);
-                pruned_tile_c[tile_c_index] |= 1 << (idx - 1);
-            }
-        }
-        for(int16_t idx = 0; idx < MAX_TILE_C_LEN; ++idx) {
-            pruned_tile_c[idx] = ~pruned_tile_c[idx];
-        }
-    }
-#else // STABLE_POWER
-    uint16_t cols[MAX_COL_LEN] = {0};
-    uint16_t rows[MAX_ROW_LEN] = {0};
-    uint16_t n_rows = n_tiles_c + 1;
-    my_memcpy_from_param_row(model, rows, conv_filter, 0, (n_rows) * sizeof(int16_t));
-    uint16_t n_cols = rows[n_rows - 1]; // calculate from row values
-    my_memcpy_from_param_col(model, cols, conv_filter, 0, (n_cols) * sizeof(int16_t));
-
-    /* entry: the pruned states in each tile_c (n_tiles_c)
-     *  1: pruned filters in the tile_c
-     *  0: unpruned filters int the tile_c
-     */
-    uint16_t pruned_tile_c[MAX_TILE_C_LEN] = {0};
-    for(int16_t idx = 1; idx <= n_rows; ++idx) {
-        int16_t n_cols_ = rows[idx] - rows[idx - 1];
-        // printf("n_cols: %d\n", n_cols_);
-        // set unpruned filter to 1
-        for(int16_t offset = 0; offset < n_cols_; ++offset) {
-            int16_t filters_in_tile = cols[rows[idx - 1] + offset];
-            // printf("filters_in_tile: %d\n", filters_in_tile);
-            pruned_tile_c[idx - 1] |= 1 << filters_in_tile;
-        }
-        pruned_tile_c[idx - 1] = ~pruned_tile_c[idx - 1];
-    }
-#endif // STABLE_POWER
+    set_pruned_state(model, conv_filter, OUTPUT_H, OUTPUT_W, output_tile_c, n_output_tile_c, n_tiles_c, pruned_tile_c);
 #endif
     for (; output_h < OUTPUT_H;) {
         for (; output_w < OUTPUT_W; output_w++) {
