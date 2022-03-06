@@ -25,7 +25,7 @@ configs = {
         'scale': 4,
         'input_scale': 4,
         'num_slots': 2,
-        'intermediate_values_size': 320000,
+        'intermediate_values_size': 65000,
         'data_loader': load_data_mnist,
         'n_all_samples': 10000,
         'sample_size': [1, 28, 28],
