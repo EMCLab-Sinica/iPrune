@@ -14,7 +14,7 @@ uint8_t run_cnn_tests(uint16_t n_samples);
 uint32_t job_index_to_offset(const ParameterInfo* output, uint16_t job_index);
 uint32_t batch_start(uint32_t batch_end_offset);
 #if SPARSE
-uint16_t find_row_index(Model *model, const ParameterInfo *filter_params, const ParameterInfo *output, const Node *node, uint16_t col_index, uint16_t *cur_row_val);
+uint16_t find_row_index(Model *model, const ParameterInfo *filter_params, const ParameterInfo *output, const Node *node, uint16_t col_index, int16_t *cur_row_val);
 uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_filter, const ParameterInfo* output, uint16_t job_index);
 #endif
 

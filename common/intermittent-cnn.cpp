@@ -45,7 +45,7 @@ static void handle_node(Model *model, uint16_t node_idx) {
     my_memcpy(output, input[0], sizeof(ParameterInfo) - sizeof(uint16_t)); // don't overwrite parameter_info_idx
     output->params_offset = 0;
     allocators[cur_node->op_type](model, input, output, cur_node);
-    my_printf_debug("Needed mem = %d" NEWLINE, output->params_len);
+    my_printf_debug("Needed mem = %u" NEWLINE, output->params_len);
     MY_ASSERT(output->params_len < INTERMEDIATE_VALUES_SIZE);
     if (output->slot == SLOT_INTERMEDIATE_VALUES) {
         my_printf_debug("New params_offset = %d" NEWLINE, output->params_offset);
@@ -405,7 +405,7 @@ static uint8_t value_finished(Model* model, const ParameterInfo* output, uint32_
 #endif
 
 #if SPARSE
-uint16_t find_row_index(Model *model, const ParameterInfo *filter_params, const ParameterInfo *output, const Node *node, uint16_t col_index, uint16_t *cur_row_val) {
+uint16_t find_row_index(Model *model, const ParameterInfo *filter_params, const ParameterInfo *output, const Node *node, uint16_t col_index, int16_t *cur_row_val) {
     uint16_t n_tiles_c = 0;
     if(node->op_type == OpConv) {
         n_tiles_c = output->params_len / sizeof(int16_t) / (output->dims[1] * output->dims[2] * output->dims[3]);
@@ -448,7 +448,7 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
         uint16_t jobs_in_an_op = OP_FILTERS / BATCH_SIZE; // 2
         uint16_t cur_col_index = job_index / jobs_in_an_op; // 165
         uint16_t col_val = get_col_val(model, params_filter, cur_col_index); // [0 "2"] // 107
-        uint16_t cur_row_val = 0; // 143
+        int16_t cur_row_val = 0; // 143
         uint16_t row_index = find_row_index(model, params_filter, output, node, cur_col_index, &cur_row_val); // 15
         uint16_t filter_tile_c = col_val; // 107
         uint16_t fixed_jobs_index_in_tile_c = row_index * output_jobs + filter_tile_c * (OP_FILTERS / BATCH_SIZE) + (job_index & jobs_in_an_op);
@@ -468,7 +468,7 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
 
     // FIXME: fix job_index for CONV
     uint16_t cur_col_index = job_index / jobs_in_a_filter_tile; // 1
-    uint16_t cur_row_val = 0;
+    int16_t cur_row_val = 0;
     uint16_t row_index = find_row_index(model, params_filter, output, node, cur_col_index, &cur_row_val);
     uint16_t col_val = get_col_val(model, params_filter, cur_col_index); // [0 "2"]
     uint16_t filter_tile_c = col_val;

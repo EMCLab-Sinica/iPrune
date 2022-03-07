@@ -264,7 +264,7 @@ void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_id
 }
 
 // FIXME: common/platform.cpp
-void my_accumulate_to_vm(ParameterInfo *param, uint32_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
+void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
     MY_ASSERT(param->bitwidth == 16);
     MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
     uint32_t total_offset = offset_in_word;

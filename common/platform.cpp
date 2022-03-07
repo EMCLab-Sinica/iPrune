@@ -48,7 +48,7 @@ const char* datatype_name<Model>(void) {
 
 // FIXME: Replce 32 bit to 16 bit for TI compiler
 // The 32 bit is only used to test the correction on server
-void my_memcpy_to_param(ParameterInfo *param, uint32_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
+void my_memcpy_to_param(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
     MY_ASSERT(param->bitwidth == 16);
     MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
     uint32_t total_offset = param->params_offset + offset_in_word * sizeof(int16_t);
@@ -57,7 +57,7 @@ void my_memcpy_to_param(ParameterInfo *param, uint32_t offset_in_word, const voi
 }
 
 // FIXME: Replce 32 bit to 16 bit for TI compiler
-void my_memcpy_from_intermediate_values(void *dest, const ParameterInfo *param, uint32_t offset_in_word, size_t n) {
+void my_memcpy_from_intermediate_values(void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
     read_from_nvm(dest, intermediate_values_offset(param->slot) + offset_in_word * sizeof(int16_t), n);
 }
 

@@ -163,7 +163,7 @@ static int16_t pState[ARM_PSTATE_LEN];
 #endif
 
 // FIXME: common/platform.cpp
-void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint32_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
+void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint16_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
     // XXX: LEA doc requires all matrix dimensions to be even, while LEA
     // appears to still give correct results when srcARows is odd
     // srcBCols should really be even, though
@@ -179,6 +179,7 @@ void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16
     matrix_mpy_params.srcACols = A_cols;
     matrix_mpy_params.srcBRows = B_rows;
     matrix_mpy_params.srcBCols = B_cols;
+
     msp_status status = msp_matrix_mpy_q15(&matrix_mpy_params, pSrcA, pSrcB, pDst, my_memcpy_to_param, param, offset_in_word, values_to_preserve, mask, n_keep_state_bits);
     my_checkStatus(status);
 #else
@@ -200,7 +201,7 @@ void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16
 }
 #if STABLE_POWER
 // FIXME: common/platform.cpp
-void my_matrix_mpy_q15_to_vm(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint32_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
+void my_matrix_mpy_q15_to_vm(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint16_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
     // XXX: LEA doc requires all matrix dimensions to be even, while LEA
     // appears to still give correct results when srcARows is odd
     // srcBCols should really be even, though

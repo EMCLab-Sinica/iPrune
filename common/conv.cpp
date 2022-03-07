@@ -57,14 +57,14 @@ typedef struct ConvTaskParams {
     uint16_t dest_offset;
     uint16_t filter_offset;
     // For 1-D conv
-    uint16_t kX;
-    uint16_t kY;
+    int16_t kX;
+    int16_t kY;
 #if SPARSE
-    uint16_t row_index; // it can also be used to indicate #channel which are computed now (row_index * input_tile_c)
-    uint16_t cur_row_val;
-    uint16_t next_row_val;
-    uint16_t n_cols; // row[row_index] - row[row_index - 1]
-    uint16_t cur_n_cols; // [0, n_cols)
+    int16_t row_index; // it can also be used to indicate #channel which are computed now (row_index * input_tile_c)
+    int16_t cur_row_val;
+    int16_t next_row_val;
+    int16_t n_cols; // row[row_index] - row[row_index - 1]
+    int16_t cur_n_cols; // [0, n_cols)
 #endif
     uint8_t truncated;
 #if INDIRECT_RECOVERY
@@ -264,7 +264,6 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
 #if SPARSE
             int16_t cols_first_tile_index = get_col_first_tile_index(conv_params->model, conv_params->conv_filter, conv_params->filter_tile_index);
             my_printf_debug("cols_first_tile_index: %d" NEWLINE, cols_first_tile_index);
-            my_printf_debug("row_index: %d" NEWLINE, conv_params->row_index);
             if((conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + conv_params->input_tile_c_index == cols_first_tile_index) {
 #else // SPARSE
             if (conv_params->input_tile_c_index == 0 && conv_params->kX == 0 && conv_params->kY == 0) {
@@ -373,7 +372,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
     my_printf_debug(NEWLINE);
 
 #if STABLE_POWER
-    if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c < CPU_BUFFER_SIZE)
+    if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * output_tile_c < CPU_BUFFER_SIZE)
         compare_vm_vm(matrix_mpy_results, conv_params->model, conv_params->output, cur_output_data_offset, values_to_preserve);
     else
         compare_vm_nvm(matrix_mpy_results, conv_params->model, conv_params->output, cur_output_data_offset, values_to_preserve);
@@ -1196,13 +1195,15 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #endif // STABLE_POWER
 
     MY_ASSERT(n_tiles_c);
-
+#if !SPARSE
     uint32_t tiling_results_len = OUTPUT_CHANNEL * OUTPUT_H * OUTPUT_W;
-
+#endif
     uint16_t chunk_len = OUTPUT_CHANNEL;
     uint16_t output_h = 0, output_w = 0, chunk_offset = 0;
 #if SPARSE
-    uint16_t cols[MAX_COL_LEN] = {0};
+    // FIXME: set suitable size for col_len in transform.py
+    const uint16_t COL_LEN = 41;
+    uint16_t cols[COL_LEN] = {0};
     uint16_t rows[MAX_ROW_LEN] = {0};
 #if STABLE_POWER
     uint16_t n_rows = n_output_tile_c + 1;
@@ -1228,7 +1229,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #if SPARSE
 #if STABLE_POWER
     uint32_t input_offset = 0, output_offset = 0;
-    if(OUTPUT_W * OUTPUT_H * output_tile_c) {
+    if(OUTPUT_W * OUTPUT_H * output_tile_c < CPU_BUFFER_SIZE) {
         input_offset = 0;
     }
     output_offset = output_h * OUTPUT_W * OUTPUT_CHANNEL +
@@ -1295,7 +1296,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
             if(OUTPUT_W * OUTPUT_H * output_tile_c < CPU_BUFFER_SIZE) {
                 // accumulate partial sums in VM
                 // FIXME: common/platform.cpp
-                uint32_t cur_input_offset = input_offset;
+                uint16_t cur_input_offset = input_offset;
                 uint16_t pruned_state = pruned_tile_c[0];
                 my_memcpy_from_param(model, lea_buffer, data, cur_input_offset, real_chunk_len * sizeof(int16_t));
                 my_printf_debug(NEWLINE "Input offset %d, input tile %d, output offset %d" NEWLINE, cur_input_offset, 0, output_offset);
@@ -1331,7 +1332,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                             my_printf_debug("cur_row_diff[%d]: %d" NEWLINE, idx, cur_row_diff[idx]);
                             // load to to_add buffer at offset (idx * output_tile_c)
                             // FIXME: common/platform.cpp
-                            uint32_t cur_input_offset =
+                            uint16_t cur_input_offset =
                                 OUTPUT_W * OUTPUT_H * output_tile_c * (rows[idx] + cur_row_diff[idx]) + // n
                                 output_w * OUTPUT_H * output_tile_c + // w
                                 output_h * output_tile_c + // h
@@ -1368,7 +1369,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                     uint16_t col_val = cols[rows[idx - 1]];
                     int16_t *to_add = lea_buffer + n_has_value_row * chunk_len;
                     // FIXME: common/platform.cpp
-                    uint32_t cur_input_offset =
+                    uint16_t cur_input_offset =
                         rows[idx - 1] * OUTPUT_W * OUTPUT_H * output_tile_c + // n
                         output_w * OUTPUT_H * n_cols_ * output_tile_c + // w
                         output_h * n_cols_ * output_tile_c + // h
@@ -1405,7 +1406,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
             for (uint16_t input_tile_c_index = 0; input_tile_c_index < n_tiles_c; input_tile_c_index++) {
                 int16_t *to_add = lea_buffer + input_tile_c_index * chunk_len;
                 // FIXME: common/platform.cpp
-                uint32_t cur_input_offset = input_tile_c_index * tiling_results_len + input_offset;
+                uint16_t cur_input_offset = input_tile_c_index * tiling_results_len + input_offset;
                 my_memcpy_from_param(model, to_add, data, cur_input_offset, real_chunk_len * sizeof(int16_t));
 #if STATEFUL
                 start_cpu_counter();
