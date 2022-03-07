@@ -414,33 +414,36 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     my_printf_debug("n_tiles=%d" NEWLINE, n_tiles);
     MY_ASSERT(n_tiles);
 #if SPARSE
-    uint16_t cols[MAX_COL_LEN] = {0};
+    // FIXME: set suitable size for col_len in transform
+    const uint16_t COL_LEN = 129;
+    uint16_t cols[COL_LEN] = {0};
     uint16_t rows[MAX_ROW_LEN] = {0};
     int16_t n_rows = n_tiles + 1;
     my_memcpy_from_param_row(model, rows, params, 0, (n_rows) * sizeof(int16_t));
-    int16_t n_cols = rows[n_rows - 1]; // calculate from row values
-    my_memcpy_from_param_col(model, cols, params, 0, (n_cols) * sizeof(int16_t));
     /* entry: the pruned states in each tile_c (n_tiles_c)
      *  1: pruned filters in the tile_c
      *  0: unpruned filters int the tile_c
      */
-    // FIXME: can't allocate with variable length
     std::bitset<128> pruned_tile_c[MAX_TILE_C_LEN] = {0};
-#if STABLE_POWER
-    for(int16_t idx = 0; idx < n_cols; ++idx) {
-        pruned_tile_c[0][cols[idx]] = 1;
-    }
-    pruned_tile_c[0].flip();
-#else // STABLE_POWER
-    for(int16_t idx = 1; idx <= n_rows; ++idx) {
+    for(int16_t idx = 1; idx < n_rows; ++idx) {
         int16_t n_cols_ = rows[idx] - rows[idx - 1];
-        // set unpruned filter to 1
-        for(int16_t offset = 0; offset < n_cols_; ++offset) {
-            int16_t filters_in_tile = cols[rows[idx - 1] + offset];
-            pruned_tile_c[idx - 1][filters_in_tile] = 1;
+        if(n_cols_) {
+            // set unpruned filter to 1
+            my_memcpy_from_param_col(model, cols, params, rows[idx - 1], (n_cols_) * sizeof(int16_t));
+            for(int16_t offset = 0; offset < n_cols_; ++offset) {
+                int16_t filters_in_tile = cols[offset];
+#if !STABLE_POWER
+                pruned_tile_c[idx - 1][filters_in_tile] = 1;
+            }
         }
         pruned_tile_c[idx - 1].flip();
     }
+#else // STABLE_POWER
+                pruned_tile_c[0][filters_in_tile] = 1;
+            }
+        }
+    }
+    pruned_tile_c[0].flip();
 #endif // STABLE_POWER
 #endif // SPARSE
 
