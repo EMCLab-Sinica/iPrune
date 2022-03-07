@@ -147,7 +147,8 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
 #if STABLE_POWER
     int16_t channel_offset_c = 0;
 #else // STABLE_POWER
-    int16_t channel_offset_c = conv_params->flags->extra.conv.output_tile_c * conv_params->cur_n_cols;
+    int16_t channel_offset_c = conv_params->flags->extra.conv.output_tile_c * conv_params->cur_n_cols +
+        (conv_params->filter_idx % conv_params->flags->extra.conv.output_tile_c);
 #endif // STABLE_POWER
 #else // SPARSE
     int16_t channel_offset_c = conv_params->filter_idx;
@@ -779,17 +780,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->next_row_val = 0;
     conv_params->n_cols = 0;
     conv_params->cur_n_cols = 0;
-#if STABLE_POWER
-    int16_t col_val;
-    next_nonzero_value(conv_params, &col_val);
-    conv_params->kX = col_val / (conv_params->kW * conv_params->n_tiles_c);
-    conv_params->kY = (col_val % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
-#else // STABLE_POWER
-    int16_t row_index_offset = conv_params->n_tiles_c * conv_params->kH * conv_params->kW;
-    next_nonzero_value(conv_params, row_index_offset);
-    conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
-    conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
-#endif // STABLE_POWER
+    uint16_t cur_col_index = 0;
 #else // SPARSE
     conv_params->input_tile_c_offset = 0;
     conv_params->input_tile_c_index = 0;
@@ -818,8 +809,9 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                            &conv_params->cur_slot_info, job_index_to_offset(output, first_unfinished_job_idx), model, output);
 
     my_printf_debug("old_output_offset = %d" NEWLINE, conv_params->old_output_offset);
-#endif
+#endif // INDIRECT_RECOVERY
 
+#if !SPARSE
     uint16_t cur_output_tile_c = conv_params->flags->extra.conv.output_tile_c;
 #if JAPARI
     cur_output_tile_c = extend_for_footprints(cur_output_tile_c, conv_params->force_align_footprints);
@@ -846,23 +838,42 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->filter_idx += filter_offset_in_tile;
     first_unfinished_value_offset /= conv_params->OUTPUT_CHANNEL;
 
-    // consider (x, y)
     conv_params->input_w += first_unfinished_value_offset / conv_params->OUTPUT_H * conv_params->stride;
     first_unfinished_value_offset %= conv_params->OUTPUT_H;
 
-    // consider (x, y)
     conv_params->input_h += first_unfinished_value_offset * conv_params->stride;
-
-#if SPARSE
-    uint16_t jobs_in_a_filter_tile = conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c / BATCH_SIZE;
-    uint16_t cur_col_index = first_unfinished_job_idx / jobs_in_a_filter_tile; // 1
+#else // SPARSE
+    uint16_t data_in_a_filter_tile = conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c;
+    cur_col_index = first_unfinished_value_offset / data_in_a_filter_tile;
 
     // find the input_tile_c_index via binary searching on "rows"
     conv_params->row_index = find_row_index(model, conv_filter, output, node, cur_col_index, &(conv_params->cur_row_val));
-    conv_params->next_row_val = get_row_val(model, conv_filter, conv_params->row_index + 1);
-    conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-    conv_params->cur_n_cols = cur_col_index - conv_params->cur_row_val;
-    conv_params->row_index++;
+    conv_params->next_row_val = conv_params->cur_row_val;
+    int16_t row_index_offset = conv_params->n_tiles_c * conv_params->kH * conv_params->kW;
+    next_nonzero_value(conv_params, row_index_offset);
+    if(!conv_params->n_cols) {
+        // The layer is finished
+        // set the condition to exit the layer
+        conv_params->kX = conv_params->kH;
+        conv_params->kY = conv_params->kW;
+    } else {
+        conv_params->cur_n_cols = cur_col_index - conv_params->cur_row_val;
+        conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
+        conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
+
+        first_unfinished_value_offset -= data_in_a_filter_tile * conv_params->cur_row_val;
+        my_printf_debug("111111" NEWLINE);
+        // FIXME: divide 0 when conv_params->n_cols == 0 !
+        uint8_t filter_offset_in_tile = first_unfinished_value_offset % (conv_params->n_cols * conv_params->flags->extra.conv.output_tile_c);
+        my_printf_debug("111111" NEWLINE);
+        conv_params->filter_idx += filter_offset_in_tile % conv_params->flags->extra.conv.output_tile_c;
+
+        first_unfinished_value_offset /= (conv_params->n_cols * conv_params->flags->extra.conv.output_tile_c);
+        conv_params->input_w += first_unfinished_value_offset / conv_params->OUTPUT_H * conv_params->stride;
+        first_unfinished_value_offset %= conv_params->OUTPUT_H;
+
+        conv_params->input_h += first_unfinished_value_offset * conv_params->stride;
+    }
 #endif
     my_printf_debug("initial output N = %d" NEWLINE, conv_params->input_tile_c_index);
     my_printf_debug("initial output H = %d" NEWLINE, (conv_params->input_h - conv_params->input_h_first) / conv_params->stride);
@@ -870,6 +881,20 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     my_printf_debug("initial output C = %d" NEWLINE, conv_params->filter_idx);
     // = happens when all values are finished
     MY_ASSERT(conv_params->input_tile_c_index <= conv_params->n_tiles_c);
+#else // INTERMITTENT
+#if SPARSE
+#if STABLE_POWER
+    int16_t col_val;
+    next_nonzero_value(conv_params, &col_val);
+    conv_params->kX = col_val / (conv_params->kW * conv_params->n_tiles_c);
+    conv_params->kY = (col_val % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
+#else // STABLE_POWER
+    int16_t row_index_offset = conv_params->n_tiles_c * conv_params->kH * conv_params->kW;
+    next_nonzero_value(conv_params, row_index_offset);
+    conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
+    conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
+#endif // STABLE_POWER
+#endif // SPARSE
 #endif // INTERMITTENT
 #if SPARSE
     my_printf_debug("conv_params->row_index: %d\n", conv_params->row_index);
@@ -881,8 +906,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     my_printf_debug("conv_params->input_tile_c_index: %d\n", conv_params->input_tile_c_index);
     my_printf_debug("conv_params->filter_tile_index: %d\n", conv_params->filter_tile_index);
     my_printf_debug("conv_params->filter_idx: %d\n", conv_params->filter_idx);
+    my_printf_debug("conv_params->kX: %d\n", conv_params->kX);
+    my_printf_debug("conv_params->kY: %d\n", conv_params->kY);
     my_printf_debug("\n");
-#endif
+#endif // SPARSE
 #if JAPARI
     if (conv_params->conv_input_has_footprints) {
         input_channels = input_channels / (BATCH_SIZE + 1) * BATCH_SIZE;

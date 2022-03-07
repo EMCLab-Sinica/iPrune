@@ -204,6 +204,7 @@ const char* datatype_name<Node::Footprint>(void) {
 void write_hawaii_layer_footprint(uint16_t layer_idx, int16_t n_jobs) {
     Node::Footprint* footprint_vm = footprints_vm + layer_idx;
     footprint_vm->value += n_jobs;
+    my_printf_debug("footprint_vm->value: %d" NEWLINE, footprint_vm->value);
     MY_ASSERT(footprint_vm->value < INTERMEDIATE_VALUES_SIZE);
     commit_versioned_data<Node::Footprint>(layer_idx);
     my_printf_debug("Write HAWAII layer footprint %d for layer %d" NEWLINE, footprint_vm->value, layer_idx);
