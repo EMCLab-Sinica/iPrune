@@ -223,7 +223,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
         // Load fliter according to index
         uint16_t filter_offset = conv_params->cur_input_tile_c;
         uint16_t col_index = conv_params->cur_row_val + conv_params->cur_n_cols;
-        uint16_t block_size = filter_offset * cur_output_tile_c;
+        uint16_t block_size = filter_offset * output_tile_c;
         uint16_t buffer_size = sizeof(int16_t) * filter_offset;
         uint16_t filter_src_offset = col_index * block_size;
         int16_t *filter_dest_ptr = filter_tmp;
@@ -235,7 +235,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
             my_printf_debug("Copying filter %d" NEWLINE, conv_params->filter_idx + idx);
 #if SPARSE
             // XXX: Need re-checking
-            uint16_t cur_filter_src_offset = filter_src_offset + idx * filter_offset;
+            uint16_t cur_filter_src_offset = filter_src_offset + (conv_params->filter_idx % output_tile_c + idx) * filter_offset;
             my_memcpy_from_param(conv_params->model, filter_dest_ptr, conv_params->conv_filter, cur_filter_src_offset, buffer_size);
 #else
             uint16_t filter_src_offset = (conv_params->filter_idx + idx) * filter_len;
@@ -844,7 +844,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->input_h += first_unfinished_value_offset * conv_params->stride;
 #else // SPARSE
     uint16_t data_in_a_filter_tile = conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c;
-    cur_col_index = first_unfinished_value_offset / data_in_a_filter_tile;
+    uint16_t jobs_in_a_filter_tile = conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c;
+    cur_col_index = first_unfinished_job_idx / jobs_in_a_filter_tile;
+    my_printf_debug("first_unfinished_value_offset: %d" NEWLINE, first_unfinished_value_offset );
+    my_printf_debug("cur_col_index: %d" NEWLINE, cur_col_index);
 
     // find the input_tile_c_index via binary searching on "rows"
     conv_params->row_index = find_row_index(model, conv_filter, output, node, cur_col_index, &(conv_params->cur_row_val));
@@ -852,20 +855,22 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     int16_t row_index_offset = conv_params->n_tiles_c * conv_params->kH * conv_params->kW;
     next_nonzero_value(conv_params, row_index_offset);
     if(!conv_params->n_cols) {
-        // The layer is finished
-        // set the condition to exit the layer
-        conv_params->kX = conv_params->kH;
-        conv_params->kY = conv_params->kW;
+        // The layer has finished
+        goto EXIT_LAYER;
     } else {
         conv_params->cur_n_cols = cur_col_index - conv_params->cur_row_val;
+        if(conv_params->n_cols == conv_params->cur_n_cols) {
+            // The layer has finished
+            goto EXIT_LAYER;
+        }
+        conv_params->filter_tile_index = get_col_val(model, conv_filter, cur_col_index);
+        conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
         conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
         conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
 
         first_unfinished_value_offset -= data_in_a_filter_tile * conv_params->cur_row_val;
-        my_printf_debug("111111" NEWLINE);
-        // FIXME: divide 0 when conv_params->n_cols == 0 !
+        MY_ASSERT(conv_params->n_cols);
         uint8_t filter_offset_in_tile = first_unfinished_value_offset % (conv_params->n_cols * conv_params->flags->extra.conv.output_tile_c);
-        my_printf_debug("111111" NEWLINE);
         conv_params->filter_idx += filter_offset_in_tile % conv_params->flags->extra.conv.output_tile_c;
 
         first_unfinished_value_offset /= (conv_params->n_cols * conv_params->flags->extra.conv.output_tile_c);
@@ -1135,7 +1140,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
     }
     flip_state_bit(model, output);
-
+EXIT_LAYER:
     my_printf_debug("handle_conv output" NEWLINE);
     dump_params_nhwc_debug(model, output, node->output_name);
 #endif // STABLE_POWER
