@@ -168,8 +168,8 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
              output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride;
     // use NWHC so that output is written continuously on the address space
 #if STABLE_POWER
-#if SPARSE
     uint32_t cur_output_data_offset = 0;
+#if SPARSE
     if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c < CPU_BUFFER_SIZE)
         cur_output_data_offset = (output_w * conv_params->OUTPUT_H + output_h) * conv_params->flags->extra.conv.output_tile_c;
     else
@@ -179,6 +179,16 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
             output_w * conv_params->OUTPUT_H * conv_params->flags->extra.conv.output_tile_c + // w
             output_h * conv_params->flags->extra.conv.output_tile_c + // h
             channel_offset_c; // c
+#else // SPARSE
+    if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c < CPU_BUFFER_SIZE)
+        cur_output_data_offset = (output_w * conv_params->OUTPUT_H + output_h) * conv_params->flags->extra.conv.output_tile_c;
+    else
+        // handle n_output_tile_c > 1
+        cur_output_data_offset =
+            conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL * ((conv_params->kX * conv_params->kW + conv_params->kY) * conv_params->n_tiles_c + conv_params->input_tile_c_index) + // n
+            output_w * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL +                                                   // w
+            output_h * conv_params->OUTPUT_CHANNEL +                                                                           // h
+            channel_offset_c;                                                                                                  // c
 #endif // SPARSE
 #else // STABLE_POWER
 #if SPARSE
@@ -928,12 +938,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->cur_input_tile_c = MIN_VAL(conv_params->flags->extra.conv.input_tile_c, input_channels - conv_params->input_tile_c_offset);
         conv_params->cur_filter_tile_c = conv_params->cur_input_tile_c;
         my_printf_debug("cur_input_tile_c = %d" NEWLINE, conv_params->cur_input_tile_c);
-        // conv_params->dest_offset = conv_params->kW * conv_params->cur_input_tile_c;
         conv_params->dest_offset = 1 * conv_params->cur_input_tile_c; // only process one position
         // +1 for bias
         conv_params->dest_offset++;
         /* MSP430 LEA requires length to be even */
-        conv_params->truncated = (conv_params->dest_offset / 2 * 2 != conv_params->dest_offset); // conv_params->dest_offset & 1 ?
+        conv_params->truncated = conv_params->dest_offset & 1;
         if (conv_params->truncated) {
             // when CHANNEL * kH * kW is odd, CHANNEL * kW (dest_offset) is
             // also odd, so dummy values are needed between slices to make
@@ -941,7 +950,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             // a dummy value for each slice (kW * CHANNEL q15 values)
             conv_params->dest_offset++;
         }
-        // conv_params->filter_offset = conv_params->kH * conv_params->dest_offset;
         conv_params->filter_offset = 1 * conv_params->dest_offset;
         for(; conv_params->kX < conv_params->kH;) {
             for(; conv_params->kY < conv_params->kW;) {
@@ -984,17 +992,27 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
                     conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
                 }
+#if SPARSE
                 if(conv_params->cur_n_cols >= conv_params->n_cols) break;
                 // set new (x, y) position according to cur_n_cols
                 conv_params->kX = col_val / (conv_params->kW * conv_params->n_tiles_c);
                 conv_params->kY = (col_val % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
                 conv_params->input_tile_c_index = col_val % conv_params->n_tiles_c;
+#else // SPARSE
+                conv_params->kY++;
+                conv_params->input_tile_c_index = 0;
+#endif // SPARSE
                 conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
                 conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
                 conv_params->input_h = conv_params->input_h_first;
                 conv_params->input_w = conv_params->input_w_first;
             }
+#if SPARSE
             if(conv_params->cur_n_cols >= conv_params->n_cols) break;
+#else // SPARSE
+            conv_params->kY = 0;
+            conv_params->kX++;
+#endif // SPARSE
         }
         if(conv_params->OUTPUT_H * conv_params->OUTPUT_W * conv_params->flags->extra.conv.output_tile_c < CPU_BUFFER_SIZE) {
             // preserve the output element to NVM
@@ -1014,7 +1032,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         }
 #else // SPARSE
         conv_params->input_tile_c_index = conv_params->input_tile_c_offset = 0;
-        conv_params->filter_tile_index = conv_params->row_index;
+        conv_params->filter_tile_index++;
         conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
         conv_params->kX = conv_params->kY = 0;
 #endif // SPARSE
@@ -1223,7 +1241,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #endif // SPARSE
 #if STABLE_POWER
     // set n_tiles_c as 1 because the parital sums are accumulated in VM
-    if(OUTPUT_H * OUTPUT_W * output_tile_c < CPU_BUFFER_SIZE) n_tiles_c = 1;
+    if(OUTPUT_H * OUTPUT_W * node->flags.extra.conv.output_tile_c < CPU_BUFFER_SIZE) n_tiles_c = 1;
 #endif // STABLE_POWER
 
     MY_ASSERT(n_tiles_c);
@@ -1328,7 +1346,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
             if(OUTPUT_W * OUTPUT_H * output_tile_c < CPU_BUFFER_SIZE) {
                 // accumulate partial sums in VM
                 // FIXME: common/platform.cpp
-                uint16_t cur_input_offset = input_offset;
+                uint32_t cur_input_offset = input_offset;
                 uint16_t pruned_state = pruned_tile_c[0];
                 my_memcpy_from_param(model, lea_buffer, data, cur_input_offset, real_chunk_len * sizeof(int16_t));
                 my_printf_debug(NEWLINE "Input offset %d, input tile %d, output offset %d" NEWLINE, cur_input_offset, 0, output_offset);
@@ -1364,7 +1382,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                             my_printf_debug("cur_row_diff[%d]: %d" NEWLINE, idx, cur_row_diff[idx]);
                             // load to to_add buffer at offset (idx * output_tile_c)
                             // FIXME: common/platform.cpp
-                            uint16_t cur_input_offset =
+                            uint32_t cur_input_offset =
                                 OUTPUT_W * OUTPUT_H * output_tile_c * (rows[idx] + cur_row_diff[idx]) + // n
                                 output_w * OUTPUT_H * output_tile_c + // w
                                 output_h * output_tile_c + // h
@@ -1401,7 +1419,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                     uint16_t col_val = cols[rows[idx - 1]];
                     int16_t *to_add = lea_buffer + n_has_value_row * chunk_len;
                     // FIXME: common/platform.cpp
-                    uint16_t cur_input_offset =
+                    uint32_t cur_input_offset =
                         rows[idx - 1] * OUTPUT_W * OUTPUT_H * output_tile_c + // n
                         output_w * OUTPUT_H * n_cols_ * output_tile_c + // w
                         output_h * n_cols_ * output_tile_c + // h
@@ -1438,7 +1456,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
             for (uint16_t input_tile_c_index = 0; input_tile_c_index < n_tiles_c; input_tile_c_index++) {
                 int16_t *to_add = lea_buffer + input_tile_c_index * chunk_len;
                 // FIXME: common/platform.cpp
-                uint16_t cur_input_offset = input_tile_c_index * tiling_results_len + input_offset;
+                uint32_t cur_input_offset = input_tile_c_index * tiling_results_len + input_offset;
                 my_memcpy_from_param(model, to_add, data, cur_input_offset, real_chunk_len * sizeof(int16_t));
 #if STATEFUL
                 start_cpu_counter();
