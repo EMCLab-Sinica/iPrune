@@ -1054,7 +1054,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                                         output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) /
                                                     conv_params->stride;
                                 conv_merge(model, conv_params, output, output_w, output_h);
-
+                                preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, conv_params->psum_buffer_version ^ 1);
                             }
                             conv_params->input_h -= conv_params->kX;
                             conv_params->kX++;
@@ -1070,7 +1070,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                         // TODO: perform psum addition
                         conv_merge(model, conv_params, output, output_w, output_h);
                     }
-                    preserve_output(node, output, conv_params->filter_idx, output_w, output_h);
+                    preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, 0);
                     init_cpu_buffer();
                 }
                 conv_params->input_h = conv_params->input_h_first;

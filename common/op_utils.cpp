@@ -246,7 +246,7 @@ void init_cpu_buffer(void) {
     MY_ASSERT(cpu_buffer[CPU_BUFFER_SIZE - 1] == 0);
 }
 
-void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h) {
+void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int8_t buffer_id) {
     my_printf_debug("Preserve cached psum to NVM" NEWLINE);
     if(node->op_type == 0) {
         // is conv op
@@ -256,17 +256,33 @@ void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_id
         uint16_t output_tile_w = MIN_VAL(node->flags.extra.conv.output_tile_w, OUTPUT_W - output_w);
         uint16_t output_tile_h = MIN_VAL(node->flags.extra.conv.output_tile_h, OUTPUT_H - output_h);
         uint16_t output_tile_c = node->flags.extra.conv.output_tile_c;
+        uint16_t output_len = CHANNEL * OUTPUT_W * OUTPUT_H;
         MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
         MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
         uint16_t vm_offset = 0;
+        uint16_t chunk_offset = 0;
+        int16_t *src = 0;
         for(int16_t offset_w = 0; offset_w < output_tile_w; ++offset_w) {
             for(int16_t offset_h = 0; offset_h < output_tile_h; ++offset_h) {
-                uint16_t dst = ((offset_h + output_h) * OUTPUT_W + (offset_w + output_w)) * CHANNEL + filter_idx;
-                my_memcpy_to_param(output, dst, cpu_buffer + vm_offset * output_tile_c, output_tile_c * sizeof(int16_t), 0);
+                uint16_t real_chunk_len = output_tile_c - chunk_offset;
+                uint16_t dst =
+                    buffer_id * output_len + // n
+                    ((offset_h + output_h) * OUTPUT_W + (offset_w + output_w)) * CHANNEL + // hw
+                    filter_idx; // c
+#if STABLE_POWER
+                src = cpu_buffer + vm_offset * output_tile_c;
+#else // STABLE_POWER
+                src = lea_buffer + vm_offset * output_tile_c;
+#endif // STABLE_POWER
+                my_memcpy_to_param(output, dst, src, real_chunk_len * sizeof(int16_t), 0);
                 my_printf_debug(NEWLINE "Output offset %d" NEWLINE, dst);
                 my_printf_debug("Loaded chunk" NEWLINE);
-                dump_matrix_debug(cpu_buffer + vm_offset * output_tile_c, output_tile_c, ValueInfo(output));
+                dump_matrix_debug(src, real_chunk_len, ValueInfo(output));
                 vm_offset++;
+#if HAWAII
+                hawaii_record_footprints(model, real_chunk_len);
+#endif
+                chunk_offset = 0;
             }
         }
     } else if(node->op_type == 2) {
