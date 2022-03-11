@@ -246,6 +246,19 @@ void init_cpu_buffer(void) {
     MY_ASSERT(cpu_buffer[CPU_BUFFER_SIZE - 1] == 0);
 }
 
+// FIXME: common/platform.cpp
+void my_accumulate_to_vm(ParameterInfo *param, uint32_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
+    MY_ASSERT(param->bitwidth == 16);
+    MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
+    uint32_t total_offset = offset_in_word;
+    n /= sizeof(int16_t);
+    MY_ASSERT(total_offset + n <= CPU_BUFFER_SIZE);
+    for(uint16_t offset = 0; offset < n; ++offset) {
+        cpu_buffer[total_offset + offset] += *(reinterpret_cast<const int16_t *>(src) + offset);
+    }
+}
+#endif // STABLE_POWER
+
 void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int8_t buffer_id) {
     my_printf_debug("Preserve cached psum to NVM" NEWLINE);
     if(node->op_type == 0) {
@@ -286,6 +299,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
             }
         }
     } else if(node->op_type == 2) {
+        // FIXME: update op type number after removing merge state
         // is fc op
         uint32_t total_offset = filter_idx;
         uint32_t output_len = output->dims[0] * output->dims[1];
@@ -293,15 +307,4 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
     }
 }
 
-// FIXME: common/platform.cpp
-void my_accumulate_to_vm(ParameterInfo *param, uint32_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
-    MY_ASSERT(param->bitwidth == 16);
-    MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
-    uint32_t total_offset = offset_in_word;
-    n /= sizeof(int16_t);
-    MY_ASSERT(total_offset + n <= CPU_BUFFER_SIZE);
-    for(uint16_t offset = 0; offset < n; ++offset) {
-        cpu_buffer[total_offset + offset] += *(reinterpret_cast<const int16_t *>(src) + offset);
-    }
-}
-#endif
+
