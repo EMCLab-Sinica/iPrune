@@ -95,6 +95,7 @@ typedef struct ConvTaskParams {
     int16_t cached_kX;
     int16_t cached_kY;
 
+    uint8_t psum_buffer_version;
     int8_t cur_op;
 } ConvTaskParams;
 
@@ -684,7 +685,16 @@ void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
     output->params_len = conv_params->OUTPUT_H * conv_params->OUTPUT_W * n_tile * node->flags.extra.conv.output_tile_c * sizeof(int16_t);
 #endif // STABLE_POWER
 #else // SPARSE
+#if STABLE_POWER
     output->params_len = conv_params->OUTPUT_H * conv_params->OUTPUT_W * OUTPUT_CHANNEL * sizeof(int16_t);
+#else // STABLE_POWER
+    /* 3 buffers:
+     * 0: the result of accum cmd
+     * 1: the result of accum cmd (double buffering)
+     * 2: the result of psum cmd
+     */
+    output->params_len = 3 * conv_params->OUTPUT_H * conv_params->OUTPUT_W * OUTPUT_CHANNEL * sizeof(int16_t);
+#endif // STABLE_POWER
 #endif // SPARSE
     output->dims[0] = 1;
     output->dims[1] = OUTPUT_CHANNEL;
@@ -757,44 +767,71 @@ void next_nonzero_value(ConvTaskParams *conv_params, int16_t row_index_offset) {
 #endif // STABLE_POWER
 #endif // SPARSE
 
-#if STABLE_POWER
-void conv_merge(Model *model, const Node *node, ParameterInfo *output, int16_t filter_idx, int16_t output_w, int16_t output_h) {
+void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output, int16_t output_w, int16_t output_h) {
     int16_t OUTPUT_C = output->dims[1],
             OUTPUT_H = output->dims[2],
             OUTPUT_W = output->dims[3],
-            output_tile_c = node->flags.extra.conv.output_tile_c,
-            output_tile_w = MIN_VAL(node->flags.extra.conv.output_tile_w, OUTPUT_W - output_w),
-            output_tile_h = MIN_VAL(node->flags.extra.conv.output_tile_h, OUTPUT_H - output_h);
+            output_tile_c = conv_params->flags->extra.conv.output_tile_c,
+            output_tile_w = MIN_VAL(conv_params->flags->extra.conv.output_tile_w, OUTPUT_W - output_w),
+            output_tile_h = MIN_VAL(conv_params->flags->extra.conv.output_tile_h, OUTPUT_H - output_h);
     MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
     MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
     int16_t output_tile_len = output_tile_h * output_tile_w * output_tile_c;
-    int16_t input_offset = (output_h * OUTPUT_W + output_w) * OUTPUT_C + filter_idx; // NHWC
+    uint16_t output_len = OUTPUT_C * OUTPUT_W * OUTPUT_H;
+    int16_t psum_offset =
+        conv_params->psum_buffer_version * output_len +
+        (output_h * OUTPUT_W + output_w) * OUTPUT_C + conv_params->filter_idx; // NHWC
+#if !STABLE_POWER
+    int16_t input_offset =
+        2 * output_len +
+        (output_h * OUTPUT_W + output_w) * OUTPUT_C + conv_params->filter_idx;
+    uint16_t cur_input_offset = input_offset;
+#endif // STABLE_POWER
     int16_t chunk_offset = 0;
     // FIXME: common/platform.cpp
-    uint32_t cur_input_offset = input_offset;
-    // TODO: Replace cpu_buffer with lea_buffer
-    int16_t *to_add = cpu_buffer + output_tile_len;
+    uint32_t cur_psum_offset = psum_offset;
+    int16_t *to_add, *be_add;
     for(int16_t offset_w = 0; offset_w < output_tile_w; ++offset_w) {
         for(int16_t offset_h = 0; offset_h < output_tile_h; ++offset_h) {
             int16_t vm_offset = (offset_w * output_tile_h + offset_h) * output_tile_c + chunk_offset;
             uint16_t real_chunk_len = output_tile_c - chunk_offset;
+#if STABLE_POWER
+            // TODO: Replace cpu_buffer with lea_buffer
             to_add = cpu_buffer + output_tile_len + vm_offset;
+            be_add = cpu_buffer + vm_offset;
+#else // STABLE_POWER
+            to_add = lea_buffer + output_tile_len + vm_offset;
+            be_add = lea_buffer + vm_offset;
             cur_input_offset += chunk_offset;
-            my_memcpy_from_param(model, to_add, output, cur_input_offset, real_chunk_len * sizeof(int16_t));
-            my_printf_debug(NEWLINE "Input offset %d, VM offset %d" NEWLINE, cur_input_offset, to_add - cpu_buffer);
+#endif //STABLE_POWER
+            cur_psum_offset += chunk_offset;
+#if !STABLE_POWER
+            my_memcpy_from_param(model, be_add, output, cur_input_offset, real_chunk_len * sizeof(int16_t));
+            my_printf_debug(NEWLINE "input offset %d, VM offset %d" NEWLINE, cur_input_offset, vm_offset);
+            my_printf_debug("Loaded chunk" NEWLINE);
+            dump_matrix_debug(be_add, real_chunk_len, ValueInfo(output));
+#endif //STABLE_POWER
+            my_memcpy_from_param(model, to_add, output, cur_psum_offset, real_chunk_len * sizeof(int16_t));
+            my_printf_debug(NEWLINE "psum offset %d, VM offset %d" NEWLINE, cur_psum_offset, output_tile_len + vm_offset);
             my_printf_debug("Loaded chunk" NEWLINE);
             dump_matrix_debug(to_add, real_chunk_len, ValueInfo(output));
-            for(uint16_t offset = 0; offset < real_chunk_len; ++offset) {
-                cpu_buffer[vm_offset + offset] += to_add[offset];
+#if !STABLE_POWER
+            if(conv_params->input_tile_c_index == 0 && conv_params->kX == 0 && conv_params->kY == 0) {
+                memset(to_add, 0, real_chunk_len * sizeof(int16_t));
             }
+#endif // STABLE_POWER
+            // perform accum
+            my_add_q15(be_add, to_add, be_add, real_chunk_len);
             my_printf_debug("Adding Result" NEWLINE);
-            dump_matrix_debug(cpu_buffer + vm_offset, real_chunk_len, ValueInfo(output));
+            dump_matrix_debug(be_add, real_chunk_len, ValueInfo(output));
             chunk_offset = 0;
+            cur_psum_offset += OUTPUT_C * OUTPUT_W;
+#if !STABLE_POWER
             cur_input_offset += OUTPUT_C * OUTPUT_W;
+#endif // STABLE_POWER
         }
     }
 }
-#endif STABLE_POWER
 
 void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
     const ParameterInfo *conv_input = input[0], *conv_filter = input[1], *conv_bias = (node->inputs_len == 3) ? input[2] : nullptr;
@@ -822,6 +859,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->H = H;
     conv_params->W = W;
     conv_params->cur_op = 0; // 0: conv, 1: merge
+    conv_params->psum_buffer_version = 0;
 
 #if JAPARI
     conv_params->conv_input_has_footprints = has_footprints(conv_input);
@@ -1010,8 +1048,13 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                                 // perform psum
                                 handle_conv_inner_loop(model, conv_params);
                             } else if(conv_params->cur_op == 1) {
-                                // TODO: perform accum
-                                // conv_merge();
+                                // perform accum
+                                int16_t output_h = (conv_params->input_h - conv_params->input_h_first - conv_params->kX) /
+                                                    conv_params->stride,
+                                        output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) /
+                                                    conv_params->stride;
+                                conv_merge(model, conv_params, output, output_w, output_h);
+
                             }
                             conv_params->input_h -= conv_params->kX;
                             conv_params->kX++;
@@ -1025,7 +1068,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                              output_w = (conv_params->input_w - conv_params->input_w_first) / conv_params->stride;
                     if(conv_params->input_tile_c_index != 0) {
                         // TODO: perform psum addition
-                        conv_merge(model, node, output, conv_params->filter_idx, output_w, output_h);
+                        conv_merge(model, conv_params, output, output_w, output_h);
                     }
                     preserve_output(node, output, conv_params->filter_idx, output_w, output_h);
                     init_cpu_buffer();
