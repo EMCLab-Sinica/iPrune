@@ -246,14 +246,28 @@ void init_cpu_buffer(void) {
     MY_ASSERT(cpu_buffer[CPU_BUFFER_SIZE - 1] == 0);
 }
 
-void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_idx) {
+void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h) {
+    my_printf_debug("Preserve cached psum to NVM" NEWLINE);
     if(node->op_type == 0) {
         // is conv op
-        uint32_t total_offset = filter_idx;
-        uint32_t output_len = output->dims[2] * output->dims[3];
-        for(uint16_t offset = 0; offset < output_len; offset++) {
-            my_memcpy_to_param(output, total_offset, cpu_buffer + offset * node->flags.extra.conv.output_tile_c, node->flags.extra.conv.output_tile_c * sizeof(int16_t), 0);
-            total_offset += output->dims[1];
+        uint16_t CHANNEL = output->dims[1],
+                 OUTPUT_H = output->dims[2],
+                 OUTPUT_W = output->dims[3];
+        uint16_t output_tile_w = MIN_VAL(node->flags.extra.conv.output_tile_w, OUTPUT_W - output_w);
+        uint16_t output_tile_h = MIN_VAL(node->flags.extra.conv.output_tile_h, OUTPUT_H - output_h);
+        uint16_t output_tile_c = node->flags.extra.conv.output_tile_c;
+        MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
+        MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
+        uint16_t vm_offset = 0;
+        for(int16_t offset_w = 0; offset_w < output_tile_w; ++offset_w) {
+            for(int16_t offset_h = 0; offset_h < output_tile_h; ++offset_h) {
+                uint16_t dst = ((offset_h + output_h) * OUTPUT_W + (offset_w + output_w)) * CHANNEL + filter_idx;
+                my_memcpy_to_param(output, dst, cpu_buffer + vm_offset * output_tile_c, output_tile_c * sizeof(int16_t), 0);
+                my_printf_debug(NEWLINE "Output offset %d" NEWLINE, dst);
+                my_printf_debug("Loaded chunk" NEWLINE);
+                dump_matrix_debug(cpu_buffer + vm_offset * output_tile_c, output_tile_c, ValueInfo(output));
+                vm_offset++;
+            }
         }
     } else if(node->op_type == 2) {
         // is fc op
@@ -264,7 +278,7 @@ void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_id
 }
 
 // FIXME: common/platform.cpp
-void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
+void my_accumulate_to_vm(ParameterInfo *param, uint32_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
     MY_ASSERT(param->bitwidth == 16);
     MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
     uint32_t total_offset = offset_in_word;

@@ -118,6 +118,8 @@ class ConvNodeFlags(ctypes.Structure):
     _fields_ = [
         ("input_tile_c", ctypes.c_uint16),
         ("output_tile_c", ctypes.c_uint16),
+        ("output_tile_w", ctypes.c_uint16),
+        ("output_tile_h", ctypes.c_uint16),
         ("pads", ctypes.c_uint8 * 4),
     ]
 
@@ -162,7 +164,7 @@ class NodeFlags_bits(ctypes.LittleEndianStructure):
 class NodeFlags(ctypes.Union):
     _fields_ = [
         ("b", NodeFlags_bits),
-        ("as_bytes", ctypes.c_uint8 * 10),
+        ("as_bytes", ctypes.c_uint8 * 14),
     ]
 
     def __repr__(self):
@@ -497,6 +499,8 @@ def determine_conv_tile_c(n, node_idx):
     # manually set tile size
     node_flags.input_tile_c = model_config[node_idx]['group'][1]
     node_flags.output_tile_c = model_config[node_idx]['group'][0]
+    node_flags.output_tile_w = model_config[node_idx]['tile']['output'][0]
+    node_flags.output_tile_h = model_config[node_idx]['tile']['output'][1]
     '''
     while node_flags.output_tile_c * OUTPUT_H * OUTPUT_W > Constants.CPU_BUFFER_SIZE:
         node_flags.output_tile_c //= 2
@@ -504,6 +508,8 @@ def determine_conv_tile_c(n, node_idx):
     '''
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
     print('output_tile_c: {}'.format(node_flags.output_tile_c))
+    print('output_tile_w: {}'.format(node_flags.output_tile_w))
+    print('output_tile_h: {}'.format(node_flags.output_tile_h))
 
 def determine_gemm_tile_sizes(n, node_idx):
     logger.debug('Determine tile size for Gemm node %s', n.name)

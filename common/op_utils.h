@@ -16,9 +16,9 @@ extern int16_t lea_buffer[LEA_BUFFER_SIZE];
 #if STABLE_POWER
 extern int16_t cpu_buffer[CPU_BUFFER_SIZE];
 void init_cpu_buffer();
-void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_idx);
+void preserve_output(const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h);
 // FIXME: common/platform.cpp
-void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay);
+void my_accumulate_to_vm(ParameterInfo *param, uint32_t offset_in_word, const void *src, size_t n, uint16_t timer_delay);
 #endif
 int16_t upper_gauss(int16_t a, int16_t b);
 void float_to_scale_params(int16_t *scaleFract, uint8_t *shift, float scale);

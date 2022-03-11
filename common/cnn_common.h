@@ -13,6 +13,8 @@
 struct ConvNodeFlags {
     uint16_t input_tile_c;
     uint16_t output_tile_c;
+    uint16_t output_tile_w;
+    uint16_t output_tile_h;
     uint8_t pads[4];
 };
 
@@ -48,7 +50,7 @@ struct NodeFlags {
     ExtraNodeFlags extra;
 };
 
-static_assert(sizeof(NodeFlags) == 10, "Unexpected size for NodeFlags");
+static_assert(sizeof(NodeFlags) == 14, "Unexpected size for NodeFlags");
 
 typedef struct Node {
     char name[NODE_NAME_LEN];
@@ -66,7 +68,7 @@ typedef struct Node {
 #endif
 } Node;
 
-static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 16 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
+static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 20 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
 
 /* ParameterInfo may indicate data from the model (parameters) or intermediate values */
 typedef struct ParameterInfo {
@@ -170,7 +172,7 @@ const uint8_t* get_param_row_base_pointer(const ParameterInfo *param, uint32_t *
 const uint8_t* get_param_col_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 const uint8_t* get_param_first_tile_index_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 // FIXME: descript in common/platform.cpp
-int16_t get_q15_param(Model* model, const ParameterInfo *param, uint16_t offset_in_word);
+int16_t get_q15_param(Model* model, const ParameterInfo *param, uint32_t offset_in_word);
 void put_q15_param(ParameterInfo *param, uint16_t offset_in_word, int16_t val);
 int64_t get_int64_param(const ParameterInfo *param, size_t i);
 uint16_t get_next_slot(Model *model, const ParameterInfo *param);
@@ -179,7 +181,7 @@ const Node* get_node(size_t i);
 const Node* get_node(const ParameterInfo* param);
 SlotInfo * get_slot_info(Model* model, uint8_t i);
 // FIXME: descript in common/platform.cpp
-void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
+void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint32_t offset_in_word, size_t n);
 void my_memcpy_from_param_row(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_col(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_first_tile_index(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
