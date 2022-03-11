@@ -31,6 +31,7 @@ static void handle_node(Model *model, uint16_t node_idx) {
     }
 #if SPARSE
     // XXX: WTF, it works!!!!
+    // FIXME: remove this after removing op_merge
     if(cur_node->op_type == 1 || cur_node->op_type == 3) {
         // cur node is ConvMerge or GemmMerge
         input_id[1] = get_node(node_idx - 1)->inputs[1];

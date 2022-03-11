@@ -172,7 +172,7 @@ const uint8_t* get_param_row_base_pointer(const ParameterInfo *param, uint32_t *
 const uint8_t* get_param_col_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 const uint8_t* get_param_first_tile_index_base_pointer(const ParameterInfo *param, uint32_t *limit_p);
 // FIXME: descript in common/platform.cpp
-int16_t get_q15_param(Model* model, const ParameterInfo *param, uint32_t offset_in_word);
+int16_t get_q15_param(Model* model, const ParameterInfo *param, uint16_t offset_in_word);
 void put_q15_param(ParameterInfo *param, uint16_t offset_in_word, int16_t val);
 int64_t get_int64_param(const ParameterInfo *param, size_t i);
 uint16_t get_next_slot(Model *model, const ParameterInfo *param);
@@ -181,7 +181,7 @@ const Node* get_node(size_t i);
 const Node* get_node(const ParameterInfo* param);
 SlotInfo * get_slot_info(Model* model, uint8_t i);
 // FIXME: descript in common/platform.cpp
-void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint32_t offset_in_word, size_t n);
+void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_row(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_col(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void my_memcpy_from_param_first_tile_index(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
