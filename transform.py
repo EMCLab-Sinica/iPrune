@@ -614,6 +614,10 @@ def nchw2nhwc_without_flatten(arr):
     arr = np.transpose(arr, axes=(0, 2, 3, 1))  # NCHW -> NHWC
     return arr
 
+def nchw2nwhc_without_flatten(arr):
+    arr = np.transpose(arr, axes=(0, 3, 2, 1))  # NCHW -> NWHC
+    return arr
+
 def im2col(arr, dims):
     arr = np.reshape(arr, (dims[0], -1))
     return arr
@@ -733,30 +737,35 @@ def dump_matrix(arr):
     for row in arr:
         logger.debug(" ".join("{:>6d}".format(x) for x in row))
 
+def xxxx2xcxxx(arr, config, dims):
+    chunk_len = dims[1] # c
+    arr = im2col(arr, dims)
+    new_arr = []
+
+    for row in arr:
+        lists = [np.array(row[i : i + chunk_len]) for i in range(0, len(row), chunk_len)]
+        lists = np.array(lists)
+        group_size = (dims[2] * dims[3], config['group'][1])
+        bsr = csr_matrix(lists).tobsr(group_size)
+        new_row = []
+        for data in bsr.data:
+            new_row.extend(data.flatten())
+        new_arr.append(new_row)
+    return np.array(new_arr)
+
 def toBSR(matrix, config, dims, op_type):
     shape = matrix.shape
     matrix = np.reshape(matrix, tuple(dims))
     if op_type == 'CONV':
-        matrix = nchw2nhwc_without_flatten(matrix)
-        matrix = im2col(matrix, dims)
-        if args.stable_power:
-            # len(rows): #filter groups
-            # len(cols): the number of input_tile_c * K * K
-            group_size = (config['group'][0], config['group'][1])
-            dump_matrix(matrix)
-            bsr = csr_matrix(matrix).tobsr(group_size)
-            logger.debug('Data(transposed):\n{}'.format(bsr.data))
-            data = bsr.data
-        else:
-            # len(rows): the number of input_tile_c * K * K
-            # len(cols): #filter groups
-            matrix = np.transpose(matrix)
-            group_size = (config['group'][1], config['group'][0])
-            dump_matrix(matrix)
-            bsr = csr_matrix(matrix).tobsr(group_size)
-            logger.debug('Data(before transpose):\n{}'.format(bsr.data))
-            data = np.transpose(bsr.data, axes=(0,2,1))
-            logger.debug('Data(after transpose):\n{}'.format(data))
+        matrix = nchw2nwhc_without_flatten(matrix)
+        matrix = xxxx2xcxxx(matrix, config, dims)
+        # len(rows): #filter groups
+        # len(cols): the number of input_tile_c * K * K
+        group_size = (config['group'][0], config['group'][1])
+        dump_matrix(matrix)
+        bsr = csr_matrix(matrix).tobsr(group_size)
+        logger.debug('Data(transposed):\n{}'.format(bsr.data))
+        data = bsr.data
     elif op_type == 'GEMM':
         # the dim of the GEMM matrix has been [n_channel, n_filter]
         # len(rows): the number of input_tile_c
@@ -773,12 +782,7 @@ def toBSR(matrix, config, dims, op_type):
     logger.info('filter size: {}'.format(len(data)))
     logger.info('Rows size: {}'.format(rows.shape))
     logger.info('Cols size: {}'.format(cols.shape))
-    if op_type == 'CONV':
-        if args.stable_power:
-            Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(cols) + 1)
-        else:
-            Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, len(rows) + 1)
-    elif op_type == 'GEMM':
+    if op_type == 'GEMM':
         Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, int(dims[0] / config['group'][1]) + 1)
     Constants.MAX_COL_LEN = max(Constants.MAX_COL_LEN, len(cols) + 1)
     Constants.MAX_ROW_LEN = max(Constants.MAX_ROW_LEN, len(rows) + 1)
@@ -798,29 +802,6 @@ def find_first_tile_index(cols, rows, config, dims, op_type):
                 if first_tile_index[col_val] == -1:
                     first_tile_index[col_val] = i - 1
                 cur_n_cols += 1
-    else:
-        if not args.stable_power:
-            # Example:
-            #   Cols: [1 2 4 6 7 | 0 6  7 | 0 1 2 4 6 7 | 1 4 5 6 7 | 0 1 2 4 6 7 | 0 1 2 4 5 6 7 | 0 5 6 7 | 1 5 6 7]
-            #   Rows: [ 0  5  8 14 19 25 32 36 40]
-            slice_n_output_tile_c = int(dims[0] / config['group'][0])
-            row_len = len(rows)
-            first_tile_index = [-1] * slice_n_output_tile_c
-            for i in range(1, row_len):
-                n_cols = rows[i] - rows[i - 1]
-                cur_n_cols = 0
-                while cur_n_cols < n_cols:
-                    col_index = rows[i - 1] + cur_n_cols
-                    col_val = cols[col_index]
-                    if first_tile_index[col_val] == -1:
-                        first_tile_index[col_val] = i - 1
-                    cur_n_cols += 1
-        else:
-            filter_tile_len = len(rows) - 1
-            first_tile_index = [-1] * filter_tile_len
-            for i in range(1, len(rows)):
-                if rows[i] - rows[i - 1] != 0:
-                    first_tile_index[i - 1] = cols[rows[i - 1]]
     logger.debug('first_tile_index: {}'.format(first_tile_index))
     logger.info('first_tile_index length: {}'.format(len(first_tile_index)))
     return first_tile_index
@@ -855,24 +836,23 @@ for params in parameters:
                 float_data = params.float_data
             else:
                 float_data = decode_raw_data(params)
-            # TODO: handle data layout for sparse matrix
+
             if params.name in conv_param_names and not args.sparse:
                 logger.info('Reorder conv param %s', params.name)
                 float_data = nchw2nhwc(float_data, params.dims)
 
-            # TODO: transform the sparse matrix into BSR format
             int_data_Q15 = _Q15(np.array(float_data) / config['scale'], 'Parameter')
             if args.sparse:
                 cols = []
                 rows = []
                 first_tile_index = []
             if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
-                # layout: NHWC
+                # transform the sparse matrix into BSR format
+                # layout: NCWHC
                 layer_config = model_config[node_idx]
                 node_idx += 1
                 if params.name in conv_param_names:
                     data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'CONV')
-                    first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims, 'CONV')
                 elif params.name in gemm_param_names:
                     data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'GEMM')
                     first_tile_index = find_first_tile_index(cols, rows, layer_config, params.dims, 'GEMM')
