@@ -246,7 +246,6 @@ void init_cpu_buffer(void) {
     MY_ASSERT(cpu_buffer[CPU_BUFFER_SIZE - 1] == 0);
 }
 
-// FIXME: common/platform.cpp
 void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay) {
     MY_ASSERT(param->bitwidth == 16);
     MY_ASSERT(param->slot < SLOT_CONSTANTS_MIN);
