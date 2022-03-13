@@ -155,8 +155,7 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
 #if STABLE_POWER
     int16_t channel_offset_c = 0;
 #else // STABLE_POWER
-    int16_t channel_offset_c = output_tile_c * conv_params->cur_n_cols +
-        (conv_params->filter_idx % output_tile_c);
+    int16_t channel_offset_c = conv_params->filter_idx;
 #endif // STABLE_POWER
 #else // SPARSE
 #if STABLE_POWER
@@ -185,20 +184,12 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
     my_printf_debug("output_tile_h: %d" NEWLINE, output_tile_h);
     my_printf_debug("cur_output_data_offset: %d" NEWLINE, cur_output_data_offset);
 #else // STABLE_POWER
-#if SPARSE
-    uint32_t cur_output_data_offset =
-        conv_params->OUTPUT_W * conv_params->OUTPUT_H * output_tile_c * (conv_params->cur_row_val) + // n
-        output_h * conv_params->OUTPUT_W * output_tile_c * conv_params->n_cols + // w
-        output_w * output_tile_c * conv_params->n_cols + // h
-        channel_offset_c; // c
-#else // SPARSE
     // 2 * OUTPUT_W * OUTPUT_H * OUTPUT_CHANNEL is the offset of result of psum cmd
     uint32_t cur_output_data_offset =
         2 * conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL + // n
-        output_h * conv_params->OUTPUT_W * conv_params->OUTPUT_CHANNEL +                                                   // w
-        output_w * conv_params->OUTPUT_CHANNEL +                                                                           // h
-        channel_offset_c;                                                                                                  // c
-#endif // SPARSE
+        output_h * conv_params->OUTPUT_W * conv_params->OUTPUT_CHANNEL +                  // w
+        output_w * conv_params->OUTPUT_CHANNEL +                                          // h
+        channel_offset_c;                                                                 // c
 #endif // STABLE_POWER
 
 #if INDIRECT_RECOVERY
@@ -272,7 +263,6 @@ static void convTask(int16_t cur_input_h, ConvTaskParams *conv_params) {
                 filter_tmp[conv_params->filter_offset - 1] = 0;
             }
 #if SPARSE
-            // int16_t cols_first_tile_index = get_col_first_tile_index(conv_params->model, conv_params->conv_filter, conv_params->filter_tile_index);
             if(conv_params->cur_n_cols == 0) {
 #else // SPARSE
             if (conv_params->input_tile_c_index == 0 && conv_params->kX == 0 && conv_params->kY == 0) {
@@ -701,7 +691,6 @@ void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
  * Note: Some members, such as "kX" and "kY", will not be modified in this method. Therefore,
  * you should change them after calling this method.
  */
-#if STABLE_POWER
 void next_nonzero_value(ConvTaskParams *conv_params, int16_t *col_val) {
     // rows: the number of filter groups
     // cols: the number of input_tile_c
@@ -720,25 +709,6 @@ void next_nonzero_value(ConvTaskParams *conv_params, int16_t *col_val) {
         conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
     }
 }
-#else // STABLE_POWER
-void next_nonzero_value(ConvTaskParams *conv_params, int16_t row_index_offset) {
-    // len(rows): the number of input_tile_c * K * K
-    // cols: #filter groups
-    while(!conv_params->n_cols && conv_params->row_index - row_index_offset < 0) {
-        conv_params->cur_row_val = conv_params->next_row_val;
-        conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
-        conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
-        conv_params->row_index++;
-    }
-    if(conv_params->n_cols) {
-        conv_params->cur_n_cols = 0;
-        conv_params->input_tile_c_index = (conv_params->row_index - 1) % conv_params->n_tiles_c;
-        conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-        conv_params->filter_tile_index = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-        conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-    }
-}
-#endif // STABLE_POWER
 #endif // SPARSE
 
 void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output, int16_t output_w, int16_t output_h) {
@@ -790,9 +760,15 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
             my_printf_debug("Loaded chunk" NEWLINE);
             dump_matrix_debug(to_add, real_chunk_len, ValueInfo(output));
 #if !STABLE_POWER
+#if SPARSE
+            if(!conv_params->cur_n_cols) {
+                memset(to_add, 0, real_chunk_len * sizeof(int16_t));
+            }
+#else // SPARSE
             if(conv_params->input_tile_c_index == 0 && conv_params->kX == 0 && conv_params->kY == 0) {
                 memset(to_add, 0, real_chunk_len * sizeof(int16_t));
             }
+#endif // SPARSE
 #endif // STABLE_POWER
             // perform accum
             my_add_q15(be_add, to_add, be_add, real_chunk_len);
@@ -833,7 +809,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->H = H;
     conv_params->W = W;
     conv_params->cur_op = 0; // 0: conv, 1: merge
+#if STABLE_POWER
+    conv_params->psum_buffer_version = 0;
+#else // STABLE_POWER
     conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * input_channels / node->flags.extra.conv.input_tile_c) & 0x1;
+#endif // STABLE_POWER
 
 #if JAPARI
     conv_params->conv_input_has_footprints = has_footprints(conv_input);
@@ -957,17 +937,15 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     MY_ASSERT(conv_params->input_tile_c_index <= conv_params->n_tiles_c);
 #else // INTERMITTENT
 #if SPARSE
-#if STABLE_POWER
     int16_t col_val;
     next_nonzero_value(conv_params, &col_val);
     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
     conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
+#if STABLE_POWER
+    conv_params->psum_buffer_version = 0;
 #else // STABLE_POWER
-    int16_t row_index_offset = conv_params->n_tiles_c * conv_params->kH * conv_params->kW;
-    next_nonzero_value(conv_params, row_index_offset);
-    conv_params->kX = (conv_params->row_index - 1) / (conv_params->kW * conv_params->n_tiles_c);
-    conv_params->kY = ((conv_params->row_index - 1) % (conv_params->kW * conv_params->n_tiles_c)) / conv_params->n_tiles_c;
+    conv_params->psum_buffer_version = (conv_params->n_cols - conv_params->cur_n_cols) & 0x1;
 #endif // STABLE_POWER
 #endif // SPARSE
 #endif // INTERMITTENT
@@ -977,12 +955,14 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     my_printf_debug("conv_params->next_row_val: %d\n", conv_params->next_row_val);
     my_printf_debug("conv_params->n_cols: %d\n", conv_params->n_cols);
     my_printf_debug("conv_params->cur_n_cols: %d\n", conv_params->cur_n_cols);
+    my_printf_debug("conv_params->cached_cur_n_cols: %d\n", conv_params->cached_cur_n_cols);
     my_printf_debug("conv_params->input_tile_c_offset: %d\n", conv_params->input_tile_c_offset);
     my_printf_debug("conv_params->input_tile_c_index: %d\n", conv_params->input_tile_c_index);
     my_printf_debug("conv_params->filter_tile_index: %d\n", conv_params->filter_tile_index);
     my_printf_debug("conv_params->filter_idx: %d\n", conv_params->filter_idx);
     my_printf_debug("conv_params->kX: %d\n", conv_params->kX);
     my_printf_debug("conv_params->kY: %d\n", conv_params->kY);
+    my_printf_debug("conv_params->psum_buffer_version: %d\n", conv_params->psum_buffer_version);
     my_printf_debug("\n");
 #endif // SPARSE
 #if JAPARI
@@ -1015,6 +995,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         while (true) {
             my_printf_debug("input_h: %d/input_w: %d" NEWLINE, conv_params->input_h, conv_params->input_w);
 #if SPARSE
+            // cache when switch tile
             conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
 #endif // SPARSE
             for (; conv_params->input_w <= conv_params->input_w_last; conv_params->input_w += conv_params->stride) {
@@ -1033,6 +1014,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                             conv_params->input_w += conv_params->kY;
                             conv_params->input_h += conv_params->kX;
                             my_printf_debug("(%d, %d) (%d, %d)" NEWLINE, conv_params->input_h, conv_params->input_w, conv_params->kX, conv_params->kY);
+                            my_printf_debug("current psum buffer version: %d" NEWLINE, conv_params->psum_buffer_version);
                             if(conv_params->cur_op == 0) {
                                 // perform psum
                                 handle_conv_inner_loop(model, conv_params);
@@ -1097,7 +1079,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                      * the last buffer wrote are different. Flip the version to let the final results
                      * be stored in the same buffer.
                      */
+#if SPARSE
+                    conv_params->psum_buffer_version ^= (conv_params->cur_n_cols - conv_params->cached_cur_n_cols) & 0x1 ;
+#else // SPARSE
                     conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
+#endif // SPARSE
 #endif // STABLE_POWER
                 }
                 conv_params->input_h = conv_params->input_h_first;
@@ -1110,25 +1096,31 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                 break;
             }
             my_printf_debug("cur_n_cols: %d" NEWLINE, conv_params->cur_n_cols);
+            my_printf_debug("111111111" NEWLINE);
             // find the next weight tiles in the same filters
             col_val = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
             // find next tile in the same row
             conv_params->input_tile_c_index = col_val / (conv_params->kW * conv_params->kH);
-            conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
 #else // SPARSE
             conv_params->input_tile_c_index++;
+#endif // SPARSE
 #if !STABLE_POWER
             /* If (conv_params->kH * conv_params->kW) is odd, the first buffer read and
              * the last buffer wrote are different. Flip the version to let the final results
              * be stored in the same buffer.
              */
+#if SPARSE
+            conv_params->psum_buffer_version ^= (conv_params->cur_n_cols - conv_params->cached_cur_n_cols) & 0x1 ;
+            conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
+#else // SPARSE
             conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
+#endif // SPARSE
 #endif // STABLE_POWER
             if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
                 break;
             }
-#endif // SPARSE
             conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+            my_printf_debug("Swap tile !" NEWLINE);
         }
         my_printf_debug("Finish output channel [%d, %d)" NEWLINE, conv_params->filter_idx,
                     conv_params->filter_idx + conv_params->flags->extra.conv.output_tile_c);
@@ -1152,9 +1144,15 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
         conv_params->input_h = conv_params->input_h_first;
         conv_params->input_w = conv_params->input_w_first;
-#if !STABLE_POWER
         /* init version */
+#if STABLE_POWER
+        conv_params->psum_buffer_version = 0;
+#else // STABLE_POWER
+#if SPARSE
+        conv_params->psum_buffer_version = (conv_params->n_cols - conv_params->cur_n_cols) & 0x1;
+#else // SPARSE
         conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * input_channels / node->flags.extra.conv.input_tile_c) & 0x1;
+#endif // SPARSE
 #endif // STABLE_POWER
     }
 EXIT_LAYER:
