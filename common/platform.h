@@ -16,9 +16,7 @@ extern uint8_t dma_counter_enabled;
 
 [[ noreturn ]] void ERROR_OCCURRED(void);
 void my_memcpy(void* dest, const void* src, size_t n);
-// FIXME: descript in .cpp
 void my_memcpy_to_param(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay);
-// FIXME: descript in .cpp
 void my_memcpy_from_intermediate_values(void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n);
 void read_from_samples(void *dest, uint16_t offset_in_word, size_t n);
 ParameterInfo* get_intermediate_parameter_info(uint8_t i);
@@ -33,6 +31,7 @@ uint64_t get_nvm_writes(void);
 void write_hawaii_layer_footprint(uint16_t layer_idx, int16_t n_jobs);
 uint16_t read_hawaii_layer_footprint(uint16_t layer_idx);
 void reset_hawaii_layer_footprint(uint16_t layer_idx);
+void reset_hawaii_sub_layer_footprint(uint16_t layer_idx);
 #endif
 void start_cpu_counter(void);
 // pointer to member https://stackoverflow.com/questions/670734/pointer-to-class-data-member

@@ -83,6 +83,7 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
     if (!model->running) {
         // reset model
         model->layer_idx = 0;
+        model->sub_layer_idx = 0;
         for (uint8_t idx = 0; idx < NUM_SLOTS; idx++) {
             SlotInfo *cur_slot_info = get_slot_info(model, idx);
             cur_slot_info->user = -1;
@@ -108,6 +109,7 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
     for (uint16_t node_idx = model->layer_idx; node_idx < MODEL_NODES_LEN; node_idx++) {
         handle_node(model, node_idx);
         model->layer_idx++;
+        model->sub_layer_idx = 0;
 
         commit_model();
 

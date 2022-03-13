@@ -1075,6 +1075,12 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #else // SPARSE
                     conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
 #endif // SPARSE
+                    // commit model for sub_layer
+                    conv_params->model->sub_layer_idx++;
+                    commit_model();
+#if HAWAII
+                    reset_hawaii_sub_layer_footprint(conv_params->model->layer_idx);
+#endif // HAWAII
 #endif // STABLE_POWER
 #if SPARSE
                     if(conv_params->input_w + conv_params->stride > conv_params->input_w_last &&
@@ -1097,7 +1103,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                 break;
             }
             my_printf_debug("cur_n_cols: %d" NEWLINE, conv_params->cur_n_cols);
-            my_printf_debug("111111111" NEWLINE);
             // find the next weight tiles in the same filters
             col_val = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
             // find next tile in the same row
