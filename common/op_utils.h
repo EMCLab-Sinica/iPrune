@@ -16,7 +16,6 @@ extern int16_t lea_buffer[LEA_BUFFER_SIZE];
 #if STABLE_POWER
 extern int16_t cpu_buffer[CPU_BUFFER_SIZE];
 void init_cpu_buffer();
-// FIXME: common/platform.cpp
 void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay);
 #endif
 void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int8_t buffer_id);

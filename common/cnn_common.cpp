@@ -77,7 +77,6 @@ const uint8_t* get_param_first_tile_index_base_pointer(const ParameterInfo *para
 }
 #endif
 
-// FIXME: descript in common/platform.cpp
 int16_t get_q15_param(Model* model, const ParameterInfo *param, uint16_t i) {
     MY_ASSERT(param->bitwidth == 16);
     if (param->slot == SLOT_TEST_SET) {
@@ -229,7 +228,6 @@ uint16_t get_col_val(Model *model, const ParameterInfo *params, uint16_t col_ind
 }
 #endif // SPARSE
 
-// FIXME: descript in common/platform.cpp
 void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
     if (param->slot == SLOT_TEST_SET) {
         read_from_samples(dest, offset_in_word, n);
