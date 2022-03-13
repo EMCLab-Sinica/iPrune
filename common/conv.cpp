@@ -846,12 +846,78 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->input_w = conv_params->input_w_first;
 #if INTERMITTENT
 
+    /* Handle sub-layer footprint */
+    uint32_t first_unfinished_sub_layer_idx = conv_params->model->sub_layer_idx;
+    my_printf_debug("first_unfinished_sub_layer_idx: %d" NEWLINE, first_unfinished_sub_layer_idx);
+    // FIXME: get ceil of the results
+    uint16_t n_output_tile_w = conv_params->OUTPUT_W / conv_params->flags->extra.conv.output_tile_w + 1;
+    uint16_t n_output_tile_h = conv_params->OUTPUT_H / conv_params->flags->extra.conv.output_tile_h + 1;
+    uint16_t n_input_tile_c = input_channels / conv_params->flags->extra.conv.input_tile_c;
+    uint16_t sub_layers_in_a_filter_tile = n_output_tile_w * n_output_tile_h * n_input_tile_c;
+    my_printf_debug("sub_layers_in_a_filter_tile: %d" NEWLINE, sub_layers_in_a_filter_tile);
+    conv_params->filter_tile_index = first_unfinished_sub_layer_idx / sub_layers_in_a_filter_tile;
+
+    first_unfinished_sub_layer_idx %= sub_layers_in_a_filter_tile;
+    conv_params->input_tile_c_index = first_unfinished_sub_layer_idx / (n_output_tile_w * n_output_tile_h);
+
+    first_unfinished_sub_layer_idx %= (n_output_tile_w * n_output_tile_h);
+    uint16_t tile_w_offset = first_unfinished_sub_layer_idx / n_output_tile_h;
+    uint16_t tile_h_offset = first_unfinished_sub_layer_idx % n_output_tile_h;
+    uint16_t input_w_offset = tile_w_offset * conv_params->flags->extra.conv.output_tile_w;
+    uint16_t input_h_offset = tile_h_offset * conv_params->flags->extra.conv.output_tile_h;
+    conv_params->input_w += input_w_offset;
+    conv_params->input_h += input_h_offset;
+
+    /* Handle intra-sub-layer footprint */
     uint32_t first_unfinished_job_idx = run_recovery(model, output);
     my_printf_debug("first_unfinished_job_idx: %d\n", first_unfinished_job_idx);
+    first_unfinished_job_idx &= ~1;
+    my_printf_debug("fixed first_unfinished_job_idx: %d\n", first_unfinished_job_idx);
+
+    uint16_t jobs_in_a_weight_tile =
+        2 * conv_params->flags->extra.conv.output_tile_w *
+        conv_params->flags->extra.conv.output_tile_h *
+        conv_params->flags->extra.conv.output_tile_c; // psum, accum
+    my_printf_debug("jobs_in_a_weight_tile: %d" NEWLINE, jobs_in_a_weight_tile);
+    uint16_t intra_kernel_offset = first_unfinished_job_idx / jobs_in_a_weight_tile;
+    my_printf_debug("intra_kernel_offset: %d" NEWLINE, intra_kernel_offset);
+    conv_params->kY = intra_kernel_offset / conv_params->kH;
+    conv_params->kX = intra_kernel_offset % conv_params->kH;
+
+    first_unfinished_job_idx %= jobs_in_a_weight_tile;
+    uint16_t input_tile_w_offset =
+        first_unfinished_job_idx / (2 * conv_params->flags->extra.conv.output_tile_h * conv_params->flags->extra.conv.output_tile_c);
+    first_unfinished_job_idx %= (2 * conv_params->flags->extra.conv.output_tile_h * conv_params->flags->extra.conv.output_tile_c);
+    my_printf_debug("input_tile_w_offset: %d" NEWLINE, input_tile_w_offset);
+
+    uint16_t jobs_in_a_two_cmd = 2 * conv_params->flags->extra.conv.output_tile_c;
+    uint16_t input_tile_h_offset = first_unfinished_job_idx / jobs_in_a_two_cmd;
+    my_printf_debug("input_tile_h_offset: %d" NEWLINE, input_tile_w_offset);
+    my_printf_debug("jobs_in_a_two_cmd: %d" NEWLINE, jobs_in_a_two_cmd);
+    conv_params->input_w += input_tile_w_offset;
+    conv_params->input_h += input_tile_h_offset;
+
+    first_unfinished_job_idx %= jobs_in_a_two_cmd;
+    conv_params->cur_op = first_unfinished_job_idx / conv_params->flags->extra.conv.output_tile_c;
+
+    uint16_t filter_offset_in_tile = first_unfinished_job_idx % conv_params->flags->extra.conv.output_tile_c;
+    my_printf_debug("filter_offset_in_tile: %d" NEWLINE, filter_offset_in_tile);
+    conv_params->filter_idx =
+        conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c +
+        filter_offset_in_tile;
+    conv_params->input_tile_c_offset =
+        conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+
+    uint16_t tile_1x1xTn_offset =
+        conv_params->input_tile_c_index * conv_params->kH * conv_params->kW +
+        conv_params->kH * conv_params->kY +
+        conv_params->kX;
+    conv_params->psum_buffer_version ^= tile_1x1xTn_offset & 0x1;
+/*
 #if SPARSE
     uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset_sparse(model, conv_filter, output, first_unfinished_job_idx));
 #else // SPARSE
-    uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, first_unfinished_job_idx));
+    uint32_t first_unfinished_value_offset = batch_stat(job_index_to_offset(output, first_unfinished_job_idx));
 #endif //SPARSE
     my_printf_debug("first_unfinished_value_offset: %d\n", first_unfinished_value_offset);
     fix_first_unfinished_value_offset(model, &first_unfinished_value_offset);
@@ -932,10 +998,19 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->input_h += first_unfinished_value_offset * conv_params->stride;
     }
 #endif
+*/
     my_printf_debug("initial output N = %d" NEWLINE, conv_params->input_tile_c_index);
     my_printf_debug("initial output H = %d" NEWLINE, (conv_params->input_h - conv_params->input_h_first) / conv_params->stride);
     my_printf_debug("initial output W = %d" NEWLINE, (conv_params->input_w - conv_params->input_w_first) / conv_params->stride);
     my_printf_debug("initial output C = %d" NEWLINE, conv_params->filter_idx);
+    my_printf_debug("conv_params->input_tile_c_offset: %d\n", conv_params->input_tile_c_offset);
+    my_printf_debug("conv_params->input_tile_c_index: %d\n", conv_params->input_tile_c_index);
+    my_printf_debug("conv_params->filter_tile_index: %d\n", conv_params->filter_tile_index);
+    my_printf_debug("conv_params->filter_idx: %d\n", conv_params->filter_idx);
+    my_printf_debug("conv_params->kX: %d\n", conv_params->kX);
+    my_printf_debug("conv_params->kY: %d\n", conv_params->kY);
+    my_printf_debug("conv_params->psum_buffer_version: %d\n", conv_params->psum_buffer_version);
+    my_printf_debug("\n");
     // = happens when all values are finished
     MY_ASSERT(conv_params->input_tile_c_index <= conv_params->n_tiles_c);
 #else // INTERMITTENT
