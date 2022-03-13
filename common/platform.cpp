@@ -201,6 +201,18 @@ const char* datatype_name<Node::Footprint>(void) {
     return "footprint";
 }
 
+void reset_hawaii_sub_layer_footprint(uint16_t layer_idx) {
+    Node::Footprint* footprint_vm = footprints_vm + layer_idx;
+    footprint_vm->value = 0;
+    my_printf_debug("Reset HAWAII sub layer footprint ..." NEWLINE);
+    my_printf_debug("footprint_vm->value: %d" NEWLINE, footprint_vm->value);
+    MY_ASSERT(footprint_vm->value < INTERMEDIATE_VALUES_SIZE);
+    commit_versioned_data<Node::Footprint>(layer_idx);
+    my_printf_debug("Write HAWAII layer footprint %d for layer %d" NEWLINE, footprint_vm->value, layer_idx);
+    MY_ASSERT(footprint_vm->value % BATCH_SIZE == 0);
+    my_printf_debug("Finish reseting HAWAII sub layer footprint" NEWLINE);
+}
+
 void write_hawaii_layer_footprint(uint16_t layer_idx, int16_t n_jobs) {
     Node::Footprint* footprint_vm = footprints_vm + layer_idx;
     footprint_vm->value += n_jobs;
