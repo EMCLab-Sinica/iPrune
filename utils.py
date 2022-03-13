@@ -22,7 +22,7 @@ import onnxruntime.backend as backend
 
 logger = logging.getLogger(__name__)
 
-OPS_WITH_MERGE = ['Conv', 'Gemm']
+OPS_WITH_MERGE = ['Gemm']
 
 TOPDIR = pathlib.Path(__file__).absolute().parent
 

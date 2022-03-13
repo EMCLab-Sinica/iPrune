@@ -6,7 +6,8 @@ config = {
             'output': [28,28,8],
             'tile': {
                 'input': [8,5,1],
-                'weight': [5,5,1,8]
+                'weight': [5,5,1,8],
+                'output': [1, 8], # [output_tile_w, output_tile_h]
             },
             'group': [8, 1], # [n_filter, n_channel]
             'stride': 1
@@ -17,7 +18,8 @@ config = {
             'output': [14,14,16],
             'tile': {
                 'input': [8,5,8],
-                'weight': [5,5,8,16]
+                'weight': [5,5,8,16],
+                'output': [1, 8], # [output_tile_w, output_tile_h]
             },
             'group': [4, 4],
             'stride': 1

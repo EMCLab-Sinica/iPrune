@@ -860,7 +860,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->H = H;
     conv_params->W = W;
     conv_params->cur_op = 0; // 0: conv, 1: merge
-    conv_params->psum_buffer_version = 0;
+    conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * input_channels / node->flags.extra.conv.input_tile_c) & 0x1;
 
 #if JAPARI
     conv_params->conv_input_has_footprints = has_footprints(conv_input);
@@ -1059,10 +1059,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                                         output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) /
                                                     conv_params->stride;
                                 conv_merge(model, conv_params, output, output_w, output_h);
-                                preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, conv_params->psum_buffer_version ^ 1);
+                                preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, conv_params->psum_buffer_version ^ 0x1);
                                 conv_params->cur_op ^= 1;
                             }
-                            conv_params->psum_buffer_version ^= 1;
+                            conv_params->psum_buffer_version ^= 0x1;
 #else // STABLE_POWER
                             }
 #endif // STABLE_POWER
@@ -1077,13 +1077,17 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                     uint16_t output_h = (conv_params->input_h - conv_params->input_h_first) / conv_params->stride,
                              output_w = (conv_params->input_w - conv_params->input_w_first) / conv_params->stride;
                     if(conv_params->input_tile_c_index != 0) {
-                        // TODO: perform psum addition
+                        // perform psum addition
                         conv_merge(model, conv_params, output, output_w, output_h);
                     }
                     preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, 0);
                     init_cpu_buffer();
 #else // STABLE_POWER
-                    conv_params->psum_buffer_version ^= 1;
+                    /* If (conv_params->kH * conv_params->kW) is odd, the first buffer read and
+                     * the last buffer wrote are different. Flip the version to let the final results
+                     * be stored in the same buffer.
+                     */
+                    conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
 #endif // STABLE_POWER
                     conv_params->kX = conv_params->kY = 0;
                 }
@@ -1107,7 +1111,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #else // SPARSE
             conv_params->input_tile_c_index++;
 #if !STABLE_POWER
-            conv_params->psum_buffer_version ^= 1;
+            /* If (conv_params->kH * conv_params->kW) is odd, the first buffer read and
+             * the last buffer wrote are different. Flip the version to let the final results
+             * be stored in the same buffer.
+             */
+            conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
 #endif // STABLE_POWER
             if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
                 break;
@@ -1154,6 +1162,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
         conv_params->input_h = conv_params->input_h_first;
         conv_params->input_w = conv_params->input_w_first;
+#if !STABLE_POWER
+        /* init version */
+        conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * input_channels / node->flags.extra.conv.input_tile_c) & 0x1;
+#endif // STABLE_POWER
     }
     flip_state_bit(model, output);
 
@@ -1234,12 +1246,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #else // SPARSE
     uint8_t n_tiles_c = 1;
 #endif // SPARSE
-#if STABLE_POWER
     uint8_t input_version = 0;
-#else // STABLE_POWER
-    uint8_t input_version = ((conv_filter->dims[1] / node->flags.extra.conv.input_tile_c *
-            conv_filter->dims[2] * conv_filter->dims[3])) & 1;
-#endif // STABLE_POWER
 
 
     MY_ASSERT(n_tiles_c);

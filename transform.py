@@ -51,9 +51,7 @@ class Constants:
     NUM_INPUTS = 0  # will be filled during parsing
     N_INPUT = 0
     # Match the size of external FRAM
-    # FIXME: handle smaller NVM size
-    NVM_SIZE = 1024 * 1024
-#    NVM_SIZE = 512 * 1024
+    NVM_SIZE = 512 * 1024
     N_SAMPLES = 20
     # to make the code clearer; used in Conv
     TEMP_FILTER_WIDTH = 1
@@ -230,7 +228,6 @@ if args.all_samples:
     Constants.NVM_SIZE += config['n_all_samples'] * 2*config['total_sample_size']  # multiply by 2 for Q15
 model_data = config['data_loader'](start=0, limit=Constants.N_SAMPLES)
 
-Constants.BATCH_SIZE = args.batch_size
 if args.stateful:
     Constants.STATEFUL = 1
     Constants.METHOD = "STATEFUL"

@@ -298,7 +298,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
                 chunk_offset = 0;
             }
         }
-    } else if(node->op_type == 2) {
+    } else if(node->op_type == 1) {
         // FIXME: update op type number after removing merge state
         // is fc op
         uint32_t total_offset = filter_idx;

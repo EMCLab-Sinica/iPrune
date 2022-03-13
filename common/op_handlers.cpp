@@ -24,6 +24,12 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     MY_ASSERT(bitwidth == 16);
     int16_t data_len = X->params_len / (bitwidth / 8);
 
+#if !STABLE_POWER
+    // FIXME: After removing FC merge, this branch can be removed
+    if(X->dims[2] != 0) // conv
+        data_len /= 3;
+#endif // STABLE_POWER
+    my_printf_debug("data_len: %d" NEWLINE, data_len);
     uint16_t data_offset = 0;
     uint16_t output_offset = 0;
 #if INTERMITTENT
@@ -83,7 +89,7 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             }
             stop_cpu_counter(&Counters::embedding);
 #endif
-            my_printf_debug("output_offset=%d output_val=%d" NEWLINE, output_offset, output_val);
+            my_printf_debug("input_offset=%d output_offset=%d output_val=%d" NEWLINE, data_offset, output_offset, output_val);
             put_q15_param(output, output_offset, output_val);
 #if HAWAII
             if (cur_batch_offset == BATCH_SIZE - 1) {
