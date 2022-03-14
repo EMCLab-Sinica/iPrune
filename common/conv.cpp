@@ -1001,18 +1001,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->filter_offset = 1 * conv_params->dest_offset;
         while (true) {
             my_printf_debug("input_h: %d/input_w: %d" NEWLINE, conv_params->input_h, conv_params->input_w);
-#if SPARSE
-            // cache when switch tile
-            conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
-#endif // SPARSE
             for (; conv_params->input_w <= conv_params->input_w_last; conv_params->input_w += conv_params->stride) {
                 for (; conv_params->input_h <= conv_params->input_h_last; conv_params->input_h += conv_params->tile_h) {
-#if SPARSE
-                    conv_params->cur_n_cols = conv_params->cached_cur_n_cols;
-                    col_val = COL_VALS[conv_params->cur_n_cols];
-                    conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
-                    conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
-#endif // SPARSE
                     for(; conv_params->kY < conv_params->kW;) {
                         for(; conv_params->kX < conv_params->kH;) {
                             conv_params->input_w += conv_params->kY;
@@ -1086,6 +1076,16 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                     conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
 #endif // SPARSE
 #endif // STABLE_POWER
+#if SPARSE
+                    if(conv_params->input_w + conv_params->stride > conv_params->input_w_last &&
+                            conv_params->input_h + conv_params->tile_h > conv_params->input_h_last) {
+                        break;
+                    }
+                    conv_params->cur_n_cols = conv_params->cached_cur_n_cols;
+                    col_val = COL_VALS[conv_params->cur_n_cols];
+                    conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
+                    conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
+#endif // SPARSE
                 }
                 conv_params->input_h = conv_params->input_h_first;
             }
@@ -1129,6 +1129,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         // FIXME: handle the issues if the entire row is pruned
         conv_params->n_cols = conv_params->cur_n_cols = 0;
         next_nonzero_value(conv_params, &col_val);
+        // cache when switch tile
+        conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
         if(conv_params->n_cols) {
             // XXX: add a checker to verify the result
             my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));
