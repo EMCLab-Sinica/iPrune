@@ -823,6 +823,9 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->OUTPUT_CHANNEL = output->dims[1];
     conv_params->N_FILTERS = conv_filter->dims[0];
 #if SPARSE
+    // FIXME: determine COL LEN in transform.py
+    const uint16_t COL_LEN = 50;
+    int16_t COL_VALS[COL_LEN] = {0};
     conv_params->row_index = 0;
     conv_params->cur_row_val = 0; // cur_row_val + cur_n_cols => cur_cols_index
     conv_params->next_row_val = 0;
@@ -939,6 +942,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if SPARSE
     int16_t col_val;
     next_nonzero_value(conv_params, &col_val);
+    if(conv_params->n_cols) {
+        // XXX: add a checker to verify the result
+        my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));
+    }
     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
     conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
@@ -1002,10 +1009,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                 for (; conv_params->input_h <= conv_params->input_h_last; conv_params->input_h += conv_params->tile_h) {
 #if SPARSE
                     conv_params->cur_n_cols = conv_params->cached_cur_n_cols;
-                    col_val = get_col_val(
-                            conv_params->model,
-                            conv_params->conv_filter,
-                            conv_params->cur_row_val + conv_params->cur_n_cols);
+                    col_val = COL_VALS[conv_params->cur_n_cols];
                     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
                     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
 #endif // SPARSE
@@ -1041,10 +1045,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                             if(++conv_params->cur_n_cols >= conv_params->n_cols) {
                                 goto EXIT_TILE;
                             }
-                            col_val = get_col_val(
-                                    conv_params->model,
-                                    conv_params->conv_filter,
-                                    conv_params->cur_row_val + conv_params->cur_n_cols);
+                            col_val = COL_VALS[conv_params->cur_n_cols];
                             my_printf_debug("col_val: %d" NEWLINE, col_val);
                             if(col_val / (conv_params->kH * conv_params->kW) != conv_params->input_tile_c_index) {
                                 goto EXIT_TILE;
@@ -1129,6 +1130,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->n_cols = conv_params->cur_n_cols = 0;
         next_nonzero_value(conv_params, &col_val);
         if(conv_params->n_cols) {
+            // XXX: add a checker to verify the result
+            my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));
             conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
             conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
         } else {
