@@ -744,13 +744,16 @@ def xxxx2xcxxx(arr, config, dims):
     new_arr = []
 
     for row in arr:
+        # avoid omiting 0 when transform the matrix to csr
+        row = row + 1
         lists = [np.array(row[i : i + chunk_len]) for i in range(0, len(row), chunk_len)]
         lists = np.array(lists)
         group_size = (dims[2] * dims[3], config['group'][1])
         bsr = csr_matrix(lists).tobsr(group_size)
         new_row = []
         for data in bsr.data:
-            new_row.extend(data.flatten())
+            data = data.flatten() - 1
+            new_row.extend(data)
         new_arr.append(new_row)
     return np.array(new_arr)
 
