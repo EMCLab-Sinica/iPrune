@@ -115,6 +115,8 @@ def _Q15(arr, name):
 class ConvNodeFlags(ctypes.Structure):
     _fields_ = [
         ("input_tile_c", ctypes.c_uint16),
+        ("input_tile_w", ctypes.c_uint16),
+        ("input_tile_h", ctypes.c_uint16),
         ("output_tile_c", ctypes.c_uint16),
         ("output_tile_w", ctypes.c_uint16),
         ("output_tile_h", ctypes.c_uint16),
@@ -162,7 +164,7 @@ class NodeFlags_bits(ctypes.LittleEndianStructure):
 class NodeFlags(ctypes.Union):
     _fields_ = [
         ("b", NodeFlags_bits),
-        ("as_bytes", ctypes.c_uint8 * 14),
+        ("as_bytes", ctypes.c_uint8 * 18),
     ]
 
     def __repr__(self):
@@ -445,7 +447,7 @@ def determine_conv_tile_c(n, node_idx):
     filter_info = find_initializer(onnx_model, n.input[1])
     node_flags = n.flags.b.extra.conv
 
-    if model_config == None:
+    if model_config:
         is_separate_tiling = False
         if not find_initializer(onnx_model, n.input[0]):
             input_node = find_node_by_output(onnx_model.graph.node, n.input[0])
@@ -459,54 +461,61 @@ def determine_conv_tile_c(n, node_idx):
         CHANNEL = filter_info.dims[1]
         kH = filter_info.dims[2]
         kW = filter_info.dims[3]
+        tile_kH = model_config[node_idx]['tile']['weight'][2]
+        tile_kW = model_config[node_idx]['tile']['weight'][3]
+        output_tile_h = model_config[node_idx]['tile']['output'][2]
+        input_tile_h = model_config[node_idx]['tile']['input'][2] + node_flags.pads[0] + node_flags.pads[2]
+        output_tile_w = model_config[node_idx]['tile']['output'][3]
+        input_tile_w = model_config[node_idx]['tile']['input'][3] + node_flags.pads[1] + node_flags.pads[3]
+        output_tile_c = model_config[node_idx]['tile']['output'][1]
 
         max_continuous_channels = CHANNEL
         if is_separate_tiling:
             max_continuous_channels //= 2
-        node_flags.input_tile_c = max_continuous_channels
+        node_flags.input_tile_c = model_config[node_idx]['tile']['input'][1]
 
         logger.debug('Initial input_tile_c=%d', node_flags.input_tile_c)
         # ignore the code if you want to fix tile size
-        def get_memory_usage(output_tile_c, filter_len):
+        def get_memory_usage(output_tile_h, output_tile_w, input_tile_h, input_tile_w, output_tile_c, input_tile_c, filter_len):
             # *2 as in JAPARI, the number of footprint weights is up to the number of
             # filters (e.g., batch size=1)
-            ret = ((output_tile_c * 2 + 1) + Constants.TEMP_FILTER_WIDTH) * filter_len
-            logger.debug('Checking output_tile_c=%d, filter_len=%d, memory usage=%d', output_tile_c, filter_len, ret)
-            return ret
+            weight_memory_usage = ((output_tile_c + 1) + Constants.TEMP_FILTER_WIDTH) * filter_len
+            input_memory_usage = input_tile_h * input_tile_w * input_tile_c
+            output_memory_usage = output_tile_h * output_tile_w * output_tile_c * 2
+            logger.debug('Checking output_tile_h=%d, output_tile_w=%d, input_tile_h=%d, input_tile_w=%d', \
+                         output_tile_h, output_tile_w, input_tile_h, input_tile_w)
+            logger.debug('Checking output_tile_c=%d, input_tile_c=%d, filter_len=%d', output_tile_c, input_tile_c, filter_len)
+            logger.debug('Checking memory usage: weight=%d, input=%d, output=%d, total=%d', \
+                         weight_memory_usage, input_memory_usage, output_memory_usage, weight_memory_usage+input_memory_usage+output_memory_usage)
+            return weight_memory_usage + input_memory_usage + output_memory_usage
 
-        while True:
-            input_tile_too_large = False
-            # inner +1 for biases
-            filter_len = ((node_flags.input_tile_c * kW + 1) + 1) // 2 * 2 * 2 * kH
-            output_tile_c = OUTPUT_CHANNEL
-            while get_memory_usage(output_tile_c, filter_len) > Constants.LEA_BUFFER_SIZE:
-                logger.debug('output_tile_c=%d', output_tile_c)
-                output_tile_c //= 2
-                if output_tile_c % 2 or output_tile_c < config['op_filters']:
-                    # current input_tile_c is too large such that no even output_tile_c fits
-                    input_tile_too_large = True
-                    logger.debug("Input too large!")
-                    break
-
-            if not input_tile_too_large:
-                params_len = math.ceil(CHANNEL / node_flags.input_tile_c) * OUTPUT_CHANNEL * OUTPUT_H * OUTPUT_W * 2
-                if params_len < config['intermediate_values_size']:
-                    break
-                logger.debug(f'params_len={params_len}, too high!')
-            assert node_flags.input_tile_c / 2 * 2 == node_flags.input_tile_c
-            node_flags.input_tile_c //= 2
-            logger.debug('input_tile_c=%d', node_flags.input_tile_c)
+        # inner +1 for biases
+        filter_len = ((node_flags.input_tile_c * tile_kW + 1) + 1) // 2 * 2 * tile_kH
+        input_tile_c =((node_flags.input_tile_c + 1) + 1) // 2 * 2
+        while get_memory_usage(output_tile_h, output_tile_w, \
+                               input_tile_h, input_tile_w, \
+                               output_tile_c, input_tile_c, filter_len) > Constants.LEA_BUFFER_SIZE:
+            logger.debug('output_tile_w=%d, input_tile_w=%d', output_tile_w, input_tile_w)
+            output_tile_w -= 1
+            input_tile_w -= 1
+            if output_tile_w < 1 or input_tile_w < 1:
+                print("Input channel or output channel may be too large")
+                exit()
+        node_flags.output_tile_w = output_tile_w
+        node_flags.output_tile_h = output_tile_h
         node_flags.output_tile_c = output_tile_c
-        while node_flags.output_tile_c * OUTPUT_H * OUTPUT_W > Constants.CPU_BUFFER_SIZE:
-            node_flags.output_tile_c //= 2
-            assert node_flags.output_tile_c
+        node_flags.input_tile_w = input_tile_w - node_flags.pads[1] - node_flags.pads[3]
+        node_flags.input_tile_h = input_tile_h - node_flags.pads[0] - node_flags.pads[2]
     else:
+        pass
         # manually set tile size
-        node_flags.input_tile_c = model_config[node_idx]['group'][1]
-        node_flags.output_tile_c = model_config[node_idx]['group'][0]
-        node_flags.output_tile_h = model_config[node_idx]['tile']['output'][2]
-        node_flags.output_tile_w = model_config[node_idx]['tile']['output'][3]
+    #    node_flags.input_tile_c = model_config[node_idx]['group'][1]
+     #   node_flags.output_tile_c = model_config[node_idx]['group'][0]
+      #  node_flags.output_tile_h = model_config[node_idx]['tile']['output'][2]
+       # node_flags.output_tile_w = model_config[node_idx]['tile']['output'][3]
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
+    print('input_tile_w: {}'.format(node_flags.input_tile_w))
+    print('input_tile_h: {}'.format(node_flags.input_tile_h))
     print('output_tile_c: {}'.format(node_flags.output_tile_c))
     print('output_tile_w: {}'.format(node_flags.output_tile_w))
     print('output_tile_h: {}'.format(node_flags.output_tile_h))
@@ -524,25 +533,25 @@ def determine_gemm_tile_sizes(n, node_idx):
 
     # writing a batch at a time is simpler and faster
     tile_size_unit = config['op_filters']
-    if model_config == None:
-        while True:
-            # LEA wants addresses to be 4 byte-aligned, or 2 Q15-aligned
-            node_flags.tile_channel = min([(Constants.ARM_PSTATE_LEN / tile_size_unit) / 2 * 2 - 2, B_rows,
-                                           (config['gemm_tile_length'] or float('inf'))]) // tile_size_unit * tile_size_unit
-            full_tile_width = (extend_for_footprints(tile_size_unit)+1)/2*2
-            while node_flags.tile_channel > 0:
-                tmp = int(math.ceil(B_rows / node_flags.tile_channel))
-                needed_mem = (A_rows * A_cols + 2) + (node_flags.tile_channel + 2) * full_tile_width + A_rows * full_tile_width
-                logger.debug("tile_channel=%d, tmp=%d, needed_mem=%d", node_flags.tile_channel, tmp, needed_mem)
-                if needed_mem <= Constants.LEA_BUFFER_SIZE:
-                    break
-                node_flags.tile_channel -= tile_size_unit
-            logger.debug("tile_channel = %d", node_flags.tile_channel)
-            if node_flags.tile_channel > 0:
+    # if model_config == None:
+    while True:
+        # LEA wants addresses to be 4 byte-aligned, or 2 Q15-aligned
+        node_flags.tile_channel = min([(Constants.ARM_PSTATE_LEN / tile_size_unit) / 2 * 2 - 2, B_rows,
+                                       (config['gemm_tile_length'] or float('inf'))]) // tile_size_unit * tile_size_unit
+        full_tile_width = (extend_for_footprints(tile_size_unit)+1)/2*2
+        while node_flags.tile_channel > 0:
+            tmp = int(math.ceil(B_rows / node_flags.tile_channel))
+            needed_mem = (A_rows * A_cols + 2) + (node_flags.tile_channel + 2) * full_tile_width + A_rows * full_tile_width
+            logger.debug("tile_channel=%d, tmp=%d, needed_mem=%d", node_flags.tile_channel, tmp, needed_mem)
+            if needed_mem <= Constants.LEA_BUFFER_SIZE:
                 break
-    else:
+            node_flags.tile_channel -= tile_size_unit
+        logger.debug("tile_channel = %d", node_flags.tile_channel)
+        if node_flags.tile_channel > 0:
+            break
+    #else:
         # manually set tile size
-        node_flags.tile_channel = model_config[node_idx]['group'][1]
+    #    node_flags.tile_channel = model_config[node_idx]['group'][1]
     print('tile_channel: {}'.format(node_flags.tile_channel))
     print('tile_size_unit: {}'.format(tile_size_unit))
 

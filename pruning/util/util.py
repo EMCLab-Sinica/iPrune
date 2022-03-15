@@ -154,6 +154,33 @@ def lowering(tensor, shape):
     matrix = tensor.reshape(shape[0], -1)
     return matrix
 
+def im2col(arr, dims):
+    arr = np.reshape(arr, (dims[0], -1))
+    return arr
+
+def nchw2nwhc_without_flatten(arr):
+    arr = np.transpose(arr, axes=(0, 3, 2, 1))  # NCHW -> NWHC
+    return arr
+
+def xxxx2xcxxx(arr, config, dims):
+    chunk_len = dims[1] # c
+    arr = im2col(arr, dims)
+    new_arr = []
+
+    for row in arr:
+        # avoid omiting 0 when transform the matrix to csr
+        row = row + 1
+        lists = [np.array(row[i : i + chunk_len]) for i in range(0, len(row), chunk_len)]
+        lists = np.array(lists)
+        group_size = (dims[2] * dims[3], config['group'][1])
+        bsr = csr_matrix(lists).tobsr(group_size)
+        new_row = []
+        for data in bsr.data:
+            data = data.flatten() - 1
+            new_row.extend(data)
+        new_arr.append(new_row)
+    return np.array(new_arr)
+
 def toBSR(matrix, group):
     bsr = csr_matrix(matrix).tobsr(group)
     return bsr
@@ -269,8 +296,8 @@ class MetricsMaker:
                 # rows: the number of filter groups
                 # cols: input_tile_c * K * K
                 n_row, n_col = layer_config['group'][0], layer_config['group'][1]
-                matrix = nchw2nhwc(matrix.view(shape))
-                matrix = matrix.reshape(shape[0], -1)
+                matrix = nchw2nwhc_without_flatten(matrix.view(shape))
+                matrix = xxxx2xcxxx(matrix, layer_config, shape)
             group_size = (n_row, n_col)
             width = n_col * n_row
         elif isinstance(node, nn.Linear):
@@ -324,9 +351,8 @@ class MetricsMaker:
             n_output_tile_per_weight_group = \
                 math.ceil(layer_config['output'][2] / layer_config['tile']['output'][2]) * \
                 math.ceil(layer_config['output'][3] / layer_config['tile']['output'][3])
-            n_output_tile_c = math.ceil(layer_config['output'][1] / layer_config['tile']['output'][1])
+            n_input_tile_c = math.ceil(layer_config['input'][1] / layer_config['tile']['input'][1])
 
-            nvm_read_inputs += len(cols) * layer_config['group'][1] * layer_config['output'][2] * layer_config['output'][3]
             nvm_read_weights += len(cols) * n_row * n_col * n_output_tile_per_weight_group
             nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2] * layer_config['output'][3]
             vm_read_inputs += len(cols) * n_row * n_col * layer_config['output'][2] * layer_config['output'][3]
@@ -334,19 +360,22 @@ class MetricsMaker:
             for i in range(1, len(rows)):
                 n_tile_c = rows[i] - rows[i - 1]
                 if n_tile_c:
+                    tile_c_set = set()
+                    for idx in range(rows[i - 1], rows[i]):
+                        tile_c_set.add(int(cols[idx] / (layer_config['filter'][2] * layer_config['filter'][3])))
+                    nvm_read_inputs += len(tile_c_set) * layer_config['group'][1] * layer_config['output'][2] * layer_config['output'][3]
                     vm_read_psum += 2 * n_tile_c * n_row * \
                         layer_config['output'][2] * layer_config['output'][3]
                     vm_write_psum += n_tile_c * n_row * \
                         layer_config['output'][2] * layer_config['output'][3]
                     vm_jobs += n_tile_c * n_row * \
                         layer_config['output'][2] * layer_config['output'][3]
-                    nvm_read_psum += n_output_tile_c  * \
+                    nvm_read_psum += n_input_tile_c  * \
                         layer_config['output'][2] * layer_config['output'][3]
-                    nvm_write_psum += n_output_tile_c  * \
+                    nvm_write_psum += n_input_tile_c  * \
                         layer_config['output'][2] * layer_config['output'][3]
                 else:
                     pruned_ofm_element += n_row * layer_config['output'][2] * layer_config['output'][3]
-
 
         logger_.debug('group size: {}'.format(group_size))
         vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)

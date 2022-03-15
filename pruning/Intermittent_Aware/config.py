@@ -5,9 +5,9 @@ config = {
             'filter': [8,1,5,5],
             'output': [1,8,28,28],
             'tile': {
-                'input': [1,1,8,1],
+                'input': [1,1,28,3],#'input': [1,1,28,3],
                 'weight': [8,1,1,1],
-                'output': [1,8,8,1],
+                'output': [1,8,28,3],#'output': [1,8,28,3],
             },
             'group': [8, 1], # [n_filter, n_channel]
             'stride': 1
@@ -17,9 +17,9 @@ config = {
             'filter': [16,8,5,5],
             'output': [1,16,14,14],
             'tile': {
-                'input': [1,4,8,1],
-                'weight': [8,4,1,1],
-                'output': [1,4,8,1],
+                'input': [1,4,14,6],#'input': [1,4,14,6],
+                'weight': [4,4,1,1],
+                'output': [1,4,14,6],#'output': [1,4,14,6],
             },
             'group': [4, 4],
             'stride': 1
