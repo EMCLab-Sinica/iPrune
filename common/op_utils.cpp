@@ -11,7 +11,9 @@
 #pragma DATA_SECTION(".leaRAM")
 #endif
 int16_t lea_buffer[LEA_BUFFER_SIZE];
+#if STABLE_POWER
 int16_t cpu_buffer[CPU_BUFFER_SIZE];
+#endif // STABLE_POWER
 
 #if HAWAII
 static int16_t non_recorded_jobs = 0;
@@ -302,7 +304,11 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
         // is fc op
         uint32_t total_offset = filter_idx;
         uint32_t output_len = output->dims[0] * output->dims[1];
+#if STABLE_POWER
         my_memcpy_to_param(output, total_offset, cpu_buffer, output_len * sizeof(int16_t), 0);
+#else // STABLE_POWER
+        my_memcpy_to_param(output, total_offset, lea_buffer, output_len * sizeof(int16_t), 0);
+#endif // STABLE_POWER
     }
 }
 

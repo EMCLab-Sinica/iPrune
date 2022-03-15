@@ -734,7 +734,6 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
     uint16_t cur_input_offset = input_offset;
 #endif // STABLE_POWER
     int16_t chunk_offset = 0;
-    // FIXME: common/platform.cpp
     uint16_t cur_psum_offset = psum_offset;
     int16_t *to_add, *be_add;
     for(int16_t offset_w = 0; offset_w < output_tile_w; ++offset_w) {
@@ -1155,8 +1154,9 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // HAWAII
 #endif // STABLE_POWER
 #if SPARSE
-                    if(conv_params->input_w + conv_params->stride > conv_params->input_w_last &&
-                            conv_params->input_h + conv_params->tile_h > conv_params->input_h_last) {
+                    int16_t next_input_h = conv_params->input_h + conv_params->tile_h;
+                    int16_t next_input_w = conv_params->input_w + conv_params->stride;
+                    if(next_input_h > conv_params->input_h_last && next_input_w > conv_params->input_w_last) {
                         break;
                     }
                     my_printf_debug("cached_cur_n_cols: %d" NEWLINE, conv_params->cached_cur_n_cols);
@@ -1180,6 +1180,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             col_val = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
             // find next tile in the same row
             conv_params->input_tile_c_index = col_val / (conv_params->kW * conv_params->kH);
+            conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
+            conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
 #else // SPARSE
             conv_params->input_tile_c_index++;
 #endif // SPARSE
