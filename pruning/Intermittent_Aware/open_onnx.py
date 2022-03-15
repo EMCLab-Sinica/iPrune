@@ -39,7 +39,7 @@ def printArgs(args):
     print('======================\n')
     return
 
-def lowering(tensor, shape):
+def im2col(tensor, shape):
     matrix = tensor.reshape(shape[0], -1)
     return matrix
 
@@ -67,7 +67,7 @@ def getJob(node, output_shape, group_size):
         logger.debug('data: {}'.format(data))
         logger.info('cols: {}'.format(cols))
         logger.info('rows: {}'.format(rows))
-        return len(cols) * output_shape[0] * output_shape[1] * group_size[0]
+        return len(cols) * output_shape[2] * output_shape[3] * group_size[0]
     elif len(node['dims']) == 2:
         logger.debug('data: {}'.format(data))
         logger.info('cols: {}'.format(cols))
@@ -130,14 +130,14 @@ if __name__ == '__main__':
             logger.debug(layer_config)
             if len(shape) == 4:
                 if args.layout == 'nchw':
-                    group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1])
-                    matrix = lowering(matrix, shape)
+                    group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][2] * layer_config['filter'][3])
+                    matrix = im2col(matrix, shape)
                 elif args.layout == 'nhwc':
                     group_size = (layer_config['group'][0], layer_config['group'][1])
-                    matrix = lowering(nchw2nhwc(matrix), shape)
+                    matrix = im2col(nchw2nhwc(matrix), shape)
             else:
                 group_size = (layer_config['group'][0], layer_config['group'][1])
-                matrix = lowering(matrix, shape)
+                matrix = im2col(matrix, shape)
             # print_matrix(matrix)
             matrix = toBSR(matrix, group_size)
             sparse_node = {

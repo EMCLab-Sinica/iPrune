@@ -199,13 +199,14 @@ def nhwc2nchw(arr):
     return arr.permute(0, 3, 1, 2) # NHWC -> NCHW
 
 class MetricsMaker:
-    def __init__(self, model, args, output_shapes):
+    def __init__(self, model, args, output_shapes, cost={'NVM': 100, 'VM': 1}):
         self.model_ = model
         self.args_ = args
         self.output_shapes_ = output_shapes
         self.layer_info_ = []
         self.metrics_ = None
         self.prune_order_ = None
+        self.cost_ = cost
 
     def profile(self):
         metrics = []
@@ -214,11 +215,12 @@ class MetricsMaker:
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 metric_all = self.profile_node(self.args_, m, self.output_shapes_, node_idx)
                 if self.args_.prune == 'intermittent':
-                    metric = metric_all['vm_jobs'] + metric_all['vm_read_psum'] + metric_all['vm_write_psum'] + metric_all['nvm_jobs']
+                    # XXX: psum jobs only? or all the nvm read/write cost which are incurred by intermittent bebavior ?
+                    #metric = metric_all['vm_jobs'] + metric_all['vm_read_psum'] + metric_all['vm_write_psum'] + metric_all['nvm_jobs']
+                    metric = metric_all['vm_jobs'] + metric_all['vm_write_psum'] + metric_all['pruned_ofm_element']
                     metrics.append(metric)
                 elif self.args_.prune == 'energy':
-                    (nvm_access_cost, vm_access_cost) = (100, 1)
-                    metric = metric_all['nvm_access'] * nvm_access_cost + metric_all['vm_access'] * vm_access_cost
+                    metric = metric_all['nvm_access'] * self.cost_['NVM'] + metric_all['vm_access'] * self.cost_['VM']
                     metrics.append(metric)
                 node_idx += 1
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
@@ -262,7 +264,7 @@ class MetricsMaker:
             if self.args_.prune_shape == 'channel':
                 # rows: the number of filter groups
                 # cols: the number of input_tile_c
-                n_row, n_col = layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1]
+                n_row, n_col = layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][2] * layer_config['filter'][3]
             elif self.args_.prune_shape == 'vector':
                 # rows: the number of filter groups
                 # cols: input_tile_c * K * K
@@ -287,6 +289,9 @@ class MetricsMaker:
         nvm_jobs = 0
         nvm_read_weights = 0
         nvm_read_inputs = 0
+        nvm_read_psum = 0
+        nvm_write_psum = 0
+        pruned_ofm_element = 0
         vm_jobs = 0
         vm_read_psum = 0
         vm_write_psum = 0
@@ -302,40 +307,50 @@ class MetricsMaker:
                 if rows[i] - rows[i - 1] != 0:
                     nvm_read_inputs += n_row
             nvm_read_weights += len(cols) * n_row * n_col
-            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2]
+            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2] * layer_config['output'][3]
             vm_read_inputs += len(cols) * n_row * n_col
             vm_read_weights += len(cols) * n_row * n_col
-            vm_read_psum += 2 * (len(rows) - 1) * layer_config['output'][2]
-            vm_write_psum += (len(rows) - 1) * layer_config['output'][2]
-            vm_jobs += (len(rows) - 1) * layer_config['output'][2]
+            vm_read_psum += 2 * (len(rows) - 1) * layer_config['output'][1]
+            vm_write_psum += (len(rows) - 1) * layer_config['output'][1]
+            vm_jobs += len(cols) * layer_config['group'][0]
         elif isinstance(node, nn.Conv2d):
             op_type = 'CONV'
             # weight stationary
+            # XXX: channel shape should be rechecked
             if self.args_.prune_shape == 'channel':
-                per_input_nvm_read_for_a_weight_group = math.ceil(layer_config['tile']['weight'][1] / layer_config['stride']) # e.g. 5 / 1 = 5
+                per_input_nvm_read_for_a_weight_group = math.ceil(layer_config['tile']['weight'][3] / layer_config['stride']) # e.g. 5 / 1 = 5
             elif self.args_.prune_shape == 'vector':
                 per_input_nvm_read_for_a_weight_group = 1
-            nvm_read_inputs_for_a_weight_group = layer_config['input'][0] * layer_config['input'][1] * per_input_nvm_read_for_a_weight_group # H * W * (5 / 1)
-            nvm_read_inputs += len(cols) * nvm_read_inputs_for_a_weight_group
-            nvm_read_weights += len(cols) * n_row * n_col
-            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2]
-            vm_read_inputs += len(cols) * n_row * n_col * layer_config['output'][0] * layer_config['output'][1]
-            vm_read_weights += len(cols) * n_row * n_col * layer_config['output'][0] * layer_config['output'][1]
+            n_output_tile_per_weight_group = \
+                math.ceil(layer_config['output'][2] / layer_config['tile']['output'][2]) * \
+                math.ceil(layer_config['output'][3] / layer_config['tile']['output'][3])
+            n_output_tile_c = math.ceil(layer_config['output'][1] / layer_config['tile']['output'][1])
+
+            nvm_read_inputs += len(cols) * layer_config['group'][1] * layer_config['output'][2] * layer_config['output'][3]
+            nvm_read_weights += len(cols) * n_row * n_col * n_output_tile_per_weight_group
+            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2] * layer_config['output'][3]
+            vm_read_inputs += len(cols) * n_row * n_col * layer_config['output'][2] * layer_config['output'][3]
+            vm_read_weights += len(cols) * n_row * n_col * layer_config['output'][2] * layer_config['output'][3]
             for i in range(1, len(rows)):
                 n_tile_c = rows[i] - rows[i - 1]
-                vm_read_psum += 2 * n_tile_c * n_row * \
-                    layer_config['output'][0] * layer_config['output'][1]
-                vm_write_psum += n_tile_c * n_row * \
-                    layer_config['output'][0] * layer_config['output'][1]
-                vm_jobs += n_tile_c * n_row * \
-                    layer_config['output'][0] * layer_config['output'][1]
+                if n_tile_c:
+                    vm_read_psum += 2 * n_tile_c * n_row * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                    vm_write_psum += n_tile_c * n_row * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                    vm_jobs += n_tile_c * n_row * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                    nvm_read_psum += n_output_tile_c  * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                    nvm_write_psum += n_output_tile_c  * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                else:
+                    pruned_ofm_element += n_row * layer_config['output'][2] * layer_config['output'][3]
+
+
         logger_.debug('group size: {}'.format(group_size))
-        logger_.debug('nvm_read_weights: {}'.format(nvm_read_weights))
-        logger_.debug('nvm_read_inputs: {}'.format(nvm_read_inputs))
-        logger_.debug('nvm_jobs: {}'.format(nvm_jobs))
-        logger_.debug('vm_jobs: {}'.format(vm_jobs))
         vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
-        nvm_access = (nvm_jobs + nvm_read_weights + nvm_read_inputs)
+        nvm_access = (nvm_jobs + nvm_read_inputs + nvm_read_weights + nvm_read_psum + nvm_write_psum)
         self.layer_info_.append({
             'node': node_idx,
             'op_type': op_type,
@@ -348,7 +363,8 @@ class MetricsMaker:
             'vm_read_psum': vm_read_psum,
             'vm_write_psum': vm_write_psum,
             'nvm_access': nvm_access,
-            'vm_access': vm_access
+            'vm_access': vm_access,
+            'pruned_ofm_element': pruned_ofm_element,
         })
         return self.layer_info_[-1]
 
@@ -655,7 +671,7 @@ class MaskMaker():
                     group_size = (layer_config['group'][0], layer_config['group'][1])
                 elif isinstance(m, nn.Conv2d):
                     if self.args_.prune_shape == 'channel':
-                        group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][0] * layer_config['filter'][1])
+                        group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][2] * layer_config['filter'][3])
                     elif self.args_.prune_shape == 'vector':
                         group_size = (layer_config['group'][0], layer_config['group'][1])
                 tmp_pruned = self.to_group_shape(tmp_pruned, group_size, m)

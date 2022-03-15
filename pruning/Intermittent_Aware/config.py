@@ -1,47 +1,49 @@
 config = {
-    'LeNet_5': [
+    'LeNet_5': [ # NCHW
         {
-            'input': [28,28,1],
-            'filter': [5,5,1,8],
-            'output': [28,28,8],
+            'input': [1,1,28,28],
+            'filter': [8,1,5,5],
+            'output': [1,8,28,28],
             'tile': {
-                'input': [8,5,1],
-                'weight': [5,5,1,8],
-                'output': [1, 8], # [output_tile_w, output_tile_h]
+                'input': [1,1,8,1],
+                'weight': [8,1,1,1],
+                'output': [1,8,8,1],
             },
             'group': [8, 1], # [n_filter, n_channel]
             'stride': 1
         },
         {
-            'input': [14,14,8],
-            'filter': [5,5,8,16],
-            'output': [14,14,16],
+            'input': [1,8,14,14],
+            'filter': [16,8,5,5],
+            'output': [1,16,14,14],
             'tile': {
-                'input': [8,5,8],
-                'weight': [5,5,8,16],
-                'output': [1, 8], # [output_tile_w, output_tile_h]
+                'input': [1,4,8,1],
+                'weight': [8,4,1,1],
+                'output': [1,4,8,1],
             },
             'group': [4, 4],
             'stride': 1
         },
         {
-            'input': [1,1,16*4*4],
-            'filter': [1,1,16*4*4,256],
-            'output': [1,1,256],
+            'input': [1,16*4*4,1,1],
+            'filter': [256,16*4*4,1,1],
+            'output': [1,256,1,1],
             'tile': {
-                'input': [1,1,256],
-                'weight': [1,1,256,4]
+                'input': [1,16,1,1],
+                'weight': [2,16,1,1],
+                'output': [1,2,1,1],
             },
             'group': [2, 16],
             'stride': 1
         },
         {
-            'input': [1,1,256],
-            'filter': [1,1,256,10],
-            'output': [1,1,10],
+            'input': [1,256,1,1],
+            'filter': [10,256,1,1],
+            'output': [1,10,1,1],
             'tile': {
-                'input': [1,1,256],
-                'weight': [1,1,256,4]
+                'input': [1,256,1,1],
+                'weight': [2,16,1,1],
+                'output': [1,2,1,1],
             },
             'group': [2, 16],
             'stride': 1

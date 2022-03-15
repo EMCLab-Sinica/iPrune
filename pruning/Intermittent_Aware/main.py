@@ -39,7 +39,7 @@ def save_state(model, acc):
     if args.prune:
         torch.save(state, 'saved_models/'+args.prune+'/'+args.arch+'/'+'stage_'+str(args.stage)+'.pth.tar')
     else:
-        torch.save(state, 'saved_models/'+args.arch+'.origin1.pth.tar')
+        torch.save(state, 'saved_models/'+args.arch+'.origin.pth.tar')
 
 def train(epoch):
     model.train()
