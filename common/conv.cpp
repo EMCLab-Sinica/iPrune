@@ -1190,11 +1190,13 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
              */
 #if SPARSE
             conv_params->psum_buffer_version ^= (conv_params->cur_n_cols - conv_params->cached_cur_n_cols) & 0x1 ;
-            conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
 #else // SPARSE
             conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
 #endif // SPARSE
 #endif // STABLE_POWER
+#if SPARSE
+            conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
+#endif // SPARSE
             if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
                 break;
             }
