@@ -61,7 +61,7 @@ class Constants:
     USE_ARM_CMSIS = 0
     CONFIG = None
 
-    DEFAULT_TILE_H = 8
+    DEFAULT_TILE_H = 32
     BATCH_SIZE = 1
     STATEFUL = 0
     HAWAII = 0
@@ -533,25 +533,25 @@ def determine_gemm_tile_sizes(n, node_idx):
 
     # writing a batch at a time is simpler and faster
     tile_size_unit = config['op_filters']
-    # if model_config == None:
-    while True:
-        # LEA wants addresses to be 4 byte-aligned, or 2 Q15-aligned
-        node_flags.tile_channel = min([(Constants.ARM_PSTATE_LEN / tile_size_unit) / 2 * 2 - 2, B_rows,
-                                       (config['gemm_tile_length'] or float('inf'))]) // tile_size_unit * tile_size_unit
-        full_tile_width = (extend_for_footprints(tile_size_unit)+1)/2*2
-        while node_flags.tile_channel > 0:
-            tmp = int(math.ceil(B_rows / node_flags.tile_channel))
-            needed_mem = (A_rows * A_cols + 2) + (node_flags.tile_channel + 2) * full_tile_width + A_rows * full_tile_width
-            logger.debug("tile_channel=%d, tmp=%d, needed_mem=%d", node_flags.tile_channel, tmp, needed_mem)
-            if needed_mem <= Constants.LEA_BUFFER_SIZE:
+    if model_config == None:
+        while True:
+            # LEA wants addresses to be 4 byte-aligned, or 2 Q15-aligned
+            node_flags.tile_channel = min([(Constants.ARM_PSTATE_LEN / tile_size_unit) / 2 * 2 - 2, B_rows,
+                                           (config['gemm_tile_length'] or float('inf'))]) // tile_size_unit * tile_size_unit
+            full_tile_width = (extend_for_footprints(tile_size_unit)+1)/2*2
+            while node_flags.tile_channel > 0:
+                tmp = int(math.ceil(B_rows / node_flags.tile_channel))
+                needed_mem = (A_rows * A_cols + 2) + (node_flags.tile_channel + 2) * full_tile_width + A_rows * full_tile_width
+                logger.debug("tile_channel=%d, tmp=%d, needed_mem=%d", node_flags.tile_channel, tmp, needed_mem)
+                if needed_mem <= Constants.LEA_BUFFER_SIZE:
+                    break
+                node_flags.tile_channel -= tile_size_unit
+            logger.debug("tile_channel = %d", node_flags.tile_channel)
+            if node_flags.tile_channel > 0:
                 break
-            node_flags.tile_channel -= tile_size_unit
-        logger.debug("tile_channel = %d", node_flags.tile_channel)
-        if node_flags.tile_channel > 0:
-            break
-    #else:
+    else:
         # manually set tile size
-    #    node_flags.tile_channel = model_config[node_idx]['group'][1]
+        node_flags.tile_channel = model_config[node_idx]['group'][1]
     print('tile_channel: {}'.format(node_flags.tile_channel))
     print('tile_size_unit: {}'.format(tile_size_unit))
 

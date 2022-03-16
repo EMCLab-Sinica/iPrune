@@ -271,6 +271,11 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
         uint16_t output_tile_h = MIN_VAL(node->flags.extra.conv.output_tile_h, OUTPUT_H - output_h);
         uint16_t output_tile_c = node->flags.extra.conv.output_tile_c;
         uint16_t output_len = CHANNEL * OUTPUT_W * OUTPUT_H;
+        int16_t default_output_tile_len =
+            node->flags.extra.conv.output_tile_c *
+            node->flags.extra.conv.output_tile_w *
+            node->flags.extra.conv.output_tile_h;
+        int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - 2 * default_output_tile_len;
         MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
         MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
         uint16_t vm_offset = 0;
@@ -286,7 +291,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
 #if STABLE_POWER
                 src = cpu_buffer + vm_offset * output_tile_c;
 #else // STABLE_POWER
-                src = lea_buffer + vm_offset * output_tile_c;
+                src = lea_buffer + LEA_BUFFER_SIZE - default_output_tile_len + vm_offset * output_tile_c;
 #endif // STABLE_POWER
                 my_memcpy_to_param(output, dst, src, real_chunk_len * sizeof(int16_t), 0);
                 my_printf_debug(NEWLINE "Output offset %d" NEWLINE, dst);
