@@ -481,7 +481,7 @@ def determine_conv_tile_c(n, node_idx):
             # filters (e.g., batch size=1)
             weight_memory_usage = ((output_tile_c + 1) + Constants.TEMP_FILTER_WIDTH) * filter_len
             input_memory_usage = input_tile_h * input_tile_w * input_tile_c
-            output_memory_usage = output_tile_h * output_tile_w * output_tile_c * 2
+            output_memory_usage = output_tile_h * output_tile_w * output_tile_c * 2 * 2
             logger.debug('Checking output_tile_h=%d, output_tile_w=%d, input_tile_h=%d, input_tile_w=%d', \
                          output_tile_h, output_tile_w, input_tile_h, input_tile_w)
             logger.debug('Checking output_tile_c=%d, input_tile_c=%d, filter_len=%d', output_tile_c, input_tile_c, filter_len)

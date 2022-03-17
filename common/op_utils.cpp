@@ -274,7 +274,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
         int16_t default_output_tile_len =
             node->flags.extra.conv.output_tile_c *
             node->flags.extra.conv.output_tile_w *
-            node->flags.extra.conv.output_tile_h;
+            node->flags.extra.conv.output_tile_h * 2;
         int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - 2 * default_output_tile_len;
         MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
         MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
@@ -295,7 +295,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
 #endif // STABLE_POWER
                 my_memcpy_to_param(output, dst, src, real_chunk_len * sizeof(int16_t), 0);
                 my_printf_debug(NEWLINE "Output offset %d" NEWLINE, dst);
-                my_printf_debug("Loaded chunk" NEWLINE);
+                my_printf_debug("Preserved chunk" NEWLINE);
                 dump_matrix_debug(src, real_chunk_len, ValueInfo(output));
                 vm_offset++;
 #if HAWAII
