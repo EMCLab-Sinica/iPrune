@@ -50,8 +50,8 @@ typedef struct ConvTaskParams {
     uint16_t stride;
     uint16_t input_tile_c_offset;
     uint16_t input_tile_c_index;
-    uint16_t tile_h;
-    uint16_t tile_w;
+    int16_t tile_h;
+    int16_t tile_w;
     uint8_t cur_input_tile_c;
     uint16_t cur_filter_tile_c;
     uint16_t n_tiles_c;
@@ -571,9 +571,9 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
 
     // reset tile_w as output_tile_w
     conv_params->tile_w -= pads[PAD_W_BEGIN] + pads[PAD_W_END];
-    uint16_t max_input_h =
+    int16_t max_input_h =
         MIN_VAL(conv_params->input_h+conv_params->tile_h-1-tile_h_offset,
-            conv_params->input_h_last + conv_params->kX);
+                conv_params->input_h_last + conv_params->kX);
     int16_t max_input_w =
         MIN_VAL(conv_params->input_w+conv_params->tile_w-1,
                 conv_params->input_w_last + conv_params->kY);
@@ -722,7 +722,7 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
         conv_params->flags->extra.conv.output_tile_c *
         conv_params->flags->extra.conv.output_tile_w *
         conv_params->flags->extra.conv.output_tile_h * 2;
-    int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - 2 * default_output_tile_len;
+    int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - default_output_tile_len;
     uint16_t output_len = OUTPUT_C * OUTPUT_W * OUTPUT_H;
     int16_t psum_offset =
         conv_params->psum_buffer_version * output_len +
@@ -740,13 +740,9 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
         for(int16_t offset_h = 0; offset_h < output_tile_h; ++offset_h) {
             int16_t vm_offset = (offset_w * output_tile_h + offset_h) * output_tile_c + chunk_offset;
             uint16_t real_chunk_len = output_tile_c - chunk_offset;
-#if STABLE_POWER
-            // TODO: Replace cpu_buffer with lea_buffer
-            to_add = cpu_buffer + default_output_tile_len + vm_offset;
-            be_add = cpu_buffer + vm_offset;
-#else // STABLE_POWER
-            be_add = partial_result + default_output_tile_len + vm_offset;
             to_add = partial_result + vm_offset;
+            be_add = cpu_buffer + vm_offset;
+#if !STABLE_POWER
             cur_input_offset += chunk_offset;
 #endif //STABLE_POWER
             cur_psum_offset += chunk_offset;
@@ -806,7 +802,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->flags->extra.conv.output_tile_w *
         conv_params->flags->extra.conv.output_tile_c * 2;
 
-    matrix_mpy_results -= 2 * output_tile_len;
+    // reserve memory for psum
+    matrix_mpy_results -= output_tile_len;
     my_printf_debug("matrix_mpy_results offset: %d" NEWLINE, matrix_mpy_results - lea_buffer);
 
     conv_params->tile_w =
@@ -966,7 +963,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         my_printf_debug("real intra_kernel_offset: %d" NEWLINE, intra_kernel_offset);
 #endif // SPARSE
         conv_params->kY = intra_kernel_offset / conv_params->kH;
-         * 2conv_params->kX = intra_kernel_offset % conv_params->kH;
+        conv_params->kX = intra_kernel_offset % conv_params->kH;
 
         first_unfinished_job_idx %= jobs_in_a_weight_tile;
         uint16_t input_tile_w_offset = first_unfinished_job_idx / (2 * cur_output_tile_h * cur_output_tile_c);
@@ -1179,7 +1176,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // STABLE_POWER
 #if SPARSE
                     int16_t next_input_h = conv_params->input_h + conv_params->tile_h;
-                    int16_t next_input_w = conv_params->input_w + conv_params->stride;
+                    int16_t next_input_w = conv_params->input_w + conv_params->tile_w;
                     if(next_input_h > conv_params->input_h_last && next_input_w > conv_params->input_w_last) {
                         break;
                     }
@@ -1275,7 +1272,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // STABLE_POWER
     }
 EXIT_LAYER:
-    matrix_mpy_results += 2 * output_tile_len;
+    matrix_mpy_results += output_tile_len;
     flip_state_bit(model, output);
 
     my_printf_debug("handle_conv output" NEWLINE);

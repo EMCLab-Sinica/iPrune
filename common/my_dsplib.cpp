@@ -162,7 +162,6 @@ void my_min_q15(const int16_t *pSrc, uint32_t blockSize, int16_t *pResult, uint1
 static int16_t pState[ARM_PSTATE_LEN];
 #endif
 
-// FIXME: common/platform.cpp
 void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint16_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
     // XXX: LEA doc requires all matrix dimensions to be even, while LEA
     // appears to still give correct results when srcARows is odd
@@ -200,7 +199,6 @@ void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16
 #endif
 }
 #if STABLE_POWER
-// FIXME: common/platform.cpp
 void my_matrix_mpy_q15_to_vm(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint16_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
     // XXX: LEA doc requires all matrix dimensions to be even, while LEA
     // appears to still give correct results when srcARows is odd

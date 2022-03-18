@@ -11,9 +11,7 @@
 #pragma DATA_SECTION(".leaRAM")
 #endif
 int16_t lea_buffer[LEA_BUFFER_SIZE];
-#if STABLE_POWER
 int16_t cpu_buffer[CPU_BUFFER_SIZE];
-#endif // STABLE_POWER
 
 #if HAWAII
 static int16_t non_recorded_jobs = 0;
@@ -275,7 +273,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
             node->flags.extra.conv.output_tile_c *
             node->flags.extra.conv.output_tile_w *
             node->flags.extra.conv.output_tile_h * 2;
-        int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - 2 * default_output_tile_len;
+        int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - default_output_tile_len;
         MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
         MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
         uint16_t vm_offset = 0;
@@ -288,11 +286,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
                     buffer_id * output_len + // n
                     ((offset_h + output_h) * OUTPUT_W + (offset_w + output_w)) * CHANNEL + // hw
                     filter_idx; // c
-#if STABLE_POWER
                 src = cpu_buffer + vm_offset * output_tile_c;
-#else // STABLE_POWER
-                src = lea_buffer + LEA_BUFFER_SIZE - default_output_tile_len + vm_offset * output_tile_c;
-#endif // STABLE_POWER
                 my_memcpy_to_param(output, dst, src, real_chunk_len * sizeof(int16_t), 0);
                 my_printf_debug(NEWLINE "Output offset %d" NEWLINE, dst);
                 my_printf_debug("Preserved chunk" NEWLINE);

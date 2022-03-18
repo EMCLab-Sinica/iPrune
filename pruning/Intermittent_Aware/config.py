@@ -10,18 +10,20 @@ config = {
                 'output': [1,8,28,1],#'output': [1,8,28,3],
             },
             'group': [8, 1], # [n_filter, n_channel]
+            'pads': [2, 2, 2, 2],
             'stride': 1
         },
         {
             'input': [1,8,14,14],
-            'filter': [4,8,5,5],
+            'filter': [16,8,5,5],
             'output': [1,4,14,14],
             'tile': {
-                'input': [1,4,14,3],#'input': [1,4,14,6],
+                'input': [1,4,14,6],#'input': [1,4,14,6],
                 'weight': [4,4,1,1],
-                'output': [1,4,14,3],#'output': [1,4,14,6],
+                'output': [1,4,14,6],#'output': [1,4,14,6],
             },
             'group': [4, 4],
+            'pads': [2, 2, 2, 2],
             'stride': 1
         },
         {

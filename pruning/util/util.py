@@ -363,7 +363,10 @@ class MetricsMaker:
                     tile_c_set = set()
                     for idx in range(rows[i - 1], rows[i]):
                         tile_c_set.add(int(cols[idx] / (layer_config['filter'][2] * layer_config['filter'][3])))
-                    nvm_read_inputs += len(tile_c_set) * layer_config['group'][1] * layer_config['output'][2] * layer_config['output'][3]
+                    nvm_read_inputs += len(tile_c_set) * layer_config['group'][1] * \
+                        (layer_config['output'][2]) * \
+                        (layer_config['output'][3] + layer_config['pads'][1] + layer_config['pads'][3]) * \
+                        n_output_tile_per_weight_group
                     vm_read_psum += 2 * n_tile_c * n_row * \
                         layer_config['output'][2] * layer_config['output'][3]
                     vm_write_psum += n_tile_c * n_row * \
