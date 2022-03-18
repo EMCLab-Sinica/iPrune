@@ -453,10 +453,6 @@ static inline uint16_t load_input_vector(uint32_t src_addr, int16_t* dest_addr, 
 
 static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
     int8_t field_size = (conv_params->kH - 1) / 2;
-    const uint8_t* pads = conv_params->flags->extra.conv.pads;
-    enum { PAD_H_BEGIN = 0, PAD_W_BEGIN = 1, PAD_H_END = 2, PAD_W_END = 3 };
-    // let tile_w be equal to input_tile_w
-    conv_params->tile_w += pads[PAD_W_BEGIN] + pads[PAD_W_END];
     /* copy input data, col by col */
 
     int8_t real_input_index = -1;
@@ -478,8 +474,22 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
      * and thus the resultant address is offset by 0x10000.
      */
     // (x, y) is the position of weight kernl
-    int32_t w_start = int16_max(0, conv_params->input_w),
-            w_end = int16_min(conv_params->input_w + conv_params->tile_w, conv_params->W) - 1;
+    int16_t input_w_tile_begin = conv_params->input_w_first;
+    while(input_w_tile_begin <= conv_params->input_w) {
+        input_w_tile_begin += conv_params->tile_w;
+    }
+    input_w_tile_begin -= conv_params->tile_w;
+
+    uint16_t tile_h_offset = (conv_params->input_h - conv_params->input_h_first - conv_params->kX) % conv_params->tile_h;
+    uint16_t tile_w_offset = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) % conv_params->tile_w;
+
+    const uint8_t* pads = conv_params->flags->extra.conv.pads;
+    enum { PAD_H_BEGIN = 0, PAD_W_BEGIN = 1, PAD_H_END = 2, PAD_W_END = 3 };
+    // let tile_w be equal to input_tile_w
+    conv_params->tile_w += pads[PAD_W_BEGIN] + pads[PAD_W_END];
+
+    int32_t w_start = int16_max(0, input_w_tile_begin),
+            w_end = int16_min(conv_params->input_w + conv_params->tile_w - tile_w_offset, conv_params->W) - 1;
     my_printf_debug("w_start=%" PRId32 " ", w_start);
     my_printf_debug("w_end=%" PRId32 NEWLINE, w_end);
     int16_t *dest;
@@ -498,7 +508,6 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
     my_printf_debug("inputs_len: %d" NEWLINE, inputs_len);
 
     dest = lea_buffer;
-    uint16_t tile_h_offset = (conv_params->input_h - conv_params->input_h_first - conv_params->kX) % conv_params->tile_h;
     if(conv_params->cached_input_h == conv_params->input_h_first - 1 ||
             conv_params->cached_input_w == conv_params->input_w_first - 1) {
         my_printf_debug("Start loading input" NEWLINE);
@@ -510,7 +519,7 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
         my_fill_q15(0, lea_buffer, inputs_len);
 
         // reserve space for padding 0
-        dest += (w_start-conv_params->input_w) * conv_params->dest_offset * conv_params->tile_h;
+        dest += (w_start - input_w_tile_begin) * conv_params->dest_offset * conv_params->tile_h;
 
         my_printf_debug("h_start=%" PRId32 " ", h_start);
         my_printf_debug("h_end=%" PRId32 NEWLINE, h_end);
@@ -563,7 +572,7 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
             bias_multipler_offset += conv_params->dest_offset;
         }
         conv_params->cached_input_h = conv_params->input_h_first;
-        conv_params->cached_input_w = conv_params->input_w;
+        conv_params->cached_input_w = input_w_tile_begin;
     }
     my_printf_debug("Loaded inputs" NEWLINE);
     // state = 0 as state bits are already removed by my_offset_q15 above
@@ -572,10 +581,10 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
     // reset tile_w as output_tile_w
     conv_params->tile_w -= pads[PAD_W_BEGIN] + pads[PAD_W_END];
     int16_t max_input_h =
-        MIN_VAL(conv_params->input_h+conv_params->tile_h-1-tile_h_offset,
+        MIN_VAL(conv_params->input_h + conv_params->tile_h - 1 - tile_h_offset,
                 conv_params->input_h_last + conv_params->kX);
     int16_t max_input_w =
-        MIN_VAL(conv_params->input_w+conv_params->tile_w-1,
+        MIN_VAL(conv_params->input_w + conv_params->tile_w - 1 - tile_w_offset,
                 conv_params->input_w_last + conv_params->kY);
     my_printf_debug("max_input_h: %d, max_input_w: %d" NEWLINE, max_input_h, max_input_w);
     for(int32_t cur_input_w = conv_params->input_w; cur_input_w <= max_input_w; cur_input_w += conv_params->stride) {
@@ -866,7 +875,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->input_h = conv_params->input_h_first;
     conv_params->input_w = conv_params->input_w_first;
 #if INTERMITTENT
-        /* Handle sub-layer footprint */
+    /* Handle sub-layer footprint */
     uint32_t first_unfinished_sub_layer_idx = conv_params->model->sub_layer_idx;
     my_printf_debug("first_unfinished_sub_layer_idx: %d" NEWLINE, first_unfinished_sub_layer_idx);
 
@@ -966,16 +975,16 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->kX = intra_kernel_offset % conv_params->kH;
 
         first_unfinished_job_idx %= jobs_in_a_weight_tile;
-        uint16_t input_tile_w_offset = first_unfinished_job_idx / (2 * cur_output_tile_h * cur_output_tile_c);
-        first_unfinished_job_idx %= (2 * cur_output_tile_h * cur_output_tile_c);
-        my_printf_debug("remain: %d" NEWLINE, first_unfinished_job_idx);
-
-        uint16_t jobs_in_a_set_psum_cmd = cur_output_tile_h * cur_output_tile_c;
+        uint16_t jobs_in_a_set_psum_cmd = cur_output_tile_w * cur_output_tile_h * cur_output_tile_c;
         conv_params->cur_op = first_unfinished_job_idx / jobs_in_a_set_psum_cmd;
 
         MY_ASSERT(!(conv_params->cur_op & ~1)); // should be 0 or 1
 
         first_unfinished_job_idx %= jobs_in_a_set_psum_cmd;
+        uint16_t input_tile_w_offset = first_unfinished_job_idx / (cur_output_tile_h * cur_output_tile_c);
+        first_unfinished_job_idx %= (cur_output_tile_h * cur_output_tile_c);
+        my_printf_debug("remain: %d" NEWLINE, first_unfinished_job_idx);
+
         uint16_t input_tile_h_offset = first_unfinished_job_idx / cur_output_tile_c;
         my_printf_debug("input_tile_w_offset: %d" NEWLINE, input_tile_w_offset);
         my_printf_debug("input_tile_h_offset: %d" NEWLINE, input_tile_h_offset);
