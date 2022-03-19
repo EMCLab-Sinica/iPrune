@@ -258,15 +258,15 @@ void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const vo
 }
 #endif // STABLE_POWER
 
-void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int8_t buffer_id) {
+void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int16_t tile_h_offset, int16_t tile_w_offset, int8_t buffer_id) {
     my_printf_debug("Preserve cached psum to NVM" NEWLINE);
     if(node->op_type == 0) {
         // is conv op
         uint16_t CHANNEL = output->dims[1],
                  OUTPUT_H = output->dims[2],
                  OUTPUT_W = output->dims[3];
-        uint16_t output_tile_w = MIN_VAL(node->flags.extra.conv.output_tile_w, OUTPUT_W - output_w);
-        uint16_t output_tile_h = MIN_VAL(node->flags.extra.conv.output_tile_h, OUTPUT_H - output_h);
+        uint16_t output_tile_w = MIN_VAL(node->flags.extra.conv.output_tile_w, OUTPUT_W - (output_w - tile_w_offset));
+        uint16_t output_tile_h = MIN_VAL(node->flags.extra.conv.output_tile_h, OUTPUT_H - (output_h - tile_h_offset));
         uint16_t output_tile_c = node->flags.extra.conv.output_tile_c;
         uint16_t output_len = CHANNEL * OUTPUT_W * OUTPUT_H;
         int16_t default_output_tile_len =
@@ -274,13 +274,13 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
             node->flags.extra.conv.output_tile_w *
             node->flags.extra.conv.output_tile_h * 2;
         int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - default_output_tile_len;
-        MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
-        MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
+        MY_ASSERT(output_w + output_tile_w - tile_w_offset <= OUTPUT_W);
+        MY_ASSERT(output_h + output_tile_h - tile_h_offset <= OUTPUT_H);
         uint16_t vm_offset = 0;
         uint16_t chunk_offset = 0;
         int16_t *src = 0;
-        for(int16_t offset_w = 0; offset_w < output_tile_w; ++offset_w) {
-            for(int16_t offset_h = 0; offset_h < output_tile_h; ++offset_h) {
+        for(int16_t offset_w = 0; offset_w < output_tile_w - tile_w_offset; ++offset_w) {
+            for(int16_t offset_h = 0; offset_h < output_tile_h - tile_h_offset; ++offset_h) {
                 uint16_t real_chunk_len = output_tile_c - chunk_offset;
                 uint16_t dst =
                     buffer_id * output_len + // n
@@ -297,6 +297,8 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
 #endif
                 chunk_offset = 0;
             }
+            output_h -= tile_h_offset;
+            tile_h_offset = 0;
         }
     } else if(node->op_type == 1) {
         // FIXME: update op type number after removing merge state

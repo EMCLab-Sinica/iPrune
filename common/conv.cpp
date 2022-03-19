@@ -463,6 +463,16 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
         conv_params->real_conv_input = conv_params->conv_input;
     }
 
+    uint16_t tile_h_offset = ((conv_params->input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride) % conv_params->tile_h;
+    uint16_t tile_w_offset = ((conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride) % conv_params->tile_w;
+    int16_t input_w_tile_begin = conv_params->input_w - conv_params->kY - tile_w_offset;
+    my_printf_debug("input_w_tile_begin: %d" NEWLINE, input_w_tile_begin);
+
+    const uint8_t* pads = conv_params->flags->extra.conv.pads;
+    enum { PAD_H_BEGIN = 0, PAD_W_BEGIN = 1, PAD_H_END = 2, PAD_W_END = 3 };
+    // let tile_w be equal to input_tile_w
+    conv_params->tile_w += pads[PAD_W_BEGIN] + pads[PAD_W_END];
+
     /* int32_t instead of int16_t as TI's compiler cannot handle negative
      * offsets correctly. The expression `ptr + (int16_t)(-2)` is
      * compiled as:
@@ -473,23 +483,8 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
      * In step 2, R11 becomes 0x01FFFC, while it should be -4, or 0x00FFFC,
      * and thus the resultant address is offset by 0x10000.
      */
-    // (x, y) is the position of weight kernl
-    int16_t input_w_tile_begin = conv_params->input_w_first;
-    while(input_w_tile_begin <= conv_params->input_w) {
-        input_w_tile_begin += conv_params->tile_w;
-    }
-    input_w_tile_begin -= conv_params->tile_w;
-
-    uint16_t tile_h_offset = (conv_params->input_h - conv_params->input_h_first - conv_params->kX) % conv_params->tile_h;
-    uint16_t tile_w_offset = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) % conv_params->tile_w;
-
-    const uint8_t* pads = conv_params->flags->extra.conv.pads;
-    enum { PAD_H_BEGIN = 0, PAD_W_BEGIN = 1, PAD_H_END = 2, PAD_W_END = 3 };
-    // let tile_w be equal to input_tile_w
-    conv_params->tile_w += pads[PAD_W_BEGIN] + pads[PAD_W_END];
-
     int32_t w_start = int16_max(0, input_w_tile_begin),
-            w_end = int16_min(conv_params->input_w + conv_params->tile_w - tile_w_offset, conv_params->W) - 1;
+            w_end = int16_min(input_w_tile_begin + conv_params->tile_w, conv_params->W) - 1;
     my_printf_debug("w_start=%" PRId32 " ", w_start);
     my_printf_debug("w_end=%" PRId32 NEWLINE, w_end);
     int16_t *dest;
@@ -595,7 +590,15 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
             // reset here for further processing
             conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
         }
+        conv_params->input_h -= tile_h_offset * conv_params->stride;
+        my_printf_debug("tile_h_offset: %d" NEWLINE, tile_h_offset);
+        my_printf_debug("input_h: %d" NEWLINE, conv_params->input_h);
+        tile_h_offset = 0;
     }
+    conv_params->input_w -= tile_w_offset * conv_params->stride;
+    my_printf_debug("tile_w_offset: %d" NEWLINE, tile_w_offset);
+    my_printf_debug("input_w: %d" NEWLINE, conv_params->input_w);
+    tile_w_offset = 0;
 }
 
 void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
@@ -717,15 +720,15 @@ void next_nonzero_value(ConvTaskParams *conv_params, int16_t *col_val) {
 }
 #endif // SPARSE
 
-void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output, int16_t output_w, int16_t output_h) {
+void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output, int16_t output_w, int16_t output_h, int16_t tile_h_offset, int16_t tile_w_offset) {
     int16_t OUTPUT_C = output->dims[1],
             OUTPUT_H = output->dims[2],
             OUTPUT_W = output->dims[3],
             output_tile_c = conv_params->flags->extra.conv.output_tile_c,
-            output_tile_w = MIN_VAL(conv_params->flags->extra.conv.output_tile_w, OUTPUT_W - output_w),
-            output_tile_h = MIN_VAL(conv_params->flags->extra.conv.output_tile_h, OUTPUT_H - output_h);
-    MY_ASSERT(output_w + output_tile_w <= OUTPUT_W);
-    MY_ASSERT(output_h + output_tile_h <= OUTPUT_H);
+            output_tile_w = MIN_VAL(conv_params->flags->extra.conv.output_tile_w, OUTPUT_W - (output_w - tile_w_offset)),
+            output_tile_h = MIN_VAL(conv_params->flags->extra.conv.output_tile_h, OUTPUT_H - (output_h - tile_h_offset));
+    MY_ASSERT(output_w + output_tile_w - tile_w_offset <= OUTPUT_W);
+    MY_ASSERT(output_h + output_tile_h - tile_h_offset <= OUTPUT_H);
     int16_t output_tile_len = output_tile_h * output_tile_w * output_tile_c;
     int16_t default_output_tile_len =
         conv_params->flags->extra.conv.output_tile_c *
@@ -742,12 +745,12 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
         (output_h * OUTPUT_W + output_w) * OUTPUT_C + conv_params->filter_idx;
     uint16_t cur_input_offset = input_offset;
 #endif // STABLE_POWER
+    int16_t vm_offset = 0;
     int16_t chunk_offset = 0;
     uint16_t cur_psum_offset = psum_offset;
     int16_t *to_add, *be_add;
-    for(int16_t offset_w = 0; offset_w < output_tile_w; ++offset_w) {
-        for(int16_t offset_h = 0; offset_h < output_tile_h; ++offset_h) {
-            int16_t vm_offset = (offset_w * output_tile_h + offset_h) * output_tile_c + chunk_offset;
+    for(int16_t offset_w = 0; offset_w < output_tile_w - tile_w_offset; ++offset_w) {
+        for(int16_t offset_h = 0; offset_h < output_tile_h - tile_h_offset; ++offset_h) {
             uint16_t real_chunk_len = output_tile_c - chunk_offset;
             to_add = partial_result + vm_offset;
             be_add = cpu_buffer + vm_offset;
@@ -785,11 +788,15 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
 #if !STABLE_POWER
             cur_input_offset += OUTPUT_C * OUTPUT_W;
 #endif // STABLE_POWER
+            vm_offset += real_chunk_len;
         }
 #if !STABLE_POWER
+        input_offset -= tile_h_offset * OUTPUT_W * OUTPUT_C;
         cur_input_offset = input_offset + OUTPUT_C * (offset_w + 1);
 #endif // STABLE_POWER
+        psum_offset -= tile_h_offset * OUTPUT_W * OUTPUT_C;
         cur_psum_offset = psum_offset + OUTPUT_C * (offset_w + 1);
+        tile_h_offset = 0;
     }
 }
 
@@ -1104,26 +1111,40 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                             conv_params->input_h += conv_params->kX;
                             my_printf_debug("(%d, %d) (%d, %d)" NEWLINE, conv_params->input_h, conv_params->input_w, conv_params->kX, conv_params->kY);
                             my_printf_debug("current psum buffer version: %d" NEWLINE, conv_params->psum_buffer_version);
+                            int16_t tile_h_offset =
+                                ((conv_params->input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride) %
+                                conv_params->flags->extra.conv.output_tile_h;
+                            int16_t tile_w_offset =
+                                ((conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride) %
+                                conv_params->flags->extra.conv.output_tile_w;
+                            my_printf_debug("tile_h_offset: %d, tile_w_offset: %d" NEWLINE, tile_h_offset, tile_w_offset);
+                            int16_t output_h = (conv_params->input_h - conv_params->input_h_first - conv_params->kX) /
+                                                conv_params->stride,
+                                    output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) /
+                                                conv_params->stride;
                             if(conv_params->cur_op == 0) {
                                 // perform psum
                                 handle_conv_inner_loop(model, conv_params);
 #if !STABLE_POWER
                                 conv_params->cur_op ^= 1;
+                                output_h = (conv_params->input_h - conv_params->input_h_first - conv_params->kX) /
+                                            conv_params->stride;
+                                output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) /
+                                            conv_params->stride;
+                                tile_h_offset = tile_w_offset = 0;
                             }
                             if(conv_params->cur_op == 1) {
-                                uint16_t tile_h_offset =
-                                    (conv_params->input_h - conv_params->input_h_first - conv_params->kX) % conv_params->tile_h;
+                                my_printf_debug("tile_h_offset: %d, tile_w_offset: %d" NEWLINE, tile_h_offset, tile_w_offset);
+                                my_printf_debug("output_h: %d, output_w: %d" NEWLINE, output_h, output_w);
                                 // perform accum
-                                int16_t output_h = (conv_params->input_h - conv_params->input_h_first - conv_params->kX - tile_h_offset) /
-                                                    conv_params->stride,
-                                        output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) /
-                                                    conv_params->stride;
-                                conv_merge(model, conv_params, output, output_w, output_h);
-                                preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, conv_params->psum_buffer_version ^ 0x1);
+                                conv_merge(model, conv_params, output, output_w, output_h, tile_h_offset, tile_w_offset);
+                                preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, tile_h_offset, tile_w_offset, conv_params->psum_buffer_version ^ 0x1);
                                 conv_params->cur_op ^= 1;
-                                conv_params->input_h -= tile_h_offset;
+                                conv_params->input_h -= tile_h_offset * conv_params->stride;
+                                conv_params->input_w -= tile_w_offset * conv_params->stride;
                             }
                             conv_params->psum_buffer_version ^= 0x1;
+                            my_printf_debug("Reseted input_h: %d/input_w: %d" NEWLINE, conv_params->input_h, conv_params->input_w);
 #else // STABLE_POWER
                             }
 #endif // STABLE_POWER
@@ -1161,9 +1182,9 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                              output_w = (conv_params->input_w - conv_params->input_w_first) / conv_params->stride;
                     if(conv_params->input_tile_c_index != 0) {
                         // perform psum addition
-                        conv_merge(model, conv_params, output, output_w, output_h);
+                        conv_merge(model, conv_params, output, output_w, output_h, 0, 0);
                     }
-                    preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, 0);
+                    preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, 0, 0, 0);
                     init_cpu_buffer();
 #else // STABLE_POWER
                     /* If (conv_params->kH * conv_params->kW) is odd, the first buffer read and

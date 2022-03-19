@@ -18,7 +18,7 @@ extern int16_t cpu_buffer[CPU_BUFFER_SIZE];
 void init_cpu_buffer();
 void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const void *src, size_t n, uint16_t timer_delay);
 #endif
-void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int8_t buffer_id);
+void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int16_t tile_h_offset, int16_t tile_w_offset, int8_t buffer_id);
 int16_t upper_gauss(int16_t a, int16_t b);
 void float_to_scale_params(int16_t *scaleFract, uint8_t *shift, float scale);
 void iterate_chunks(Model *model, const ParameterInfo *param, uint16_t start_offset, uint16_t len, const ChunkHandler& callback, void* params);
