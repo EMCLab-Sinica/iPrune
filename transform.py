@@ -196,7 +196,7 @@ lea_buffer_size = {
 
 cpu_buffer_size = {
     # determined by trial and error
-    'msp430': 800,
+    'msp430': 1300,
     'msp432': 18000,
 }
 
@@ -252,7 +252,7 @@ Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
 
 if args.config == 'pruned_mnist':
-    model_config = model_configs['LeNet_5']
+    model_config = model_configs['mnist']
 elif args.config == 'pruned_cifar':
     model_config = model_configs['SqueezeNet']
 elif args.config == 'HAR':
@@ -464,9 +464,9 @@ def determine_conv_tile_c(n, node_idx):
         tile_kH = model_config[node_idx]['tile']['weight'][2]
         tile_kW = model_config[node_idx]['tile']['weight'][3]
         output_tile_h = model_config[node_idx]['tile']['output'][2]
-        input_tile_h = model_config[node_idx]['tile']['input'][2] + node_flags.pads[0] + node_flags.pads[2]
+        input_tile_h = model_config[node_idx]['tile']['input'][2] + model_config[node_idx]['pads'][0] + model_config[node_idx]['pads'][2]
         output_tile_w = model_config[node_idx]['tile']['output'][3]
-        input_tile_w = model_config[node_idx]['tile']['input'][3] + node_flags.pads[1] + node_flags.pads[3]
+        input_tile_w = model_config[node_idx]['tile']['input'][3] + model_config[node_idx]['pads'][1] + model_config[node_idx]['pads'][3]
         output_tile_c = model_config[node_idx]['tile']['output'][1]
 
         max_continuous_channels = CHANNEL
@@ -505,8 +505,8 @@ def determine_conv_tile_c(n, node_idx):
         node_flags.output_tile_w = output_tile_w
         node_flags.output_tile_h = output_tile_h
         node_flags.output_tile_c = output_tile_c
-        node_flags.input_tile_w = input_tile_w - node_flags.pads[1] - node_flags.pads[3]
-        node_flags.input_tile_h = input_tile_h - node_flags.pads[0] - node_flags.pads[2]
+        node_flags.input_tile_w = input_tile_w - model_config[node_idx]['pads'][1] - model_config[node_idx]['pads'][3]
+        node_flags.input_tile_h = input_tile_h - model_config[node_idx]['pads'][0] - model_config[node_idx]['pads'][2]
     else:
         pass
         # manually set tile size
