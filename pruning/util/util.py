@@ -190,8 +190,8 @@ def to_onnx(source, name, args):
         model = models.LeNet_5(None)
         input_shape = (1,28,28)
         dummy_input = Variable(torch.randn(1, 1, 28, 28))
-    elif args.arch == 'LeNet_5':
-        model = models.LeNet_5_p(None)
+    elif args.arch == 'mnist':
+        model = models.MNIST(None)
         input_shape = (1,28,28)
         dummy_input = Variable(torch.randn(1, 1, 28, 28))
     elif args.arch == 'SqueezeNet':

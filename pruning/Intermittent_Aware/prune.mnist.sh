@@ -1,11 +1,10 @@
-Model='LeNet_5_p'
+Model='mnist'
 PRUNE_METHOD=$1
-COMMON_FLAGS='--arch LeNet_5_p'
+COMMON_FLAGS='--arch '$Model
 CANDIDATES_PRUNING_RATIOS='0.2 0.25 0.3 0.35 0.4'
 MY_DEBUG='--debug 1' # -1: none, 0: info, 1: debug
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --lr 0.01 --lr-epochs 20'
 
-'''
 # original training -- 99.20%
 python main.py $COMMON_FLAGS
 '''
@@ -15,14 +14,12 @@ python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--pretrained saved_models/LeNet_5_p.origin1.pth.tar \
 	--epochs 50 \
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS
-'''
 # 51.6% pruned -- 99.17%
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 1 \
 	--pretrained saved_models/$PRUNE_METHOD/$Model/stage_0.pth.tar \
 	--epochs 50\
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS
-
 # 66.5% pruned -- 98.97%
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 2 \

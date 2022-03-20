@@ -199,7 +199,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default=None,
-            help='the MNIST network structure: LeNet_5_p | LeNet_5 | HAR | SqueezeNet')
+            help='the MNIST network structure: mnist | LeNet_5 | HAR | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -242,7 +242,7 @@ if __name__=='__main__':
     kwargs = {'num_workers': 2, 'pin_memory': True} if args.cuda else {}
 
     # generate the model
-    if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
+    if args.arch == 'LeNet_5' or args.arch == 'mnist':
         train_loader = torch.utils.data.DataLoader(
                 datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
                 batch_size=args.batch_size, shuffle=True, **kwargs)
@@ -252,7 +252,7 @@ if __name__=='__main__':
         if args.arch == 'LeNet_5':
             model = models.LeNet_5(args.prune)
         else:
-            model = models.LeNet_5_p(args.prune)
+            model = models.MNIST(args.prune)
     elif args.arch == 'HAR':
         train_loader = torch.utils.data.DataLoader(
             HAR_Dataset(split='train'),
@@ -300,7 +300,7 @@ if __name__=='__main__':
             'weight_decay': args.weight_decay,
             'key':key}]
 
-    if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
+    if args.arch == 'LeNet_5' or args.arch == 'mnist':
         optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
                 weight_decay=args.weight_decay)
     elif args.arch == 'HAR':
@@ -334,7 +334,7 @@ if __name__=='__main__':
         if not args.pretrained:
             print('==> ERROR: Please assign the pretrained model')
             exit()
-        if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
+        if args.arch == 'LeNet_5' or args.arch == 'mnist':
             input_shape = (1, 28, 28)
         elif args.arch == 'HAR':
             seq_len = 128
@@ -353,7 +353,7 @@ if __name__=='__main__':
         prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=admm_params)
         if not args.admm:
             for epoch in pbar:
-                if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
+                if args.arch == 'LeNet_5' or args.arch == 'mnist':
                     lr = adjust_learning_rate(optimizer, epoch)
                 elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
                     # adjusted by ADAM
@@ -366,7 +366,7 @@ if __name__=='__main__':
         # prune_op.print_info()
     else:
         for epoch in trange(1, args.epochs + 1):
-            if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
+            if args.arch == 'LeNet_5' or args.arch == 'mnist':
                 adjust_learning_rate(optimizer, epoch)
             elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
                 # adjusted by ADAM
