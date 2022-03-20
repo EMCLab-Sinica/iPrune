@@ -14,10 +14,36 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import models
 
 from torchvision import datasets, transforms
+from torch.utils.data.dataset import Dataset
 from torch.autograd import Variable
 from util import *
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
+
+class HAR_Dataset(Dataset):
+    def __init__(self, split):
+        root =  '/home/chia/.cache/UCI HAR Dataset/'
+        sys.path.append(cwd + '/../../data/deep-learning-HAR/utils')
+        from utilities import read_data
+        self.imgs, self.labels, self.list_ch_train = read_data(data_path=root, split=split) # train
+        # make sure they contain only valid labels [0 ~ class -1]
+        self.labels = self.labels - 1
+
+        assert len(self.imgs) == len(self.labels), "Mistmatch in length!"
+        # Normalize?
+        self.imgs = self.standardize(self.imgs)
+
+    def standardize(self, data):
+        """ Standardize data """
+        # Standardize train and test
+        standardized_data = (data - np.mean(data, axis=0)[None,:,:]) / np.std(data, axis=0)[None,:,:]
+        return standardized_data
+
+    def __getitem__(self, index):
+        return self.imgs[index], self.labels[index]
+
+    def __len__(self):
+        return len(self.imgs)
 
 def save_state(model, acc):
     global logger_
@@ -46,7 +72,7 @@ def train(epoch):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
+        data, target = Variable(data.type(torch.float)), Variable(target)
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
@@ -91,7 +117,7 @@ def test(evaluate=False):
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
+        data, target = Variable(data.type(torch.float)), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
@@ -173,7 +199,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default=None,
-            help='the MNIST network structure: LeNet_5_p | LeNet_5 | SqueezeNet')
+            help='the MNIST network structure: LeNet_5_p | LeNet_5 | HAR | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -227,6 +253,14 @@ if __name__=='__main__':
             model = models.LeNet_5(args.prune)
         else:
             model = models.LeNet_5_p(args.prune)
+    elif args.arch == 'HAR':
+        train_loader = torch.utils.data.DataLoader(
+            HAR_Dataset(split='train'),
+            batch_size=args.batch_size, shuffle=False, **kwargs)
+        test_loader = torch.utils.data.DataLoader(
+            HAR_Dataset(split='test'),
+            batch_size=args.test_batch_size, shuffle=False, **kwargs)
+        model = models.HAR_CNN(args.prune, n_channels=9, n_classes=6)
     elif args.arch == 'SqueezeNet':
         train_loader = torch.utils.data.DataLoader(
                 datasets.CIFAR10('data', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
@@ -269,6 +303,8 @@ if __name__=='__main__':
     if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
         optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
                 weight_decay=args.weight_decay)
+    elif args.arch == 'HAR':
+        optimizer = optim.Adam(params, lr=args.lr)
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
 
@@ -300,6 +336,10 @@ if __name__=='__main__':
             exit()
         if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
             input_shape = (1, 28, 28)
+        elif args.arch == 'HAR':
+            seq_len = 128
+            n_channels = 9
+            input_shape = (n_channels, seq_len)
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
 
@@ -315,7 +355,7 @@ if __name__=='__main__':
             for epoch in pbar:
                 if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
                     lr = adjust_learning_rate(optimizer, epoch)
-                elif args.arch == 'SqueezeNet':
+                elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
                     # adjusted by ADAM
                     pass
                 train(epoch)
@@ -328,7 +368,7 @@ if __name__=='__main__':
         for epoch in trange(1, args.epochs + 1):
             if args.arch == 'LeNet_5' or args.arch == 'LeNet_5_p':
                 adjust_learning_rate(optimizer, epoch)
-            elif args.arch == 'SqueezeNet':
+            elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
                 # adjusted by ADAM
                 pass
             train(epoch)
