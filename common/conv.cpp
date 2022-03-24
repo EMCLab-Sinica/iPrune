@@ -55,8 +55,8 @@ typedef struct ConvTaskParams {
     uint8_t cur_input_tile_c;
     uint16_t cur_filter_tile_c;
     uint16_t n_tiles_c;
-    uint16_t dest_offset;
-    uint16_t filter_offset;
+    int16_t dest_offset;
+    int16_t filter_offset;
     // For 1x1 conv
     int16_t kX;
     int16_t kY;
@@ -379,7 +379,7 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
     my_printf_debug(NEWLINE);
 
 #if STABLE_POWER
-    compare_vm_vm(matrix_mpy_results, conv_params->model, conv_params->output, cur_output_data_offset, values_to_preserve);
+    // compare_vm_vm(matrix_mpy_results, conv_params->model, conv_params->output, cur_output_data_offset, values_to_preserve);
 #else // STABLE_POWER
     compare_vm_nvm(matrix_mpy_results, conv_params->model, conv_params->output, cur_output_data_offset, values_to_preserve);
 #endif // STABLE_POWER
@@ -463,8 +463,8 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
         conv_params->real_conv_input = conv_params->conv_input;
     }
 
-    uint16_t tile_h_offset = ((conv_params->input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride) % conv_params->tile_h;
-    uint16_t tile_w_offset = ((conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride) % conv_params->tile_w;
+    int16_t tile_h_offset = ((conv_params->input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride) % conv_params->tile_h;
+    int16_t tile_w_offset = ((conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride) % conv_params->tile_w;
     int16_t input_w_tile_begin = conv_params->input_w - conv_params->kY - tile_w_offset;
     my_printf_debug("input_w_tile_begin: %d" NEWLINE, input_w_tile_begin);
 

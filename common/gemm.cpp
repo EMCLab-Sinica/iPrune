@@ -318,7 +318,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             my_printf_debug(NEWLINE);
 
 #if STABLE_POWER
-            compare_vm_vm(buffer_temp, model, output, output_offset, values_to_preserve);
+            // compare_vm_vm(buffer_temp, model, output, output_offset, values_to_preserve);
 #else // STABLE_POWER
             compare_vm_nvm(buffer_temp, model, output, output_offset, values_to_preserve);
 #endif // STABLE_POWER

@@ -8,6 +8,8 @@ from torchsummary import summary
 
 import models
 
+OPSET = 13
+
 def printArgs(args):
     print('\n => Setting params:')
     for key in vars(args):
@@ -18,7 +20,7 @@ def printArgs(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='PyTorch LeNet_5')
     parser.add_argument('--arch', action='store', default='LeNet_5',
-            help='the network structure: LeNet_5 | SqueezeNet')
+            help='the network structure: HAR | mnist | LeNet_5 | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None)
     args = parser.parse_args()
     printArgs(args)
@@ -27,10 +29,14 @@ if __name__ == "__main__":
         input_shape = (1,28,28)
         model = models.LeNet_5(None)
         dummy_input = Variable(torch.randn(1, 1, 28, 28))
-    elif args.arch == 'LeNet_5_p':
+    elif args.arch == 'mnist':
         input_shape = (1,28,28)
-        model = models.LeNet_5_p(None)
+        model = models.MNIST(None)
         dummy_input = Variable(torch.randn(1, 1, 28, 28))
+    elif args.arch == 'HAR':
+        input_shape = (9,1,128)
+        model = models.HAR_CNN(None)
+        dummy_input = Variable(torch.randn(1,9,1,128))
     elif args.arch == 'SqueezeNet':
         input_shape = (3,32,32)
         model = models.SqueezeNet(None)
@@ -41,9 +47,6 @@ if __name__ == "__main__":
     model.load_state_dict(state_dict)
     summary(model, input_shape, device='cpu')
     # save onnx model
-    if args.arch == 'LeNet_5_p':
-        converted_name = "./onnx_models/{}.onnx".format('LeNet_5')
-    else:
-        converted_name = "./onnx_models/{}.onnx".format(args.arch)
-    torch.onnx.export(model, dummy_input, converted_name)
+    converted_name = "./onnx_models/{}.onnx".format(args.arch)
+    torch.onnx.export(model, dummy_input, converted_name, opset_version=OPSET)
     print('Converted model: {}'.format(converted_name))

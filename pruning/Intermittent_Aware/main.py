@@ -37,6 +37,8 @@ class HAR_Dataset(Dataset):
         """ Standardize data """
         # Standardize train and test
         standardized_data = (data - np.mean(data, axis=0)[None,:,:]) / np.std(data, axis=0)[None,:,:]
+        # (batch, 9, 128) => (batch, 9, 1, 128)
+        standardized_data = np.expand_dims(standardized_data, axis=2)
         return standardized_data
 
     def __getitem__(self, index):

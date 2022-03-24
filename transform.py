@@ -196,7 +196,7 @@ lea_buffer_size = {
 
 cpu_buffer_size = {
     # determined by trial and error
-    'msp430': 1300,
+    'msp430': 800,
     'msp432': 18000,
 }
 
@@ -252,11 +252,11 @@ Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
 
 if args.config == 'pruned_mnist':
-    model_config = model_configs['mnist']
-elif args.config == 'pruned_cifar':
+    model_config = model_configs['LeNet_5']
+elif args.config == 'pruned_cifar' or args.config == 'cifar':
     model_config = model_configs['SqueezeNet']
-elif args.config == 'HAR':
-    model_config = None
+elif args.config == 'pruned_har' or args.config == 'har':
+    model_config = model_configs['HAR']
 elif args.config == 'KWS':
     model_config = None
 
@@ -400,6 +400,11 @@ for idx, n in enumerate(nodes):
         assert len(kernel_shape) == 2
         n.flags.b.extra.maxpool.kernel_shape = (ctypes.c_uint8*2)(*kernel_shape)
         strides = get_attr(n, 'strides')
+        if args.config == 'pruned_har':
+            # Since the maxpool1d is not supported for pytorch to onnx, I replace maxpool1d with maxpool2d.
+            # However, the stride_H and stride_W should be the same in maxpool2d in pytorch.
+            # Therefore, modify stride_H to 1 manually to avoid mistake.
+            strides[0] = 1
         if strides is not None:
             n.flags.b.extra.maxpool.strides = (ctypes.c_uint8*2)(*strides)
         else:
@@ -508,12 +513,9 @@ def determine_conv_tile_c(n, node_idx):
         node_flags.input_tile_w = input_tile_w - model_config[node_idx]['pads'][1] - model_config[node_idx]['pads'][3]
         node_flags.input_tile_h = input_tile_h - model_config[node_idx]['pads'][0] - model_config[node_idx]['pads'][2]
     else:
-        pass
-        # manually set tile size
-    #    node_flags.input_tile_c = model_config[node_idx]['group'][1]
-     #   node_flags.output_tile_c = model_config[node_idx]['group'][0]
-      #  node_flags.output_tile_h = model_config[node_idx]['tile']['output'][2]
-       # node_flags.output_tile_w = model_config[node_idx]['tile']['output'][3]
+        print("Please select configed model.")
+        exit()
+
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
     print('input_tile_w: {}'.format(node_flags.input_tile_w))
     print('input_tile_h: {}'.format(node_flags.input_tile_h))
@@ -841,6 +843,9 @@ for params in parameters:
         model_parameters_info.write(to_bytes(0))                     # dummy
         # extend_dims
         model_parameters_info.write(to_bytes(1))
+        if args.config == 'pruned_har':
+            # expand the dims of input in order to fit the shape of conv2d.
+            dims = np.insert(dims, 1, 1)
         for dim in dims:
             model_parameters_info.write(to_bytes(dim))
         for _ in range(3 - len(dims)):
@@ -1006,7 +1011,6 @@ if args.write_images:
 
 pathlib.Path('build').mkdir(exist_ok=True)
 
-# TODO: Add index structure (BSR format)
 # _parameters_
 with open('build/data.cpp', 'w') as output_c, open('build/data.h', 'w') as output_h:
     output_h.write('''
