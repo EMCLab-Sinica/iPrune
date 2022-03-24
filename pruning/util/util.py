@@ -342,12 +342,6 @@ class MetricsMaker:
             vm_jobs += len(cols) * layer_config['group'][0]
         elif isinstance(node, nn.Conv2d):
             op_type = 'CONV'
-            # weight stationary
-            # XXX: channel shape should be rechecked
-            if self.args_.prune_shape == 'channel':
-                per_input_nvm_read_for_a_weight_group = math.ceil(layer_config['tile']['weight'][3] / layer_config['stride']) # e.g. 5 / 1 = 5
-            elif self.args_.prune_shape == 'vector':
-                per_input_nvm_read_for_a_weight_group = 1
             n_output_tile_per_weight_group = \
                 math.ceil(layer_config['output'][2] / layer_config['tile']['output'][2]) * \
                 math.ceil(layer_config['output'][3] / layer_config['tile']['output'][3])
@@ -366,7 +360,7 @@ class MetricsMaker:
                     nvm_read_inputs += len(tile_c_set) * layer_config['group'][1] * \
                         (layer_config['output'][2]) * \
                         (layer_config['output'][3] + layer_config['pads'][1] + layer_config['pads'][3]) * \
-                        n_output_tile_per_weight_group
+                        math.ceil(layer_config['tile']['output'][3] / layer_config['filter'][3])
                     vm_read_psum += 2 * n_tile_c * n_row * \
                         layer_config['output'][2] * layer_config['output'][3]
                     vm_write_psum += n_tile_c * n_row * \
