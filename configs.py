@@ -94,7 +94,7 @@ configs = {
         'data_loader': load_har,
         'n_all_samples': 2947,
         'sample_size': [9, 1, 128],
-        'op_filters': 4,
+        'op_filters': 2,
         'first_sample_outputs': [ -6.194588, 2.2284777, -13.659239, -1.4972568, 13.473643, -10.446839 ],
         'fp32_accuracy': 0.9121,
     },

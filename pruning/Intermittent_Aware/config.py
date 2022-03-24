@@ -139,7 +139,7 @@ config = {
                 'weight': [8,9,1,1],
                 'output': [1,8,1,32],
             },
-            'group': [6, 9],
+            'group': [8, 9],
             'pads': [0, 1, 0, 1],
             'stride': 1
         },

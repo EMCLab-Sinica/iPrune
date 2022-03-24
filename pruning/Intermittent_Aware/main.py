@@ -95,7 +95,7 @@ def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
+        data, target = Variable(data.type(torch.float)), Variable(target)
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
@@ -150,7 +150,7 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
+        data, target = Variable(data.type(torch.float)), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
@@ -341,7 +341,7 @@ if __name__=='__main__':
         elif args.arch == 'HAR':
             seq_len = 128
             n_channels = 9
-            input_shape = (n_channels, seq_len)
+            input_shape = (n_channels, 1, seq_len)
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
 
