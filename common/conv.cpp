@@ -1156,6 +1156,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                             }
                             col_val = COL_VALS[conv_params->cur_n_cols];
                             my_printf_debug("col_val: %d" NEWLINE, col_val);
+                            // TODO: [SPARSE] keep runing
                             if(col_val / (conv_params->kH * conv_params->kW) != conv_params->input_tile_c_index) {
                                 goto EXIT_TILE;
                             }
@@ -1168,6 +1169,22 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if !SPARSE
                         conv_params->kX = 0;
                         conv_params->kY++;
+                        // TODO: check if the all tile_c have finished
+                        // If not. Do not leave the loop!
+                        // reset cached_input_h and cached_input_w
+                        if(conv_params->kY >= conv_params->kW) {
+                            conv_params->input_tile_c_index++;
+                            if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
+                                break;
+                            }
+                            conv_params->kX = conv_params->kY = 0;
+                            // reset for loading new IFM tile
+                            conv_params->cached_input_h = conv_params->input_h_first - 1;
+                            conv_params->cached_input_w = conv_params->input_w_first - 1;
+                            conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+                            my_printf_debug("Swap tile_c !" NEWLINE);
+                            // TODO: commit model in order to update sub_layer_idx
+                        }
 #endif // SPARSE
                     }
 #if SPARSE
@@ -1180,14 +1197,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if STABLE_POWER
                     uint16_t output_h = (conv_params->input_h - conv_params->input_h_first) / conv_params->stride,
                              output_w = (conv_params->input_w - conv_params->input_w_first) / conv_params->stride;
-#if SPARSE
-                    if(conv_params->cached_cur_n_cols != 0) {
-#else // SPARSE
-                    if(conv_params->input_tile_c_index != 0) {
-#endif // SPARSE
-                        // perform psum addition
-                        conv_merge(model, conv_params, output, output_w, output_h, 0, 0);
-                    }
                     preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, 0, 0, 0);
                     init_cpu_buffer();
 #else // STABLE_POWER
@@ -1220,11 +1229,14 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
                     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
 #endif // SPARSE
+                    conv_params->input_tile_c_index = 0;
+                    conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+                    my_printf_debug("Swap tile_h !" NEWLINE);
                 }
                 conv_params->input_h = conv_params->input_h_first;
                 conv_params->cached_input_w = conv_params->input_w_first - 1;
+                my_printf_debug("Swap tile_h/tile_w !" NEWLINE);
             }
-            conv_params->input_w = conv_params->input_w_first;
             conv_params->cached_input_h = conv_params->input_h_first - 1;
             // finish computing a weight tile
 #if SPARSE
@@ -1240,7 +1252,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
             conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
 #else // SPARSE
-            conv_params->input_tile_c_index++;
+            // conv_params->input_tile_c_index++;
 #endif // SPARSE
 #if !STABLE_POWER
             /* If (conv_params->kH * conv_params->kW) is odd, the first buffer read and
@@ -1256,11 +1268,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if SPARSE
             conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
 #endif // SPARSE
-            if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
-                break;
-            }
-            conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-            my_printf_debug("Swap tile !" NEWLINE);
+            //if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
+            //    break;
+            //}
+            //conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+            if(conv_params->input_w > conv_params->input_w_last) break;
         }
         my_printf_debug("Finish output channel [%d, %d)" NEWLINE, conv_params->filter_idx,
                     conv_params->filter_idx + conv_params->flags->extra.conv.output_tile_c);
