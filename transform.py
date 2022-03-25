@@ -376,6 +376,11 @@ def infer_auto_pad(node):
     pads = get_attr(node ,'pads')
     if pads:
         assert len(pads) <= 4
+        if args.config == 'pruned_har':
+            # Since the conv1d is not supported for pytorch to onnx, I replace conv1d with conv2d.
+            # However, the pad_H_left/pad_W_left and pad_H_right/pad_W_right_left should be the same in conv2d in pytorch.
+            # Therefore, modify pad_W_right to 0 manually to avoid mistake.
+            pads[3] = 0
         # https://stackoverflow.com/questions/4145775/how-do-i-convert-a-python-list-into-a-c-array-by-using-ctypes
         conv_flags.pads = (ctypes.c_uint8 * 4)(*pads)
     if auto_pad in (b'SAME_UPPER', b'SAME_LOWER'):
