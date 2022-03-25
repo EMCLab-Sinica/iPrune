@@ -1180,7 +1180,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if STABLE_POWER
                     uint16_t output_h = (conv_params->input_h - conv_params->input_h_first) / conv_params->stride,
                              output_w = (conv_params->input_w - conv_params->input_w_first) / conv_params->stride;
+#if SPARSE
+                    if(conv_params->cached_cur_n_cols != 0) {
+#else // SPARSE
                     if(conv_params->input_tile_c_index != 0) {
+#endif // SPARSE
                         // perform psum addition
                         conv_merge(model, conv_params, output, output_w, output_h, 0, 0);
                     }
