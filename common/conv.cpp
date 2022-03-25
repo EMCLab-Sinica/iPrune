@@ -1158,7 +1158,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                             my_printf_debug("col_val: %d" NEWLINE, col_val);
                             // TODO: [SPARSE] keep runing
                             if(col_val / (conv_params->kH * conv_params->kW) != conv_params->input_tile_c_index) {
-                                goto EXIT_TILE;
+                                conv_params->input_tile_c_index = col_val / (conv_params->kH * conv_params->kW);
+                                conv_params->cached_input_h = conv_params->input_h_first - 1;
+                                conv_params->cached_input_w = conv_params->input_w_first - 1;
+                                conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+                                my_printf_debug("Swap tile_c !" NEWLINE);
                             }
                             conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
                             conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
@@ -1169,7 +1173,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if !SPARSE
                         conv_params->kX = 0;
                         conv_params->kY++;
-                        // TODO: check if the all tile_c have finished
+                        // check if the all tile_c have finished
                         // If not. Do not leave the loop!
                         // reset cached_input_h and cached_input_w
                         if(conv_params->kY >= conv_params->kW) {
@@ -1223,8 +1227,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                     if(next_input_h > conv_params->input_h_last && next_input_w > conv_params->input_w_last) {
                         break;
                     }
-                    my_printf_debug("cached_cur_n_cols: %d" NEWLINE, conv_params->cached_cur_n_cols);
-                    conv_params->cur_n_cols = conv_params->cached_cur_n_cols;
+                    conv_params->cur_n_cols = 0;
                     col_val = COL_VALS[conv_params->cur_n_cols];
                     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
                     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
@@ -1244,13 +1247,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                 // break when the weight tiles in the same filters are finished.
                 break;
             }
-            my_printf_debug("cur_n_cols: %d" NEWLINE, conv_params->cur_n_cols);
-            // find the next weight tiles in the same filters
-            col_val = get_col_val(conv_params->model, conv_params->conv_filter, conv_params->cur_row_val + conv_params->cur_n_cols);
-            // find next tile in the same row
-            conv_params->input_tile_c_index = col_val / (conv_params->kW * conv_params->kH);
-            conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
-            conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
 #else // SPARSE
             // conv_params->input_tile_c_index++;
 #endif // SPARSE
@@ -1265,13 +1261,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
 #endif // SPARSE
 #endif // STABLE_POWER
-#if SPARSE
-            conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
-#endif // SPARSE
-            //if (conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c >= input_channels) {
-            //    break;
-            //}
-            //conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
             if(conv_params->input_w > conv_params->input_w_last) break;
         }
         my_printf_debug("Finish output channel [%d, %d)" NEWLINE, conv_params->filter_idx,
@@ -1280,8 +1269,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         // FIXME: handle the issues if the entire row is pruned
         conv_params->n_cols = conv_params->cur_n_cols = 0;
         next_nonzero_value(conv_params, &col_val);
-        // cache when switch tile
-        conv_params->cached_cur_n_cols = conv_params->cur_n_cols;
         if(conv_params->n_cols) {
             // XXX: add a checker to verify the result
             my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));
