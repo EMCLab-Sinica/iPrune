@@ -1156,7 +1156,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                             }
                             col_val = COL_VALS[conv_params->cur_n_cols];
                             my_printf_debug("col_val: %d" NEWLINE, col_val);
-                            // TODO: [SPARSE] keep runing
                             if(col_val / (conv_params->kH * conv_params->kW) != conv_params->input_tile_c_index) {
                                 conv_params->input_tile_c_index = col_val / (conv_params->kH * conv_params->kW);
                                 conv_params->cached_input_h = conv_params->input_h_first - 1;
@@ -1203,12 +1202,13 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                     preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, 0, 0, 0);
                     init_cpu_buffer();
 #else // STABLE_POWER
-                    /* If (conv_params->kH * conv_params->kW) is odd, the first buffer read and
+                    /* If (conv_params->kH * conv_params->kW * (input_channels / conv_params->flags->extra.conv.input_tile_c))
+                     * is odd, the first buffer read and
                      * the last buffer wrote are different. Flip the version to let the final results
                      * be stored in the same buffer.
                      */
 #if SPARSE
-                    conv_params->psum_buffer_version ^= (conv_params->cur_n_cols - conv_params->cached_cur_n_cols) & 0x1 ;
+                    conv_params->psum_buffer_version = conv_params->n_cols & 0x1 ;
 #else // SPARSE
                     conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * (input_channels / conv_params->flags->extra.conv.input_tile_c)) & 0x1 ;
 #endif // SPARSE
@@ -1246,18 +1246,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                 // break when the weight tiles in the same filters are finished.
                 break;
             }
-#else // SPARSE
-            // conv_params->input_tile_c_index++;
 #endif // SPARSE
-#if !STABLE_POWER
-            /* If (conv_params->kH * conv_params->kW) is odd, the first buffer read and
-             * the last buffer wrote are different. Flip the version to let the final results
-             * be stored in the same buffer.
-             */
-#if SPARSE
-            conv_params->psum_buffer_version ^= (conv_params->cur_n_cols - conv_params->cached_cur_n_cols) & 0x1 ;
-#endif // SPARSE
-#endif // STABLE_POWER
             if(conv_params->input_w > conv_params->input_w_last) break;
         }
         my_printf_debug("Finish output channel [%d, %d)" NEWLINE, conv_params->filter_idx,
@@ -1295,7 +1284,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->psum_buffer_version = 0;
 #else // STABLE_POWER
 #if SPARSE
-        conv_params->psum_buffer_version = (conv_params->n_cols - conv_params->cur_n_cols) & 0x1;
+        conv_params->psum_buffer_version = conv_params->n_cols & 0x1;
 #else // SPARSE
         conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * input_channels / node->flags.extra.conv.input_tile_c) & 0x1;
 #endif // SPARSE
