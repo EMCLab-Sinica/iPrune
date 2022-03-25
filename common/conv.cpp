@@ -848,7 +848,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if STABLE_POWER
     conv_params->psum_buffer_version = 0;
 #else // STABLE_POWER
-    conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * input_channels / node->flags.extra.conv.input_tile_c) & 0x1;
+    conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * (input_channels / node->flags.extra.conv.input_tile_c)) & 0x1;
 #endif // STABLE_POWER
 
 #if JAPARI
@@ -1187,7 +1187,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                             conv_params->cached_input_w = conv_params->input_w_first - 1;
                             conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
                             my_printf_debug("Swap tile_c !" NEWLINE);
-                            // TODO: commit model in order to update sub_layer_idx
                         }
 #endif // SPARSE
                     }
@@ -1211,7 +1210,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if SPARSE
                     conv_params->psum_buffer_version ^= (conv_params->cur_n_cols - conv_params->cached_cur_n_cols) & 0x1 ;
 #else // SPARSE
-                    conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
+                    conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * (input_channels / conv_params->flags->extra.conv.input_tile_c)) & 0x1 ;
 #endif // SPARSE
                     // commit model for sub_layer
                     conv_params->model->sub_layer_idx++;
@@ -1257,8 +1256,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
              */
 #if SPARSE
             conv_params->psum_buffer_version ^= (conv_params->cur_n_cols - conv_params->cached_cur_n_cols) & 0x1 ;
-#else // SPARSE
-            conv_params->psum_buffer_version ^= (conv_params->kH * conv_params->kW) & 0x1 ;
 #endif // SPARSE
 #endif // STABLE_POWER
             if(conv_params->input_w > conv_params->input_w_last) break;
