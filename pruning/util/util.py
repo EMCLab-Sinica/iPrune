@@ -241,7 +241,10 @@ class MetricsMaker:
         node_idx = 0
         for m in self.model_.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                metric_all = self.profile_node(self.args_, m, self.output_shapes_, node_idx)
+                data, cols, rows, n_col, n_row = self.transform2BSR(m, node_idx)
+                metric = self.profile_node(m, node_idx, cols, rows, n_col, n_row)
+                metrics.append(metric)
+                '''
                 if self.args_.prune == 'intermittent':
                     # XXX: psum jobs only? or all the nvm read/write cost which are incurred by intermittent bebavior ?
                     #metric = metric_all['vm_jobs'] + metric_all['vm_read_psum'] + metric_all['vm_write_psum'] + metric_all['nvm_jobs']
@@ -250,9 +253,11 @@ class MetricsMaker:
                 elif self.args_.prune == 'energy':
                     metric = metric_all['nvm_access'] * self.cost_['NVM'] + metric_all['vm_access'] * self.cost_['VM']
                     metrics.append(metric)
+                '''
                 node_idx += 1
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
         self.metrics_ = metrics
+        print(self.metrics_)
         self.prune_order_ = order
         self.saveInfo()
 
@@ -282,9 +287,8 @@ class MetricsMaker:
                 row[str(idx)] = item
             writer.writerow(row)
 
-    def profile_node(self, args, node, output_shapes, node_idx):
-        plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
-        layer_config = config[args.arch][node_idx]
+    def transform2BSR(self, node, node_idx):
+        layer_config = config[self.args_.arch][node_idx]
         shape = node.weight.data.shape
         matrix = node.weight.data
         matrix = matrix.reshape(shape[0], -1).cpu()
@@ -314,7 +318,11 @@ class MetricsMaker:
         data = bsr.data
         cols = bsr.indices
         rows = bsr.indptr
+        return data, cols, rows, n_col, n_row
 
+    def profile_node(self, node, node_idx, cols, rows, n_col, n_row):
+        plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
+        layer_config = config[self.args_.arch][node_idx]
         nvm_jobs = 0
         nvm_read_weights = 0
         nvm_read_inputs = 0
@@ -376,7 +384,7 @@ class MetricsMaker:
                 else:
                     pruned_ofm_element += n_row * layer_config['output'][2] * layer_config['output'][3]
 
-        logger_.debug('group size: {}'.format(group_size))
+        #logger_.debug('group size: {}'.format(group_size))
         vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
         nvm_access = (nvm_jobs + nvm_read_inputs + nvm_read_weights + nvm_read_psum + nvm_write_psum)
         self.layer_info_.append({
@@ -395,6 +403,55 @@ class MetricsMaker:
             'pruned_ofm_element': pruned_ofm_element,
         })
         return self.layer_info_[-1]
+
+class JobMaker(MetricsMaker):
+    def __init__(self, model, args, output_shapes, cost={'NVM': 100, 'VM': 1}):
+        super().__init__(model, args, output_shapes, cost)
+
+    def profile_node(self, node, node_idx, cols, rows, n_col, n_row):
+        plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
+        layer_config = config[self.args_.arch][node_idx]
+
+        ofm_jobs = 0
+        nvm_read_psum = 0
+        nvm_write_psum = 0
+        nvm_jobs = 0
+        pruned_ofm_element = 0
+
+        logger_.debug("Node: {}".format(node_idx))
+        ofm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2] * layer_config['output'][3]
+        if isinstance(node, nn.Linear):
+            op_type = 'FC'
+            # input stationary
+            nvm_read_psum += 2 * (len(rows) - 1) * layer_config['output'][1]
+            nvm_write_psum += (len(rows) - 1) * layer_config['output'][1]
+            nvm_jobs += len(cols) * layer_config['group'][0]
+        elif isinstance(node, nn.Conv2d):
+            op_type = 'CONV'
+            for i in range(1, len(rows)):
+                n_tile = rows[i] - rows[i - 1]
+                if n_tile:
+                    nvm_read_psum += 2 * n_tile * n_row * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                    nvm_write_psum += n_tile * n_row * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                    nvm_jobs += n_tile * n_row * \
+                        layer_config['output'][2] * layer_config['output'][3]
+                else:
+                    pruned_ofm_element += n_row * layer_config['output'][2] * layer_config['output'][3]
+
+        total_jobs = pruned_ofm_element + nvm_jobs
+        self.layer_info_.append({
+            'node': node_idx,
+            'op_type': op_type,
+            'ofm_jobs': ofm_jobs,
+            'nvm_jobs': nvm_jobs,
+            'nvm_read_psum': nvm_read_psum,
+            'nvm_write_psum': nvm_write_psum,
+            'pruned_ofm_element': pruned_ofm_element,
+            'total_jobs': total_jobs,
+        })
+        return total_jobs
 
 def prune_weight_layer(m, mask):
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
@@ -819,7 +876,8 @@ class Prune_Op():
         self.names, self.output_shapes = activation_shapes(model, input_shape)
         if model.weights_pruned == None:
             model.weights_pruned = MaskMaker.gen_masks(model)
-        self.metrics_maker = MetricsMaker(model=model, args=args, output_shapes=self.output_shapes)
+        if self.args.prune == 'intermittent':
+            self.metrics_maker = JobMaker(model=model, args=args, output_shapes=self.output_shapes)
         self.metrics_maker.profile()
         self.mask_maker = MaskMaker(model, args, input_shape, metrics_maker=self.metrics_maker)
         if args.sa:
