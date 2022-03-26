@@ -7,6 +7,8 @@ import torch.optim as optim
 import os
 import sys
 import subprocess
+import pathlib
+import fcntl
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
@@ -19,6 +21,7 @@ from torch.autograd import Variable
 from util import *
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
+from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
 
 class HAR_Dataset(Dataset):
     def __init__(self, split):
@@ -40,6 +43,101 @@ class HAR_Dataset(Dataset):
         # (batch, 9, 128) => (batch, 9, 1, 128)
         standardized_data = np.expand_dims(standardized_data, axis=2)
         return standardized_data
+
+    def __getitem__(self, index):
+        return self.imgs[index], self.labels[index]
+
+    def __len__(self):
+        return len(self.imgs)
+
+class KWS_Dataset(Dataset):
+    def __init__(self, split):
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+        import tensorflow as tf
+        import torchaudio
+        GOOGLE_SPEECH_URL = 'https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz'
+        GOOGLE_SPEECH_SAMPLE_RATE = 16000
+        cache_dir = pathlib.Path('~/.cache/torchaudio/speech_commands_v2').expanduser()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        dataset = torchaudio.datasets.SPEECHCOMMANDS(root=cache_dir, url=GOOGLE_SPEECH_URL, download=True)
+
+        # From https://github.com/ARM-software/ML-KWS-for-MCU/blob/master/Pretrained_models/labels.txt
+        new_labels = '_silence_ _unknown_ yes no up down left right on off stop go'.split(' ')
+
+        decoded_wavs = []
+        self.labels = []
+        # The first few _unknown_ samples are not recognized by Hello Edge's DNN model - use good ones instead
+        for idx, data in enumerate(reversed(dataset)):
+            if idx < 0:
+                continue
+            waveform, sample_rate, label, _, _ = data
+            assert sample_rate == GOOGLE_SPEECH_SAMPLE_RATE
+            decoded_wavs.append(np.expand_dims(np.squeeze(waveform), axis=-1))
+            self.labels.append(new_labels.index(label))
+
+        with open(self.kws_dnn_model(), 'rb') as f:
+            graph_def = tf.compat.v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+            tf.import_graph_def(graph_def)
+
+        mfccs = []
+        with tf.compat.v1.Session() as sess:
+            mfcc_tensor = sess.graph.get_tensor_by_name('Mfcc:0')
+            for decoded_wav in decoded_wavs:
+                mfcc = sess.run(mfcc_tensor, {
+                    'decoded_sample_data:0': decoded_wav,
+                    'decoded_sample_data:1': GOOGLE_SPEECH_SAMPLE_RATE,
+                })
+                mfccs.append(mfcc[0])
+        self.imgs = np.array(mfccs, dtype=np.float32)
+        testing_percentage = 0.1
+        n_test_img = int(len(self.imgs) * testing_percentage)
+        if split == 'train':
+            self.imgs = self.imgs[n_test_img:]
+            self.labels = self.labels[n_test_img:]
+        elif split == 'test':
+            self.imgs = self.imgs[:n_test_img]
+            self.labels = self.labels[:n_test_img]
+
+    def kws_dnn_model(self):
+        return self.download_file('https://github.com/ARM-software/ML-KWS-for-MCU/raw/master/Pretrained_models/DNN/DNN_S.pb', 'KWS-DNN_S.pb')
+
+    def download_file(self, url: str, filename: str, post_processor: Optional[Callable] = None) -> os.PathLike:
+        xdg_cache_home = pathlib.Path(os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')))
+
+        # Based on https://myapollo.com.tw/zh-tw/python-fcntl-flock/
+        lock_path = xdg_cache_home / f'{filename}.lock'
+        try:
+            lock_f = open(lock_path, 'r')
+        except FileNotFoundError:
+            lock_f = open(lock_path, 'w')
+
+        # Inspired by https://stackoverflow.com/a/53643011
+        class ProgressHandler:
+            def __init__(self):
+                self.last_reported = 0
+
+            def __call__(self, block_num, block_size, total_size):
+                progress = int(block_num * block_size / total_size * 100)
+                if progress > self.last_reported + 5:
+                    logger.info('Downloaded: %d%%', progress)
+                    self.last_reported = progress
+
+        try:
+            fcntl.flock(lock_f, fcntl.LOCK_EX)
+
+            local_path = xdg_cache_home / filename
+            if not local_path.exists():
+                urlretrieve(url, local_path, ProgressHandler())
+
+            ret = local_path
+            if post_processor:
+                ret = post_processor(local_path)
+        finally:
+            lock_f.close()
+
+        return ret
 
     def __getitem__(self, index):
         return self.imgs[index], self.labels[index]
@@ -82,12 +180,6 @@ def train(epoch):
         optimizer.step()
         if args.prune:
             prune_op.prune_weight()
-        '''
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
-        '''
     return
 
 def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
@@ -133,12 +225,6 @@ def test(evaluate=False):
 
     #if args.prune == None or evaluate:
     test_loss /= len(test_loader.dataset)
-    '''
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        test_loss * args.batch_size, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-    print('Best Accuracy: {:.2f}%\n'.format(best_acc))
-    '''
     return (test_loss * args.batch_size, acc, best_acc)
 
 @torch.no_grad()
@@ -201,7 +287,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default=None,
-            help='the MNIST network structure: mnist | LeNet_5 | HAR | SqueezeNet')
+            help='the MNIST network structure: mnist | LeNet_5 | HAR | KWS | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -263,6 +349,14 @@ if __name__=='__main__':
             HAR_Dataset(split='test'),
             batch_size=args.test_batch_size, shuffle=False, **kwargs)
         model = models.HAR_CNN(args.prune, n_channels=9, n_classes=6)
+    elif args.arch == 'KWS':
+        train_loader = torch.utils.data.DataLoader(
+            KWS_Dataset(split='train'),
+            batch_size=args.batch_size, shuffle=True, **kwargs)
+        test_loader = torch.utils.data.DataLoader(
+            KWS_Dataset(split='test'),
+            batch_size=args.test_batch_size, shuffle=True, **kwargs)
+        model = models.KWS_DNN_S(args.prune)
     elif args.arch == 'SqueezeNet':
         train_loader = torch.utils.data.DataLoader(
                 datasets.CIFAR10('data', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
@@ -295,7 +389,6 @@ if __name__=='__main__':
     param_dict = dict(model.named_parameters())
     params = []
 
-
     for key, value in param_dict.items():
         params += [{'params':[value], 'lr': args.lr,
             'momentum':args.momentum,
@@ -307,10 +400,15 @@ if __name__=='__main__':
                 weight_decay=args.weight_decay)
     elif args.arch == 'HAR':
         optimizer = optim.Adam(params, lr=args.lr)
+    elif args.arch == 'KWS':
+        optimizer = optim.Adam(params, lr=args.lr)
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
 
-    criterion = nn.CrossEntropyLoss()
+    if args.arch == 'KWS':
+        criterion = F.cross_entropy
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     if args.evaluate:
         print_layer_info(model)
@@ -342,6 +440,8 @@ if __name__=='__main__':
             seq_len = 128
             n_channels = 9
             input_shape = (n_channels, 1, seq_len)
+        elif args.arch == 'KWS':
+            input_shape = (1, 25, 10)
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
 
@@ -357,7 +457,7 @@ if __name__=='__main__':
             for epoch in pbar:
                 if args.arch == 'LeNet_5' or args.arch == 'mnist':
                     lr = adjust_learning_rate(optimizer, epoch)
-                elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
+                elif args.arch == 'SqueezeNet' or args.arch == 'HAR' or args.arch == 'KWS':
                     # adjusted by ADAM
                     pass
                 train(epoch)
@@ -370,7 +470,7 @@ if __name__=='__main__':
         for epoch in trange(1, args.epochs + 1):
             if args.arch == 'LeNet_5' or args.arch == 'mnist':
                 adjust_learning_rate(optimizer, epoch)
-            elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
+            elif args.arch == 'SqueezeNet' or args.arch == 'HAR' or args.arch == 'KWS':
                 # adjusted by ADAM
                 pass
             train(epoch)
