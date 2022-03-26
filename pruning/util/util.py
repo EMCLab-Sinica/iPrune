@@ -244,16 +244,6 @@ class MetricsMaker:
                 data, cols, rows, n_col, n_row = self.transform2BSR(m, node_idx)
                 metric = self.profile_node(m, node_idx, cols, rows, n_col, n_row)
                 metrics.append(metric)
-                '''
-                if self.args_.prune == 'intermittent':
-                    # XXX: psum jobs only? or all the nvm read/write cost which are incurred by intermittent bebavior ?
-                    #metric = metric_all['vm_jobs'] + metric_all['vm_read_psum'] + metric_all['vm_write_psum'] + metric_all['nvm_jobs']
-                    metric = metric_all['vm_jobs'] + metric_all['vm_write_psum'] + metric_all['pruned_ofm_element']
-                    metrics.append(metric)
-                elif self.args_.prune == 'energy':
-                    metric = metric_all['nvm_access'] * self.cost_['NVM'] + metric_all['vm_access'] * self.cost_['VM']
-                    metrics.append(metric)
-                '''
                 node_idx += 1
         order = sorted(range(len(metrics)), key=lambda k : metrics[k])
         self.metrics_ = metrics
@@ -409,7 +399,6 @@ class JobMaker(MetricsMaker):
         super().__init__(model, args, output_shapes, cost)
 
     def profile_node(self, node, node_idx, cols, rows, n_col, n_row):
-        plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
         layer_config = config[self.args_.arch][node_idx]
 
         ofm_jobs = 0
@@ -452,6 +441,81 @@ class JobMaker(MetricsMaker):
             'total_jobs': total_jobs,
         })
         return total_jobs
+
+class EnergyCostMaker(MetricsMaker):
+    def __init__(self, model, args, output_shapes, cost={'NVM': 100, 'VM': 1}):
+        super().__init__(model, args, output_shapes, cost)
+        self.plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
+
+    def est_memory_access_energy_cost(self, node, node_idx, cols, rows, n_col, n_row):
+        layer_config = config[self.args_.arch][node_idx]
+
+        nvm_jobs = 0
+        nvm_read_weights = 0
+        nvm_read_inputs = 0
+        op_type = None
+
+        logger_.debug("Node: {}".format(node_idx))
+        if isinstance(node, nn.Linear):
+            EC_NVM2VM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_row)
+            EC_VM2NVM = self.plat_costs_profile['E_DMA_VM_TO_NVM'](n_col)
+            op_type = 'FC'
+            # input stationary
+            for i in range(1, len(rows)):
+                if rows[i] - rows[i - 1] != 0:
+                    nvm_read_inputs += EC_NVM2VM
+            nvm_read_weights += len(cols) * n_col * EC_NVM2VM
+            nvm_jobs += \
+                layer_config['output'][0] * \
+                layer_config['output'][1] * \
+                layer_config['output'][2] * \
+                layer_config['output'][3] / \
+                n_col * EC_VM2NVM
+        elif isinstance(node, nn.Conv2d):
+            EC_NVM2VM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_col)
+            EC_VM2NVM = self.plat_costs_profile['E_DMA_VM_TO_NVM'](n_row)
+            op_type = 'CONV'
+            n_output_tile_per_weight_group = \
+                math.ceil(layer_config['output'][2] / layer_config['tile']['output'][2]) * \
+                math.ceil(layer_config['output'][3] / layer_config['tile']['output'][3])
+
+            nvm_read_weights += len(cols) * n_row * EC_NVM2VM * n_output_tile_per_weight_group
+            nvm_jobs += \
+                layer_config['output'][0] * \
+                layer_config['output'][1] * \
+                layer_config['output'][2] * \
+                layer_config['output'][3] / \
+                n_row * EC_VM2NVM
+            for i in range(1, len(rows)):
+                n_tile_c = rows[i] - rows[i - 1]
+                if n_tile_c:
+                    tile_c_set = set()
+                    for idx in range(rows[i - 1], rows[i]):
+                        tile_c_set.add(int(cols[idx] / (layer_config['filter'][2] * layer_config['filter'][3])))
+                    nvm_read_inputs += \
+                        len(tile_c_set) * \
+                        EC_NVM2VM * \
+                        layer_config['output'][2] * \
+                        (layer_config['output'][3] + layer_config['pads'][1] + layer_config['pads'][3]) * \
+                        math.ceil(layer_config['tile']['output'][3] / layer_config['filter'][3])
+        total_data_transfer_energy_cost = nvm_read_inputs + nvm_read_weights + nvm_jobs
+        self.layer_info_.append({
+            'node': node_idx,
+            'op_type': op_type,
+            'nvm_read_inputs': nvm_read_inputs,
+            'nvm_read_weights': nvm_read_weights,
+            'nvm_jobs': nvm_jobs,
+            'total_data_transfer_energy_cost': total_data_transfer_energy_cost
+        })
+        return total_data_transfer_energy_cost
+
+    def est_computation_energy_cost(self, node, node_idx, cols, rows, n_col, n_row):
+        return 0
+
+    def profile_node(self, node, node_idx, cols, rows, n_col, n_row):
+        memory_access_energy_cost = self.est_memory_access_energy_cost(node, node_idx, cols, rows, n_col, n_row)
+        computation_energy_cost = self.est_computation_energy_cost(node, node_idx, cols, rows, n_col, n_row)
+        return memory_access_energy_cost + computation_energy_cost
 
 def prune_weight_layer(m, mask):
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
@@ -878,7 +942,10 @@ class Prune_Op():
             model.weights_pruned = MaskMaker.gen_masks(model)
         if self.args.prune == 'intermittent':
             self.metrics_maker = JobMaker(model=model, args=args, output_shapes=self.output_shapes)
+        if self.args.prune == 'energy':
+            self.metrics_maker = EnergyCostMaker(model=model, args=args, output_shapes=self.output_shapes)
         self.metrics_maker.profile()
+        # exit()
         self.mask_maker = MaskMaker(model, args, input_shape, metrics_maker=self.metrics_maker)
         if args.sa:
             self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.25, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
