@@ -23,6 +23,7 @@ from itertools import chain
 from collections import OrderedDict
 from config import config
 from tqdm import tqdm, trange
+from .CostModel.plat_energy_costs import PlatformCostModel
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
@@ -282,6 +283,7 @@ class MetricsMaker:
             writer.writerow(row)
 
     def profile_node(self, args, node, output_shapes, node_idx):
+        plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
         layer_config = config[args.arch][node_idx]
         shape = node.weight.data.shape
         matrix = node.weight.data
