@@ -16,6 +16,7 @@ import subprocess
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
+from abc import abstractmethod
 from scipy.sparse import csr_matrix, bsr_matrix
 from torchsummary import summary
 from torch.autograd import Variable
@@ -310,89 +311,8 @@ class MetricsMaker:
         rows = bsr.indptr
         return data, cols, rows, n_col, n_row
 
-    def profile_node(self, node, node_idx, cols, rows, n_col, n_row):
-        plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
-        layer_config = config[self.args_.arch][node_idx]
-        nvm_jobs = 0
-        nvm_read_weights = 0
-        nvm_read_inputs = 0
-        nvm_read_psum = 0
-        nvm_write_psum = 0
-        pruned_ofm_element = 0
-        vm_jobs = 0
-        vm_read_psum = 0
-        vm_write_psum = 0
-        vm_read_weights = 0
-        vm_read_inputs = 0
-        op_type = None
-
-        logger_.debug("Node: {}".format(node_idx))
-        if isinstance(node, nn.Linear):
-            op_type = 'FC'
-            # input stationary
-            for i in range(1, len(rows)):
-                if rows[i] - rows[i - 1] != 0:
-                    nvm_read_inputs += n_row
-            nvm_read_weights += len(cols) * n_row * n_col
-            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2] * layer_config['output'][3]
-            vm_read_inputs += len(cols) * n_row * n_col
-            vm_read_weights += len(cols) * n_row * n_col
-            vm_read_psum += 2 * (len(rows) - 1) * layer_config['output'][1]
-            vm_write_psum += (len(rows) - 1) * layer_config['output'][1]
-            vm_jobs += len(cols) * layer_config['group'][0]
-        elif isinstance(node, nn.Conv2d):
-            op_type = 'CONV'
-            n_output_tile_per_weight_group = \
-                math.ceil(layer_config['output'][2] / layer_config['tile']['output'][2]) * \
-                math.ceil(layer_config['output'][3] / layer_config['tile']['output'][3])
-            n_input_tile_c = math.ceil(layer_config['input'][1] / layer_config['tile']['input'][1])
-
-            nvm_read_weights += len(cols) * n_row * n_col * n_output_tile_per_weight_group
-            nvm_jobs += layer_config['output'][0] * layer_config['output'][1] * layer_config['output'][2] * layer_config['output'][3]
-            vm_read_inputs += len(cols) * n_row * n_col * layer_config['output'][2] * layer_config['output'][3]
-            vm_read_weights += len(cols) * n_row * n_col * layer_config['output'][2] * layer_config['output'][3]
-            for i in range(1, len(rows)):
-                n_tile_c = rows[i] - rows[i - 1]
-                if n_tile_c:
-                    tile_c_set = set()
-                    for idx in range(rows[i - 1], rows[i]):
-                        tile_c_set.add(int(cols[idx] / (layer_config['filter'][2] * layer_config['filter'][3])))
-                    nvm_read_inputs += len(tile_c_set) * layer_config['group'][1] * \
-                        (layer_config['output'][2]) * \
-                        (layer_config['output'][3] + layer_config['pads'][1] + layer_config['pads'][3]) * \
-                        math.ceil(layer_config['tile']['output'][3] / layer_config['filter'][3])
-                    vm_read_psum += 2 * n_tile_c * n_row * \
-                        layer_config['output'][2] * layer_config['output'][3]
-                    vm_write_psum += n_tile_c * n_row * \
-                        layer_config['output'][2] * layer_config['output'][3]
-                    vm_jobs += n_tile_c * n_row * \
-                        layer_config['output'][2] * layer_config['output'][3]
-                    nvm_read_psum += n_input_tile_c  * \
-                        layer_config['output'][2] * layer_config['output'][3]
-                    nvm_write_psum += n_input_tile_c  * \
-                        layer_config['output'][2] * layer_config['output'][3]
-                else:
-                    pruned_ofm_element += n_row * layer_config['output'][2] * layer_config['output'][3]
-
-        #logger_.debug('group size: {}'.format(group_size))
-        vm_access = (vm_jobs + vm_read_inputs + vm_read_weights + vm_read_psum + vm_write_psum)
-        nvm_access = (nvm_jobs + nvm_read_inputs + nvm_read_weights + nvm_read_psum + nvm_write_psum)
-        self.layer_info_.append({
-            'node': node_idx,
-            'op_type': op_type,
-            'nvm_read_inputs': nvm_read_inputs,
-            'nvm_read_weights': nvm_read_weights,
-            'nvm_jobs': nvm_jobs,
-            'vm_jobs': vm_jobs,
-            'vm_read_weights': vm_read_weights,
-            'vm_read_inputs': vm_read_inputs,
-            'vm_read_psum': vm_read_psum,
-            'vm_write_psum': vm_write_psum,
-            'nvm_access': nvm_access,
-            'vm_access': vm_access,
-            'pruned_ofm_element': pruned_ofm_element,
-        })
-        return self.layer_info_[-1]
+    @abstractmethod
+    def profile_node(self, node, node_idx, cols, rows, n_col, n_row): raise NotImplementedError
 
 class JobMaker(MetricsMaker):
     def __init__(self, model, args, output_shapes, cost={'NVM': 100, 'VM': 1}):
@@ -510,7 +430,42 @@ class EnergyCostMaker(MetricsMaker):
         return total_data_transfer_energy_cost
 
     def est_computation_energy_cost(self, node, node_idx, cols, rows, n_col, n_row):
-        return 0
+        layer_config = config[self.args_.arch][node_idx]
+        EC_MAC = 0
+        EC_ADD = 0
+
+        if isinstance(node, nn.Linear):
+            vector_size = (n_row // 2 * 2 + 2) * n_col
+            print('vs: {}'.format(vector_size))
+            EC_LEA_MAC = self.plat_costs_profile['E_OP_VECMAC'](vector_size)
+            EC_CPU_ADD = self.plat_costs_profile['E_ADD']
+            op_type = 'FC'
+            # input stationary
+            EC_MAC += len(cols) * EC_LEA_MAC
+            EC_ADD += len(cols) * EC_CPU_ADD
+        elif isinstance(node, nn.Conv2d):
+            vector_size = (n_col // 2 * 2 + 2) * n_row
+            print('vs: {}'.format(vector_size))
+            EC_LEA_MAC = self.plat_costs_profile['E_OP_VECMAC'](vector_size)
+            EC_CPU_ADD = self.plat_costs_profile['E_ADD']
+            op_type = 'CONV'
+            n_output_tile_per_weight_group = \
+                math.ceil(layer_config['output'][2] / layer_config['tile']['output'][2]) * \
+                math.ceil(layer_config['output'][3] / layer_config['tile']['output'][3])
+            n_input_tile_c = math.ceil(layer_config['input'][1] / layer_config['tile']['input'][1])
+
+            EC_MAC += len(cols) * EC_LEA_MAC * layer_config['output'][2] * layer_config['output'][3]
+            for i in range(1, len(rows)):
+                n_tile = rows[i] - rows[i - 1]
+                EC_ADD += \
+                    EC_CPU_ADD * \
+                    n_tile * n_row * \
+                    layer_config['output'][2] * layer_config['output'][3]
+        total_computation_energy_cost = EC_MAC + EC_ADD
+        self.layer_info_[-1]['EC_MAC'] = EC_MAC
+        self.layer_info_[-1]['EC_ADD'] = EC_ADD
+        self.layer_info_[-1]['total_computation_energy_cost'] = total_computation_energy_cost
+        return total_computation_energy_cost
 
     def profile_node(self, node, node_idx, cols, rows, n_col, n_row):
         memory_access_energy_cost = self.est_memory_access_energy_cost(node, node_idx, cols, rows, n_col, n_row)
