@@ -218,7 +218,7 @@ if __name__=='__main__':
             help='pruning stage')
     parser.add_argument('--debug', action='store', type=int, default=-1,
             help='set debug level')
-    parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0.25, 0.3, 0.35, 0.4],
+    parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0, 0, 0, 0, 0],
             help='candidates of pruning ratios for weight pruning')
     parser.add_argument('--admm', action='store_true', default=False,
             help='w/ or w/o ADMM')

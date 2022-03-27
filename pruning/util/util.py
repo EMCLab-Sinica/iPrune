@@ -401,11 +401,11 @@ class EnergyCostMaker(MetricsMaker):
 
             nvm_read_weights += len(cols) * n_row * EC_NVM2VM * n_output_tile_per_weight_group
             nvm_jobs += \
-                layer_config['output'][0] * \
+                (layer_config['output'][0] * \
                 layer_config['output'][1] * \
                 layer_config['output'][2] * \
-                layer_config['output'][3] / \
-                n_row * EC_VM2NVM
+                layer_config['output'][3] / n_row) * \
+                EC_VM2NVM
             for i in range(1, len(rows)):
                 n_tile_c = rows[i] - rows[i - 1]
                 if n_tile_c:
@@ -416,8 +416,8 @@ class EnergyCostMaker(MetricsMaker):
                         len(tile_c_set) * \
                         EC_NVM2VM * \
                         layer_config['output'][2] * \
-                        (layer_config['output'][3] + layer_config['pads'][1] + layer_config['pads'][3]) * \
-                        math.ceil(layer_config['tile']['output'][3] / layer_config['filter'][3])
+                        (layer_config['tile']['output'][3] + layer_config['pads'][1] + layer_config['pads'][3]) * \
+                        n_output_tile_per_weight_group
         total_data_transfer_energy_cost = nvm_read_inputs + nvm_read_weights + nvm_jobs
         self.layer_info_.append({
             'node': node_idx,
@@ -436,7 +436,6 @@ class EnergyCostMaker(MetricsMaker):
 
         if isinstance(node, nn.Linear):
             vector_size = (n_row // 2 * 2 + 2) * n_col
-            print('vs: {}'.format(vector_size))
             EC_LEA_MAC = self.plat_costs_profile['E_OP_VECMAC'](vector_size)
             EC_CPU_ADD = self.plat_costs_profile['E_ADD']
             op_type = 'FC'
@@ -445,7 +444,6 @@ class EnergyCostMaker(MetricsMaker):
             EC_ADD += len(cols) * EC_CPU_ADD
         elif isinstance(node, nn.Conv2d):
             vector_size = (n_col // 2 * 2 + 2) * n_row
-            print('vs: {}'.format(vector_size))
             EC_LEA_MAC = self.plat_costs_profile['E_OP_VECMAC'](vector_size)
             EC_CPU_ADD = self.plat_costs_profile['E_ADD']
             op_type = 'CONV'

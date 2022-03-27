@@ -21,7 +21,7 @@ configs = {
         'fp32_accuracy': 0.9890,
     },
     'pruned_mnist': {
-        'onnx_model': 'pruning/Intermittent_Aware/onnx_models/LeNet_5.onnx',
+        'onnx_model': 'pruning/Intermittent_Aware/onnx_models/mnist.onnx',
         'scale': 4,
         'input_scale': 4,
         'num_slots': 2,

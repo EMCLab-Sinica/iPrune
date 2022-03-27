@@ -254,7 +254,7 @@ Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
 
 if args.config == 'pruned_mnist':
-    model_config = model_configs['LeNet_5']
+    model_config = model_configs['mnist']
 elif args.config == 'pruned_cifar' or args.config == 'cifar':
     model_config = model_configs['SqueezeNet']
 elif args.config == 'pruned_har' or args.config == 'har':
