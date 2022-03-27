@@ -426,17 +426,15 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     my_printf_debug("n_tiles=%d" NEWLINE, n_tiles);
     MY_ASSERT(n_tiles);
 #if SPARSE
-    // FIXME: set suitable size for col_len in transform
-    const uint16_t COL_LEN = 129;
-    uint16_t cols[COL_LEN] = {0};
-    uint16_t rows[MAX_ROW_LEN] = {0};
+    uint16_t cols[MAX_N_COL_FC] = {0};
+    uint16_t rows[MAX_ROW_LEN_FC] = {0};
     int16_t n_rows = n_tiles + 1;
     my_memcpy_from_param_row(model, rows, params, 0, (n_rows) * sizeof(int16_t));
     /* entry: the pruned states in each tile_c (n_tiles_c)
      *  1: pruned filters in the tile_c
      *  0: unpruned filters int the tile_c
      */
-    std::bitset<128> pruned_tile_c[MAX_TILE_C_LEN] = {0};
+    std::bitset<MAX_N_FILTER_GROUP> pruned_tile_c[MAX_ROW_LEN_FC] = {0};
     for(int16_t idx = 1; idx < n_rows; ++idx) {
         int16_t n_cols_ = rows[idx] - rows[idx - 1];
         if(n_cols_) {

@@ -45,9 +45,11 @@ class Constants:
     TURNING_POINTS_LEN = 8
     MODEL_NODES_LEN = 0
     INPUTS_DATA_LEN = 0
-    MAX_COL_LEN = 0
-    MAX_ROW_LEN = 0
-    MAX_TILE_C_LEN = 0
+    MAX_N_COL_FC = 0
+    MAX_N_COL_CONV = 0
+    MAX_ROW_LEN_FC = 0
+    MAX_ROW_LEN_CONV = 0
+    MAX_N_FILTER_GROUP = 0
     NUM_INPUTS = 0  # will be filled during parsing
     N_INPUT = 0
     # Match the size of external FRAM
@@ -806,10 +808,17 @@ def toBSR(matrix, config, dims, op_type):
     logger.info('filter size: {}'.format(len(data)))
     logger.info('Rows size: {}'.format(rows.shape))
     logger.info('Cols size: {}'.format(cols.shape))
+    if op_type == 'CONV':
+        for i in range(1, len(rows)):
+            n_col = rows[i] - rows[i - 1]
+            Constants.MAX_N_COL_CONV = max(Constants.MAX_N_COL_CONV, n_col + 1)
+        Constants.MAX_ROW_LEN_CONV = max(Constants.MAX_ROW_LEN_CONV, len(rows) + 1)
     if op_type == 'GEMM':
-        Constants.MAX_TILE_C_LEN = max(Constants.MAX_TILE_C_LEN, int(dims[0] / config['group'][1]) + 1)
-    Constants.MAX_COL_LEN = max(Constants.MAX_COL_LEN, len(cols) + 1)
-    Constants.MAX_ROW_LEN = max(Constants.MAX_ROW_LEN, len(rows) + 1)
+        for i in range(1, len(rows)):
+            n_col = rows[i] - rows[i - 1]
+            Constants.MAX_N_COL_FC = max(Constants.MAX_N_COL_FC, n_col + 1)
+        Constants.MAX_ROW_LEN_FC = max(Constants.MAX_ROW_LEN_FC, len(rows) + 1)
+        Constants.MAX_N_FILTER_GROUP = max(Constants.MAX_N_FILTER_GROUP, math.ceil(dims[1] / config['group'][0])  + 1)
     return data, cols, rows
 
 def find_first_tile_index(cols, rows, config, dims, op_type):

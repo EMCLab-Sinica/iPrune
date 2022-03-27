@@ -1381,10 +1381,8 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     uint16_t chunk_len = OUTPUT_CHANNEL;
     uint16_t output_h = 0, output_w = 0, chunk_offset = 0;
 #if SPARSE
-    // FIXME: set suitable size for col_len in transform.py
-    const uint16_t COL_LEN = 41;
-    uint16_t cols[COL_LEN] = {0};
-    uint16_t rows[MAX_ROW_LEN] = {0};
+    uint16_t cols[MAX_N_COL_CONV] = {0};
+    uint16_t rows[MAX_ROW_LEN_CONV] = {0};
 #if STABLE_POWER
     uint16_t n_rows = n_output_tile_c + 1;
 #else // STABLE_POWER
@@ -1447,9 +1445,9 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
      *  1: pruned filters in the tile_c
      *  0: unpruned filters int the tile_c
      */
-    uint16_t pruned_tile_c[MAX_ROW_LEN + 1] = {0};
-    uint16_t row_diff[MAX_ROW_LEN] = {0};
-    uint16_t cur_row_diff[MAX_ROW_LEN] = {0};
+    uint16_t pruned_tile_c[MAX_ROW_LEN_CONV + 1] = {0};
+    uint16_t row_diff[MAX_ROW_LEN_CONV] = {0};
+    uint16_t cur_row_diff[MAX_ROW_LEN_CONV] = {0};
     if(OUTPUT_H * OUTPUT_W * output_tile_c < CPU_BUFFER_SIZE) {
         // psums are cached in VM
         for(int16_t idx = 1; idx < n_rows; ++idx) {
