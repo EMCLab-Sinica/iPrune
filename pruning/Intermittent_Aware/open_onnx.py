@@ -95,30 +95,11 @@ def nchw2nhwc(arr):
     arr = np.transpose(arr, axes=(0, 2, 3, 1))  # NCHW -> NHWC
     return arr
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--onnx_model', action='store', default=None)
-    parser.add_argument('--arch', action='store', default='LeNet_5', help='the network architecture: LeNet_5 | SqueezeNet')
-    parser.add_argument('--group', action='store', type=int, default=[2, 1], help='Group size')
-    parser.add_argument('--layout', action='store', default='nhwc', help='Select data layout: nhwc | nchw')
-    parser.add_argument('--debug', action='store_true', help='Select data layout: nhwc | nchw')
-    args = parser.parse_args()
-    set_logger(args)
-    printArgs(args)
-
-    graph = []
-
-    model = onnx.load(args.onnx_model)
-    '''
-    for idx, n in enumerate(model.graph.input):
-        print(n)
-    for idx, n in enumerate(model.graph.node):
-        print(n.op_type)
-        print(n)
-    '''
+def get_jobs(onnx_model, args):
+    model = onnx.load(onnx_model)
     main_names = [n.input[1] for idx, n in enumerate(model.graph.node) if n.op_type == 'Conv' or n.op_type == 'Gemm']
 
+    graph = []
     nodes = model.graph.initializer
     node_idx = 0
     for idx, node in enumerate(nodes):
@@ -151,7 +132,6 @@ if __name__ == '__main__':
     # printGroups(graph[2])
     model_info = config[args.arch]
     output_shapes = [layer['output'] for layer in model_info]
-    logger.info(output_shapes)
     node_idx = 0;
     total_job = 0
     for idx, n in enumerate(model.graph.node):
@@ -161,8 +141,14 @@ if __name__ == '__main__':
             node_idx += 1
     print('total_job: {}'.format(total_job))
 
-
-
-
-
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--onnx_model', action='store', default=None)
+    parser.add_argument('--arch', action='store', default='LeNet_5', help='the network architecture: LeNet_5 | SqueezeNet')
+    parser.add_argument('--layout', action='store', default='nhwc', help='Select data layout: nhwc | nchw')
+    parser.add_argument('--debug', action='store_true')
+    args = parser.parse_args()
+    set_logger(args)
+    printArgs(args)
+    get_jobs(args.onnx_model, args)
 

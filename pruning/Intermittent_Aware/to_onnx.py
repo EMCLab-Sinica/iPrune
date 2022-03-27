@@ -1,10 +1,11 @@
 from torch.autograd import Variable
+from torchsummary import summary
+from open_onnx import *
 import torch.onnx
 import torchvision
 import torch
 import argparse
 import numpy as np
-from torchsummary import summary
 
 import models
 
@@ -22,6 +23,8 @@ if __name__ == "__main__":
     parser.add_argument('--arch', action='store', default='LeNet_5',
             help='the network structure: HAR | mnist | LeNet_5 | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None)
+    parser.add_argument('--layout', action='store', default='nhwc', help='Select data layout: nhwc | nchw')
+    parser.add_argument('--debug', action='store_true', help='Select data layout: nhwc | nchw')
     args = parser.parse_args()
     printArgs(args)
 
@@ -50,3 +53,4 @@ if __name__ == "__main__":
     converted_name = "./onnx_models/{}.onnx".format(args.arch)
     torch.onnx.export(model, dummy_input, converted_name, opset_version=OPSET)
     print('Converted model: {}'.format(converted_name))
+    get_jobs(converted_name, args)
