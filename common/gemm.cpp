@@ -124,6 +124,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     first_unfinished_value_offset = batch_start(first_unfinished_value_offset);
     fix_first_unfinished_value_offset(model, &first_unfinished_value_offset);
 
+    my_printf_debug("Fixed footprint offset: %d" NEWLINE, first_unfinished_value_offset);
     tile = first_unfinished_value_offset / output_len;
     i = tile * flags->extra.gemm.tile_channel;
     j_with_footprints = first_unfinished_value_offset % output_len;
@@ -143,6 +144,16 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     uint16_t cur_cols_index = first_unfinished_value_idx / jobs_in_an_op;
     cur_n_cols = cur_cols_index - cur_row_val;
     filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
+    j = j_with_footprints = filter_tile_index * OP_FILTERS;
+    my_printf_debug("row_index: %d\n", row_index);
+    my_printf_debug("cur_row_val: %d\n", cur_row_val);
+    my_printf_debug("next_row_val: %d\n", next_row_val);
+    my_printf_debug("n_cols: %d\n", n_cols);
+    my_printf_debug("cur_n_cols: %d\n", cur_n_cols);
+    my_printf_debug("filter_tile_index: %d\n", filter_tile_index);
+    my_printf_debug("j: %d" NEWLINE, j);
+    my_printf_debug("j_with_footprints: %d" NEWLINE, j_with_footprints);
+    my_printf_debug("\n");
 #endif // SPARSE
 
 #endif // INTERMITTENT
@@ -295,7 +306,8 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             }
             stop_cpu_counter(&Counters::embedding);
 #endif
-
+            my_printf_debug("j: %d" NEWLINE, j);
+            my_printf_debug("j_with_footprints: %d" NEWLINE, j_with_footprints);
             my_printf_debug("Tile for B" NEWLINE);
             dump_matrix_debug(buffer_b, extended_tile_channels, full_tile_width, ValueInfo(B, model));
 
