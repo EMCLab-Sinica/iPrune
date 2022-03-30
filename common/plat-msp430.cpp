@@ -111,6 +111,8 @@ void copy_samples_data(void) {
 #define GPIO_COUNTER_PIN GPIO_PIN0
 #define GPIO_RESET_PORT GPIO_PORT_P5
 #define GPIO_RESET_PIN GPIO_PIN7
+#define GPIO_ENERGY_PROFILE_PORT GPIO_PORT_P3
+#define GPIO_ENERGY_PROFILE_PIN GPIO_PIN7
 #else
 #define GPIO_COUNTER_PORT GPIO_PORT_P5
 #define GPIO_COUNTER_PIN GPIO_PIN5
@@ -118,7 +120,7 @@ void copy_samples_data(void) {
 #define GPIO_RESET_PIN GPIO_PIN5
 #endif
 
-#define STABLE_POWER_ITERATIONS 1
+#define STABLE_POWER_ITERATIONS 10
 
 void IntermittentCNNTest() {
     GPIO_setAsOutputPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
@@ -146,6 +148,9 @@ void IntermittentCNNTest() {
         first_run();
 
         notify_model_finished();
+
+        // for energy profiling
+        while(GPIO_getInputPinValue(GPIO_ENERGY_PROFILE_PORT, GPIO_ENERGY_PROFILE_PIN));
 
         for (uint8_t idx = 0; idx < STABLE_POWER_ITERATIONS; idx++) {
             run_cnn_tests(1);
