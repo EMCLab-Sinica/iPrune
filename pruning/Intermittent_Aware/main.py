@@ -206,7 +206,7 @@ if __name__=='__main__':
             help='pruning stage')
     parser.add_argument('--debug', action='store', type=int, default=-1,
             help='set debug level')
-    parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0.25, 0.3, 0.35, 0.4],
+    parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0, 0, 0, 0],
             help='candidates of pruning ratios for weight pruning')
     parser.add_argument('--learning_rate_list', action='store', nargs='+', type=float, default=None,
             help='learning rates of each learning step')
@@ -303,8 +303,10 @@ if __name__=='__main__':
             'key':key}]
 
     if args.arch == 'LeNet_5' or args.arch == 'mnist':
-        optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
-                weight_decay=args.weight_decay)
+        optimizer = optim.SGD(params, \
+                              lr=args.lr, \
+                              momentum=args.momentum, \
+                              weight_decay=args.weight_decay)
     elif args.arch == 'HAR':
         optimizer = optim.Adam(params, lr=args.lr)
     elif args.arch == 'KWS':
@@ -362,11 +364,15 @@ if __name__=='__main__':
         prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=admm_params)
         if not args.admm:
             for epoch in pbar:
-                if args.arch == 'LeNet_5' or args.arch == 'mnist':
-                    lr = adjust_learning_rate(optimizer, epoch)
-                elif args.arch == 'SqueezeNet' or args.arch == 'HAR' or args.arch == 'KWS':
-                    # adjusted by ADAM
-                    pass
+                if epoch % args.lr_epochs == 0:
+                    if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS':
+                        if args.learning_rate_list:
+                            adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                        else:
+                            adjust_learning_rate(optimizer, epoch)
+                    elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
+                        # adjusted by ADAM
+                        pass
                 train(epoch)
                 cur_epoch = epoch
                 cur_loss, cur_acc, best_acc = test()
