@@ -139,11 +139,12 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
 
     mfccs = []
     with tf.compat.v1.Session() as sess:
-        mfcc_tensor = sess.graph.get_tensor_by_name('Mfcc:0')
+        prefix = 'import/'
+        mfcc_tensor = sess.graph.get_tensor_by_name(prefix + 'Mfcc:0')
         for decoded_wav in decoded_wavs:
             mfcc = sess.run(mfcc_tensor, {
-                'decoded_sample_data:0': decoded_wav,
-                'decoded_sample_data:1': GOOGLE_SPEECH_SAMPLE_RATE,
+                prefix + 'decoded_sample_data:0': decoded_wav,
+                prefix + 'decoded_sample_data:1': GOOGLE_SPEECH_SAMPLE_RATE,
             })
             mfccs.append(mfcc[0])
 

@@ -31,7 +31,7 @@ static void handle_node(Model *model, uint16_t node_idx) {
     }
 #if SPARSE
     // FIXME: remove this after removing op_merge
-    if(cur_node->op_type == 2) {
+    if(cur_node->op_type == OpGemmMerge) {
         // cur node is ConvMerge or GemmMerge
         input_id[1] = get_node(node_idx - 1)->inputs[1];
         input[1] = get_parameter_info(input_id[1]);
@@ -409,11 +409,16 @@ static uint8_t value_finished(Model* model, const ParameterInfo* output, uint32_
 #if SPARSE
 uint16_t find_row_index(Model *model, const ParameterInfo *filter_params, const ParameterInfo *output, const Node *node, uint16_t col_index, int16_t *cur_row_val) {
     uint16_t n_tiles = 0;
+#ifdef OpConv
     if(node->op_type == OpConv) {
         n_tiles = filter_params->dims[1] * filter_params->dims[2] * filter_params->dims[3] / node->flags.extra.conv.input_tile_c;
-    } else if(node->op_type == OpGemm) {
+    }
+#endif
+#ifdef OpGemm
+    if(node->op_type == OpGemm) {
         n_tiles = output->params_len / sizeof(int16_t) / (output->dims[0] * output->dims[1]);
     }
+#endif
     my_printf_debug("n_tiles: %d" NEWLINE, n_tiles);
     MY_ASSERT(n_tiles != 0);
     uint16_t l = 0, r = n_tiles;
