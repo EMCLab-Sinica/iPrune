@@ -15,18 +15,22 @@ class KWS_DNN_S(nn.Module):
         self.ip3 = nn.Linear(144, 144)
         self.ip4 = nn.Linear(144, 12)
         self.relu = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout(0)
         self.softmax = nn.Softmax(dim=1)
         return
 
     def forward(self, x):
-        x = x.view(x.size(0), 25*10)
+        x = x.view(x.size(0), -1)
 
         x = self.ip1(x)
         x = self.relu(x)
+        x = self.dropout(x)
         x = self.ip2(x)
         x = self.relu(x)
+        x = self.dropout(x)
         x = self.ip3(x)
         x = self.relu(x)
+        x = self.dropout(x)
         x = self.ip4(x)
         x = self.softmax(x)
         return x

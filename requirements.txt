@@ -1,10 +1,16 @@
+librosa==0.9.1
 numpy==1.19.4
 onnx==1.8.0
 onnxoptimizer==0.2.6
 onnxruntime==1.10.0
+pandas==1.3.5
 prettytable==2.4.0
+PyGithub==1.55
+pyvisa==1.11.3
+scikit_learn==1.0.2
 scipy==1.6.3
-tensorflow==2.5.0
+six==1.16.0
+tensorflow==1.14.0
 tf2onnx==1.9.3
 torch==1.10.2
 torchaudio==0.10.2

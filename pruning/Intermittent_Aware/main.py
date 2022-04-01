@@ -22,132 +22,11 @@ from util import *
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
-
-class HAR_Dataset(Dataset):
-    def __init__(self, split):
-        root =  '/home/chia/.cache/UCI HAR Dataset/'
-        sys.path.append(cwd + '/../../data/deep-learning-HAR/utils')
-        from utilities import read_data
-        self.imgs, self.labels, self.list_ch_train = read_data(data_path=root, split=split) # train
-        # make sure they contain only valid labels [0 ~ class -1]
-        self.labels = self.labels - 1
-
-        assert len(self.imgs) == len(self.labels), "Mistmatch in length!"
-        # Normalize?
-        self.imgs = self.standardize(self.imgs)
-
-    def standardize(self, data):
-        """ Standardize data """
-        # Standardize train and test
-        standardized_data = (data - np.mean(data, axis=0)[None,:,:]) / np.std(data, axis=0)[None,:,:]
-        # (batch, 9, 128) => (batch, 9, 1, 128)
-        standardized_data = np.expand_dims(standardized_data, axis=2)
-        return standardized_data
-
-    def __getitem__(self, index):
-        return self.imgs[index], self.labels[index]
-
-    def __len__(self):
-        return len(self.imgs)
-
-class KWS_Dataset(Dataset):
-    def __init__(self, split):
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-        import tensorflow as tf
-        import torchaudio
-        GOOGLE_SPEECH_URL = 'https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz'
-        GOOGLE_SPEECH_SAMPLE_RATE = 16000
-        cache_dir = pathlib.Path('~/.cache/torchaudio/speech_commands_v2').expanduser()
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        dataset = torchaudio.datasets.SPEECHCOMMANDS(root=cache_dir, url=GOOGLE_SPEECH_URL, download=True)
-
-        # From https://github.com/ARM-software/ML-KWS-for-MCU/blob/master/Pretrained_models/labels.txt
-        new_labels = '_silence_ _unknown_ yes no up down left right on off stop go'.split(' ')
-
-        decoded_wavs = []
-        self.labels = []
-        # The first few _unknown_ samples are not recognized by Hello Edge's DNN model - use good ones instead
-        for idx, data in enumerate(reversed(dataset)):
-            if idx < 0:
-                continue
-            waveform, sample_rate, label, _, _ = data
-            assert sample_rate == GOOGLE_SPEECH_SAMPLE_RATE
-            decoded_wavs.append(np.expand_dims(np.squeeze(waveform), axis=-1))
-            self.labels.append(new_labels.index(label))
-
-        with open(self.kws_dnn_model(), 'rb') as f:
-            graph_def = tf.compat.v1.GraphDef()
-            graph_def.ParseFromString(f.read())
-            tf.import_graph_def(graph_def)
-
-        mfccs = []
-        with tf.compat.v1.Session() as sess:
-            mfcc_tensor = sess.graph.get_tensor_by_name('Mfcc:0')
-            for decoded_wav in decoded_wavs:
-                mfcc = sess.run(mfcc_tensor, {
-                    'decoded_sample_data:0': decoded_wav,
-                    'decoded_sample_data:1': GOOGLE_SPEECH_SAMPLE_RATE,
-                })
-                mfccs.append(mfcc[0])
-        self.imgs = np.array(mfccs, dtype=np.float32)
-        testing_percentage = 0.1
-        n_test_img = int(len(self.imgs) * testing_percentage)
-        if split == 'train':
-            self.imgs = self.imgs[n_test_img:]
-            self.labels = self.labels[n_test_img:]
-        elif split == 'test':
-            self.imgs = self.imgs[:n_test_img]
-            self.labels = self.labels[:n_test_img]
-
-    def kws_dnn_model(self):
-        return self.download_file('https://github.com/ARM-software/ML-KWS-for-MCU/raw/master/Pretrained_models/DNN/DNN_S.pb', 'KWS-DNN_S.pb')
-
-    def download_file(self, url: str, filename: str, post_processor: Optional[Callable] = None) -> os.PathLike:
-        xdg_cache_home = pathlib.Path(os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')))
-
-        # Based on https://myapollo.com.tw/zh-tw/python-fcntl-flock/
-        lock_path = xdg_cache_home / f'{filename}.lock'
-        try:
-            lock_f = open(lock_path, 'r')
-        except FileNotFoundError:
-            lock_f = open(lock_path, 'w')
-
-        # Inspired by https://stackoverflow.com/a/53643011
-        class ProgressHandler:
-            def __init__(self):
-                self.last_reported = 0
-
-            def __call__(self, block_num, block_size, total_size):
-                progress = int(block_num * block_size / total_size * 100)
-                if progress > self.last_reported + 5:
-                    logger.info('Downloaded: %d%%', progress)
-                    self.last_reported = progress
-
-        try:
-            fcntl.flock(lock_f, fcntl.LOCK_EX)
-
-            local_path = xdg_cache_home / filename
-            if not local_path.exists():
-                urlretrieve(url, local_path, ProgressHandler())
-
-            ret = local_path
-            if post_processor:
-                ret = post_processor(local_path)
-        finally:
-            lock_f.close()
-
-        return ret
-
-    def __getitem__(self, index):
-        return self.imgs[index], self.labels[index]
-
-    def __len__(self):
-        return len(self.imgs)
+from datasets import *
 
 def save_state(model, acc):
     global logger_
-    print('==> Saving model (accuracy {:.2f}) ....'.format(acc))
+    # print('==> Saving model (accuracy {:.2f}) ....'.format(acc))
     state = {
             'acc': acc,
             'state_dict': model.state_dict(),
@@ -175,11 +54,24 @@ def train(epoch):
         data, target = Variable(data.type(torch.float)), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        loss = criterion(output, target)
+        if args.arch == 'KWS':
+            loss = torch.mean(criterion(output, target))
+        else:
+            loss = criterion(output, target)
         loss.backward()
         optimizer.step()
         if args.prune:
             prune_op.prune_weight()
+    if args.arch == 'KWS':
+        for batch_idx, (data, target) in enumerate(validation_loader):
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data.type(torch.float)), Variable(target)
+            optimizer.zero_grad()
+            output = model(data)
+            loss = torch.mean(criterion(output, target))
+            loss.backward()
+            optimizer.step()
     return
 
 def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
@@ -215,6 +107,8 @@ def test(evaluate=False):
         output = model(data)
         test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
+        if args.arch == 'KWS':
+            target.data = target.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     acc = 100. * correct / len(test_loader.dataset)
@@ -239,6 +133,8 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
         data, target = Variable(data.type(torch.float)), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
+        if args.arch == 'KWS':
+            target.data = target.data.max(1, keepdim=True)[1]
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -248,21 +144,27 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
         test_loss * args.batch_size, correct, len(test_loader.dataset), 100. * acc))
     return test_loss * args.batch_size
 
-def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 15 epochs"""
-    lr = args.lr * (0.1 ** (epoch // args.lr_epochs))
-    # print('Learning rate:', lr)
-    for param_group in optimizer.param_groups:
-        if args.retrain and ('mask' in param_group['key']): # retraining
-            param_group['lr'] = 0.0
-        elif args.prune_target and ('mask' in param_group['key']):
-            if args.prune_target in param_group['key']:
-                param_group['lr'] = lr
-            else:
+def adjust_learning_rate(optimizer, epoch, new_learning_rate=None):
+    if new_learning_rate:
+        print("adjusting learning rate to {} ...".format(new_learning_rate))
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = new_learning_rate
+        return new_learning_rate
+    else:
+        """Sets the learning rate to the initial LR decayed by 10 every 15 epochs"""
+        lr = args.lr * (0.1 ** (epoch // args.lr_epochs))
+        # print('Learning rate:', lr)
+        for param_group in optimizer.param_groups:
+            if args.retrain and ('mask' in param_group['key']): # retraining
                 param_group['lr'] = 0.0
-        else:
-            param_group['lr'] = lr
-    return lr
+            elif args.prune_target and ('mask' in param_group['key']):
+                if args.prune_target in param_group['key']:
+                    param_group['lr'] = lr
+                else:
+                    param_group['lr'] = 0.0
+            else:
+                param_group['lr'] = lr
+        return lr
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -306,6 +208,8 @@ if __name__=='__main__':
             help='set debug level')
     parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0.25, 0.3, 0.35, 0.4],
             help='candidates of pruning ratios for weight pruning')
+    parser.add_argument('--learning_rate_list', action='store', nargs='+', type=float, default=None,
+            help='learning rates of each learning step')
     parser.add_argument('--admm', action='store_true', default=False,
             help='w/ or w/o ADMM')
     parser.add_argument('--sa', action='store_true', default=False,
@@ -351,10 +255,13 @@ if __name__=='__main__':
         model = models.HAR_CNN(args.prune, n_channels=9, n_classes=6)
     elif args.arch == 'KWS':
         train_loader = torch.utils.data.DataLoader(
-            KWS_Dataset(split='train'),
+            SpeechCommandsDataset(split='train'),
             batch_size=args.batch_size, shuffle=True, **kwargs)
+        validation_loader = torch.utils.data.DataLoader(
+            SpeechCommandsDataset(split='validation', background_frequency=0, background_volume_range=0),
+            batch_size=args.test_batch_size, shuffle=True, **kwargs)
         test_loader = torch.utils.data.DataLoader(
-            KWS_Dataset(split='test'),
+            SpeechCommandsDataset(split='test', background_frequency=0, background_volume_range=0),
             batch_size=args.test_batch_size, shuffle=True, **kwargs)
         model = models.KWS_DNN_S(args.prune)
     elif args.arch == 'SqueezeNet':
@@ -468,11 +375,15 @@ if __name__=='__main__':
         # prune_op.print_info()
     else:
         for epoch in trange(1, args.epochs + 1):
-            if args.arch == 'LeNet_5' or args.arch == 'mnist':
-                adjust_learning_rate(optimizer, epoch)
-            elif args.arch == 'SqueezeNet' or args.arch == 'HAR' or args.arch == 'KWS':
-                # adjusted by ADAM
-                pass
+            if epoch % args.lr_epochs == 0:
+                if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS':
+                    if args.learning_rate_list:
+                        adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                    else:
+                        adjust_learning_rate(optimizer, epoch)
+                elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
+                    # adjusted by ADAM
+                    pass
             train(epoch)
             cur_epoch = epoch
             cur_loss, cur_acc, best_acc = test()
