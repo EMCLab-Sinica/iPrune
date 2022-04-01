@@ -414,8 +414,12 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #endif
 
     uint16_t merge_offset = 0;
+    uint16_t unfinished_tile_index = 0;
+    uint16_t filter_offset = 0;
 #if INTERMITTENT
     merge_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
+    unfinished_tile_index = merge_offset / OP_FILTERS;
+    filter_offset = merge_offset % OP_FILTERS;
 #endif
 
     int16_t *buffer_temp = lea_buffer,
@@ -468,14 +472,21 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
         for (uint16_t tile = 0; tile < n_tiles; tile++) {
             my_memcpy_from_param(model, buffer_temp, input[0], tile * output_len + merge_offset, cur_tile_size * sizeof(int16_t));
 #if SPARSE
-             // append 0 to pruned channels
-            for(uint8_t cur_n_filters = 0; cur_n_filters < n_output_tile_c; ++cur_n_filters) {
+            uint16_t tmp_filter_offset = filter_offset;
+            uint16_t offset = 0;
+            // append 0 to pruned channels
+            for(uint8_t cur_n_filters = unfinished_tile_index; cur_n_filters < n_output_tile_c; ++cur_n_filters) {
+                my_printf_debug("cur_n_filters: %d" NEWLINE, cur_n_filters);
                 if(pruned_tile_c[tile][cur_n_filters]) {
                     // set the value of pruned filters as 0
-                    for(uint8_t offset = 0; offset < output_tile_c; ++offset) {
-                        buffer_temp[cur_n_filters * output_tile_c + offset] = 0;
+                    for(; offset < (cur_n_filters - unfinished_tile_index + 1) * output_tile_c - filter_offset; ++offset) {
+                        buffer_temp[offset] = 0;
                     }
+                } else {
+                    offset += output_tile_c - tmp_filter_offset;
                 }
+                tmp_filter_offset = 0;
+                my_printf_debug("offset: %d" NEWLINE, offset);
             }
 #endif
 #if STATEFUL

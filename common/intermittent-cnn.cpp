@@ -421,7 +421,7 @@ uint16_t find_row_index(Model *model, const ParameterInfo *filter_params, const 
 #endif
     my_printf_debug("n_tiles: %d" NEWLINE, n_tiles);
     MY_ASSERT(n_tiles != 0);
-    uint16_t l = 0, r = n_tiles;
+    uint16_t l = 0, r = n_tiles + 1;
     uint16_t tmp_row_val = 0;
     my_printf_debug("col index: %d" NEWLINE, col_index);
     while(l < r) {
@@ -460,7 +460,8 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
         int16_t cur_row_val = 0; // 143
         uint16_t row_index = find_row_index(model, params_filter, output, node, cur_col_index, &cur_row_val); // 15
         uint16_t filter_tile_c = col_val; // 107
-        uint16_t fixed_jobs_index_in_tile_c = row_index * output_jobs + filter_tile_c * (OP_FILTERS / BATCH_SIZE) + (job_index & jobs_in_an_op);
+        uint16_t fixed_jobs_index_in_tile_c = row_index * output_jobs + filter_tile_c * (OP_FILTERS / BATCH_SIZE) + (job_index % jobs_in_an_op);
+        my_printf_debug("fixed_jobs_index_in_tile_c: %d\n", fixed_jobs_index_in_tile_c);
         return (fixed_jobs_index_in_tile_c + 1) * BATCH_SIZE - 1;
     }
 
