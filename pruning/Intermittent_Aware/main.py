@@ -7,6 +7,8 @@ import torch.optim as optim
 import os
 import sys
 import subprocess
+import pathlib
+import fcntl
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
@@ -19,37 +21,12 @@ from torch.autograd import Variable
 from util import *
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
-
-class HAR_Dataset(Dataset):
-    def __init__(self, split):
-        root =  '/home/chia/.cache/UCI HAR Dataset/'
-        sys.path.append(cwd + '/../../data/deep-learning-HAR/utils')
-        from utilities import read_data
-        self.imgs, self.labels, self.list_ch_train = read_data(data_path=root, split=split) # train
-        # make sure they contain only valid labels [0 ~ class -1]
-        self.labels = self.labels - 1
-
-        assert len(self.imgs) == len(self.labels), "Mistmatch in length!"
-        # Normalize?
-        self.imgs = self.standardize(self.imgs)
-
-    def standardize(self, data):
-        """ Standardize data """
-        # Standardize train and test
-        standardized_data = (data - np.mean(data, axis=0)[None,:,:]) / np.std(data, axis=0)[None,:,:]
-        # (batch, 9, 128) => (batch, 9, 1, 128)
-        standardized_data = np.expand_dims(standardized_data, axis=2)
-        return standardized_data
-
-    def __getitem__(self, index):
-        return self.imgs[index], self.labels[index]
-
-    def __len__(self):
-        return len(self.imgs)
+from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
+from datasets import *
 
 def save_state(model, acc):
     global logger_
-    print('==> Saving model (accuracy {:.2f}) ....'.format(acc))
+    # print('==> Saving model (accuracy {:.2f}) ....'.format(acc))
     state = {
             'acc': acc,
             'state_dict': model.state_dict(),
@@ -77,17 +54,24 @@ def train(epoch):
         data, target = Variable(data.type(torch.float)), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        loss = criterion(output, target)
+        if args.arch == 'KWS':
+            loss = torch.mean(criterion(output, target))
+        else:
+            loss = criterion(output, target)
         loss.backward()
         optimizer.step()
         if args.prune:
             prune_op.prune_weight()
-        '''
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
-        '''
+    if args.arch == 'KWS':
+        for batch_idx, (data, target) in enumerate(validation_loader):
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data.type(torch.float)), Variable(target)
+            optimizer.zero_grad()
+            output = model(data)
+            loss = torch.mean(criterion(output, target))
+            loss.backward()
+            optimizer.step()
     return
 
 def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
@@ -123,6 +107,8 @@ def test(evaluate=False):
         output = model(data)
         test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
+        if args.arch == 'KWS':
+            target.data = target.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     acc = 100. * correct / len(test_loader.dataset)
@@ -133,12 +119,6 @@ def test(evaluate=False):
 
     #if args.prune == None or evaluate:
     test_loss /= len(test_loader.dataset)
-    '''
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        test_loss * args.batch_size, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-    print('Best Accuracy: {:.2f}%\n'.format(best_acc))
-    '''
     return (test_loss * args.batch_size, acc, best_acc)
 
 @torch.no_grad()
@@ -153,6 +133,8 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
         data, target = Variable(data.type(torch.float)), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
+        if args.arch == 'KWS':
+            target.data = target.data.max(1, keepdim=True)[1]
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -162,21 +144,27 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
         test_loss * args.batch_size, correct, len(test_loader.dataset), 100. * acc))
     return test_loss * args.batch_size
 
-def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 15 epochs"""
-    lr = args.lr * (0.1 ** (epoch // args.lr_epochs))
-    # print('Learning rate:', lr)
-    for param_group in optimizer.param_groups:
-        if args.retrain and ('mask' in param_group['key']): # retraining
-            param_group['lr'] = 0.0
-        elif args.prune_target and ('mask' in param_group['key']):
-            if args.prune_target in param_group['key']:
-                param_group['lr'] = lr
-            else:
+def adjust_learning_rate(optimizer, epoch, new_learning_rate=None):
+    if new_learning_rate:
+        print("adjusting learning rate to {} ...".format(new_learning_rate))
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = new_learning_rate
+        return new_learning_rate
+    else:
+        """Sets the learning rate to the initial LR decayed by 10 every 15 epochs"""
+        lr = args.lr * (0.1 ** (epoch // args.lr_epochs))
+        # print('Learning rate:', lr)
+        for param_group in optimizer.param_groups:
+            if args.retrain and ('mask' in param_group['key']): # retraining
                 param_group['lr'] = 0.0
-        else:
-            param_group['lr'] = lr
-    return lr
+            elif args.prune_target and ('mask' in param_group['key']):
+                if args.prune_target in param_group['key']:
+                    param_group['lr'] = lr
+                else:
+                    param_group['lr'] = 0.0
+            else:
+                param_group['lr'] = lr
+        return lr
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -201,7 +189,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default=None,
-            help='the MNIST network structure: mnist | LeNet_5 | HAR | SqueezeNet')
+            help='the MNIST network structure: mnist | LeNet_5 | HAR | KWS | SqueezeNet')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -220,6 +208,8 @@ if __name__=='__main__':
             help='set debug level')
     parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0, 0, 0, 0, 0],
             help='candidates of pruning ratios for weight pruning')
+    parser.add_argument('--learning_rate_list', action='store', nargs='+', type=float, default=None,
+            help='learning rates of each learning step')
     parser.add_argument('--admm', action='store_true', default=False,
             help='w/ or w/o ADMM')
     parser.add_argument('--sa', action='store_true', default=False,
@@ -263,6 +253,17 @@ if __name__=='__main__':
             HAR_Dataset(split='test'),
             batch_size=args.test_batch_size, shuffle=False, **kwargs)
         model = models.HAR_CNN(args.prune, n_channels=9, n_classes=6)
+    elif args.arch == 'KWS':
+        train_loader = torch.utils.data.DataLoader(
+            SpeechCommandsDataset(split='train'),
+            batch_size=args.batch_size, shuffle=True, **kwargs)
+        validation_loader = torch.utils.data.DataLoader(
+            SpeechCommandsDataset(split='validation', background_frequency=0, background_volume_range=0),
+            batch_size=args.test_batch_size, shuffle=True, **kwargs)
+        test_loader = torch.utils.data.DataLoader(
+            SpeechCommandsDataset(split='test', background_frequency=0, background_volume_range=0),
+            batch_size=args.test_batch_size, shuffle=True, **kwargs)
+        model = models.KWS_DNN_S(args.prune)
     elif args.arch == 'SqueezeNet':
         train_loader = torch.utils.data.DataLoader(
                 datasets.CIFAR10('data', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
@@ -295,7 +296,6 @@ if __name__=='__main__':
     param_dict = dict(model.named_parameters())
     params = []
 
-
     for key, value in param_dict.items():
         params += [{'params':[value], 'lr': args.lr,
             'momentum':args.momentum,
@@ -303,14 +303,21 @@ if __name__=='__main__':
             'key':key}]
 
     if args.arch == 'LeNet_5' or args.arch == 'mnist':
-        optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
-                weight_decay=args.weight_decay)
+        optimizer = optim.SGD(params, \
+                              lr=args.lr, \
+                              momentum=args.momentum, \
+                              weight_decay=args.weight_decay)
     elif args.arch == 'HAR':
+        optimizer = optim.Adam(params, lr=args.lr)
+    elif args.arch == 'KWS':
         optimizer = optim.Adam(params, lr=args.lr)
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
 
-    criterion = nn.CrossEntropyLoss()
+    if args.arch == 'KWS':
+        criterion = F.cross_entropy
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     if args.evaluate:
         print_layer_info(model)
@@ -342,6 +349,8 @@ if __name__=='__main__':
             seq_len = 128
             n_channels = 9
             input_shape = (n_channels, 1, seq_len)
+        elif args.arch == 'KWS':
+            input_shape = (1, 25, 10)
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
 
@@ -355,11 +364,15 @@ if __name__=='__main__':
         prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=admm_params)
         if not args.admm:
             for epoch in pbar:
-                if args.arch == 'LeNet_5' or args.arch == 'mnist':
-                    lr = adjust_learning_rate(optimizer, epoch)
-                elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
-                    # adjusted by ADAM
-                    pass
+                if epoch % args.lr_epochs == 0:
+                    if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS':
+                        if args.learning_rate_list:
+                            adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                        else:
+                            adjust_learning_rate(optimizer, epoch)
+                    elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
+                        # adjusted by ADAM
+                        pass
                 train(epoch)
                 cur_epoch = epoch
                 cur_loss, cur_acc, best_acc = test()
@@ -368,11 +381,15 @@ if __name__=='__main__':
         # prune_op.print_info()
     else:
         for epoch in trange(1, args.epochs + 1):
-            if args.arch == 'LeNet_5' or args.arch == 'mnist':
-                adjust_learning_rate(optimizer, epoch)
-            elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
-                # adjusted by ADAM
-                pass
+            if epoch % args.lr_epochs == 0:
+                if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS':
+                    if args.learning_rate_list:
+                        adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                    else:
+                        adjust_learning_rate(optimizer, epoch)
+                elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
+                    # adjusted by ADAM
+                    pass
             train(epoch)
             cur_epoch = epoch
             cur_loss, cur_acc, best_acc = test()

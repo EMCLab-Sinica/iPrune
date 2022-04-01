@@ -259,8 +259,8 @@ elif args.config == 'pruned_cifar' or args.config == 'cifar':
     model_config = model_configs['SqueezeNet']
 elif args.config == 'pruned_har' or args.config == 'har':
     model_config = model_configs['HAR']
-elif args.config == 'KWS':
-    model_config = None
+elif args.config == 'pruned_kws' or args.config == 'kws':
+    model_config = model_configs['KWS']
 
 onnx_model = load_model(config)
 # print(onnx_model)

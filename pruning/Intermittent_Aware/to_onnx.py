@@ -21,8 +21,8 @@ def printArgs(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='PyTorch LeNet_5')
     parser.add_argument('--arch', action='store', default='LeNet_5',
-            help='the network structure: HAR | mnist | LeNet_5 | SqueezeNet')
-    parser.add_argument('--pretrained', action='store', default=None)
+            help='the network structure: KWS | HAR | mnist | LeNet_5 | SqueezeNet')
+    parser.add_argument('--model', action='store', default=None)
     parser.add_argument('--layout', action='store', default='nhwc', help='Select data layout: nhwc | nchw')
     parser.add_argument('--debug', action='store_true', help='Select data layout: nhwc | nchw')
     args = parser.parse_args()
@@ -40,13 +40,17 @@ if __name__ == "__main__":
         input_shape = (9,1,128)
         model = models.HAR_CNN(None)
         dummy_input = Variable(torch.randn(1,9,1,128))
+    elif args.arch == 'KWS':
+        input_shape = (1,25,10)
+        model = models.KWS_DNN_S(None)
+        dummy_input = Variable(torch.randn(1,25,10))
     elif args.arch == 'SqueezeNet':
         input_shape = (3,32,32)
         model = models.SqueezeNet(None)
         dummy_input = Variable(torch.randn(1, 3, 32, 32))
 
     # https://discuss.pytorch.org/t/missing-keys-unexpected-keys-in-state-dict-when-loading-self-trained-model/22379/14
-    state_dict = torch.load(args.pretrained, map_location=torch.device('cpu'))['state_dict']
+    state_dict = torch.load(args.model, map_location=torch.device('cpu'))['state_dict']
     model.load_state_dict(state_dict)
     summary(model, input_shape, device='cpu')
     # save onnx model
