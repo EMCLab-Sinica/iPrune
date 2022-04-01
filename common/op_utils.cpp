@@ -260,7 +260,8 @@ void my_accumulate_to_vm(ParameterInfo *param, uint16_t offset_in_word, const vo
 
 void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int16_t tile_h_offset, int16_t tile_w_offset, int8_t buffer_id) {
     my_printf_debug("Preserve cached psum to NVM" NEWLINE);
-    if(node->op_type == 0) {
+#ifdef OpConv
+    if(node->op_type == OpConv) {
         // is conv op
         uint16_t CHANNEL = output->dims[1],
                  OUTPUT_H = output->dims[2],
@@ -300,7 +301,10 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
             output_h -= tile_h_offset;
             tile_h_offset = 0;
         }
-    } else if(node->op_type == 1) {
+    }
+#endif // OpConv
+#ifdef OpGemm
+    if(node->op_type == OpGemm) {
         // FIXME: update op type number after removing merge state
         // is fc op
         uint32_t total_offset = filter_idx;
@@ -311,6 +315,7 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
         my_memcpy_to_param(output, total_offset, lea_buffer, output_len * sizeof(int16_t), 0);
 #endif // STABLE_POWER
     }
+#endif // OpGemm
 }
 
 

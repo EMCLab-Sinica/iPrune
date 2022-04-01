@@ -1362,6 +1362,7 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     uint16_t OUTPUT_CHANNEL = data->dims[1],
              OUTPUT_H = data->dims[2],
              OUTPUT_W = data->dims[3];
+#ifdef OpConv
 
     my_printf_debug("ConvMerge!" NEWLINE);
     uint16_t output_tile_c = node->flags.extra.conv.output_tile_c;
@@ -1681,4 +1682,5 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     flip_state_bit(model, output);
 
     dump_params_nhwc_debug(model, output, node->output_name);
+#endif // OpConv
 }
