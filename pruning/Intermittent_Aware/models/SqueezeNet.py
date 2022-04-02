@@ -38,7 +38,7 @@ class SqueezeNet(nn.Module):
         super(SqueezeNet, self).__init__()
         self.prune = prune
         # input_shape = [64, 3, 32, 32]
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=(1,1))
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=0)
         self.relu_conv1 = nn.ReLU(inplace=True)
         self.pool1 = nn.MaxPool2d(kernel_size=3, stride=2)
 

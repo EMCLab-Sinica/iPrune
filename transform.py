@@ -1005,7 +1005,6 @@ def ensure_channel_last(images, data_layout):
         raise NotImplementedError
 
 images = ensure_channel_last(model_data.images, model_data.data_layout)
-print(images.shape)
 for idx in range(model_data.images.shape[0]):
     im = images[idx, :]
     # load_data returns NCHW
