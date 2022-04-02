@@ -27,7 +27,7 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if !STABLE_POWER
     // FIXME: After removing FC merge, this branch can be removed
     if(X->dims[2] != 0) // conv
-        data_len /= 3;
+        data_len = X->dims[0] * X->dims[1] * X->dims[2] * X->dims[3];
 #endif // STABLE_POWER
     my_printf_debug("data_len: %d" NEWLINE, data_len);
     uint16_t data_offset = 0;
