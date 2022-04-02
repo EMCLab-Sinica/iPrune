@@ -146,28 +146,20 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
     // cur_output_tile_c should be signed, or MAX_VAL below is broken with TI's compiler
     int16_t output_tile_c = conv_params->flags->extra.conv.output_tile_c;
     int16_t cur_output_tile_c = output_tile_c - conv_params->filter_idx % output_tile_c;
-#if STABLE_POWER
     int16_t output_tile_w = conv_params->flags->extra.conv.output_tile_w;
     int16_t output_tile_h = conv_params->flags->extra.conv.output_tile_h;
-#endif // STABLE_POWER
+
     my_printf_debug("cur_output_tile_c = %d" NEWLINE, cur_output_tile_c);
     MY_ASSERT(cur_output_tile_c > 0);
 
     int16_t n_filters = cur_output_tile_c;
     int16_t values_to_preserve = n_filters;
-#if SPARSE
+
 #if STABLE_POWER
     int16_t channel_offset_c = 0;
 #else // STABLE_POWER
-    int16_t channel_offset_c = conv_params->filter_idx;
+    int16_t channel_offset_c = conv_params->filter_idx % output_tile_c;
 #endif // STABLE_POWER
-#else // SPARSE
-#if STABLE_POWER
-    int16_t channel_offset_c = 0;
-#else // STABLE_POWER
-    int16_t channel_offset_c = conv_params->filter_idx;
-#endif // STABLE_POWER
-#endif // SPARSE
 #if JAPARI
     values_to_preserve = extend_for_footprints(n_filters, conv_params->force_align_footprints);
     n_filters = padding_for_lea(values_to_preserve);
@@ -184,18 +176,16 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
     // use NWHC so that output is written continuously on the address space
 #if STABLE_POWER
     uint32_t cur_output_data_offset = ((output_w % output_tile_w) * output_tile_h  + (output_h % output_tile_h)) * output_tile_c;
-    my_printf_debug("output_tile_w: %d" NEWLINE, output_tile_w);
-    my_printf_debug("output_tile_h: %d" NEWLINE, output_tile_h);
-    my_printf_debug("cur_output_data_offset: %d" NEWLINE, cur_output_data_offset);
 #else // STABLE_POWER
     // 2 * OUTPUT_W * OUTPUT_H * OUTPUT_CHANNEL is the offset of result of psum cmd
     uint32_t cur_output_data_offset =
-        2 * conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL + // n
-        output_h * conv_params->OUTPUT_W * conv_params->OUTPUT_CHANNEL +                  // w
-        output_w * conv_params->OUTPUT_CHANNEL +                                          // h
-        channel_offset_c;                                                                 // c
+        2 * conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL +           // n
+        ((output_h % output_tile_h) * output_tile_w  + (output_w % output_tile_w)) * output_tile_c; // hwc
+        channel_offset_c;                                                                           // c
 #endif // STABLE_POWER
-
+    my_printf_debug("output_tile_w: %d" NEWLINE, output_tile_w);
+    my_printf_debug("output_tile_h: %d" NEWLINE, output_tile_h);
+    my_printf_debug("cur_output_data_offset: %d" NEWLINE, cur_output_data_offset);
 #if INDIRECT_RECOVERY
     SlotInfo *cur_slot_info = conv_params->cur_slot_info;
     int16_t n_keep_state_bits = n_filters;
@@ -666,7 +656,13 @@ void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
      * 1: the result of accum cmd (double buffering)
      * 2: the result of psum cmd
      */
-    output->params_len = 3 * conv_params->OUTPUT_H * conv_params->OUTPUT_W * OUTPUT_CHANNEL * sizeof(int16_t);
+    int16_t output_tile_len =
+        conv_params->flags->extra.conv.output_tile_h *
+        conv_params->flags->extra.conv.output_tile_w *
+        conv_params->flags->extra.conv.output_tile_c;
+    my_printf_debug("output_tile_len: %d" NEWLINE, output_tile_len);
+    my_printf_debug("output_len: %d" NEWLINE, conv_params->OUTPUT_H * conv_params->OUTPUT_W * OUTPUT_CHANNEL);
+    output->params_len = sizeof(int16_t) * (2 * conv_params->OUTPUT_H * conv_params->OUTPUT_W * OUTPUT_CHANNEL + output_tile_len);
 #endif // STABLE_POWER
     output->dims[0] = 1;
     output->dims[1] = OUTPUT_CHANNEL;
@@ -741,7 +737,7 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
 #if !STABLE_POWER
     int16_t input_offset =
         2 * output_len +
-        (output_h * OUTPUT_W + output_w) * OUTPUT_C + conv_params->filter_idx;
+        ((output_h % conv_params->flags->extra.conv.output_tile_h) * conv_params->flags->extra.conv.output_tile_w  + (output_w % conv_params->flags->extra.conv.output_tile_w)) * output_tile_c; // hwc
     uint16_t cur_input_offset = input_offset;
 #endif // STABLE_POWER
     int16_t vm_offset = 0;
@@ -785,13 +781,13 @@ void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output
             chunk_offset = 0;
             cur_psum_offset += OUTPUT_C * OUTPUT_W;
 #if !STABLE_POWER
-            cur_input_offset += OUTPUT_C * OUTPUT_W;
+            cur_input_offset += conv_params->flags->extra.conv.output_tile_c * conv_params->flags->extra.conv.output_tile_w;
 #endif // STABLE_POWER
             vm_offset += real_chunk_len;
         }
 #if !STABLE_POWER
-        input_offset -= tile_h_offset * OUTPUT_W * OUTPUT_C;
-        cur_input_offset = input_offset + OUTPUT_C * (offset_w + 1);
+        input_offset -= tile_h_offset * conv_params->flags->extra.conv.output_tile_c * conv_params->flags->extra.conv.output_tile_w;
+        cur_input_offset = input_offset + conv_params->flags->extra.conv.output_tile_c * (offset_w + 1);
 #endif // STABLE_POWER
         psum_offset -= tile_h_offset * OUTPUT_W * OUTPUT_C;
         cur_psum_offset = psum_offset + OUTPUT_C * (offset_w + 1);

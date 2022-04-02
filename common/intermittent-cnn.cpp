@@ -30,12 +30,14 @@ static void handle_node(Model *model, uint16_t node_idx) {
         // dump_params(input[j]);
     }
 #if SPARSE
+#ifdef OpGemmMerge
     // FIXME: remove this after removing op_merge
     if(cur_node->op_type == OpGemmMerge) {
         // cur node is ConvMerge or GemmMerge
         input_id[1] = get_node(node_idx - 1)->inputs[1];
         input[1] = get_parameter_info(input_id[1]);
     }
+#endif // OpGemmMerge
 #endif
     my_printf_debug(NEWLINE);
 
