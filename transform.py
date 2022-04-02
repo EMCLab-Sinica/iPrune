@@ -255,7 +255,7 @@ Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
 
 if args.config == 'pruned_mnist':
     model_config = model_configs['mnist']
-elif args.config == 'pruned_cifar' or args.config == 'cifar':
+elif args.config == 'pruned_cifar10' or args.config == 'cifar10':
     model_config = model_configs['SqueezeNet']
 elif args.config == 'pruned_har' or args.config == 'har':
     model_config = model_configs['HAR']
@@ -860,6 +860,10 @@ for params in parameters:
         if args.config == 'pruned_har':
             # expand the dims of input in order to fit the shape of conv2d.
             dims = np.insert(dims, 1, 1)
+        elif args.config == 'pruned_cifar10':
+            # Pruned cifar10 has no a transpose layer to transpose the data_layout from NCHW to NCHW.
+            # Thus, assign directly the NHWC layout for pruned cifar10
+            dims = (3, 32, 32)
         for dim in dims:
             model_parameters_info.write(to_bytes(dim))
         for _ in range(3 - len(dims)):
@@ -1001,6 +1005,7 @@ def ensure_channel_last(images, data_layout):
         raise NotImplementedError
 
 images = ensure_channel_last(model_data.images, model_data.data_layout)
+print(images.shape)
 for idx in range(model_data.images.shape[0]):
     im = images[idx, :]
     # load_data returns NCHW
