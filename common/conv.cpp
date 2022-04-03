@@ -322,8 +322,12 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
         lea_buffer +
         ((cur_input_w - conv_params->cached_input_w) * conv_params->tile_h +
          (cur_input_h - conv_params->input_h_first)) * conv_params->dest_offset;
-    my_printf_debug("input_buffer_addr offset: %d" NEWLINE, input_buffer_addr - lea_buffer);
-    my_printf_debug("filter_buffer_addr offset: %d" NEWLINE,filter_buffer_addr - lea_buffer);
+    my_printf_debug("cur_input_w: %d" NEWLINE, cur_input_w);
+    my_printf_debug("cur_input_h: %d" NEWLINE, cur_input_h);
+    my_printf_debug("cached_input_w: %d" NEWLINE, conv_params->cached_input_w);
+    my_printf_debug("input_h_first: %d" NEWLINE, conv_params->input_h_first);
+    my_printf_debug("input_buffer_addr offset: %ld" NEWLINE, input_buffer_addr - lea_buffer);
+    my_printf_debug("filter_buffer_addr offset: %ld" NEWLINE,filter_buffer_addr - lea_buffer);
 
     uint16_t A_rows, A_cols, B_rows, B_cols;
     A_rows = 1;
@@ -441,7 +445,6 @@ static inline uint16_t load_input_vector(uint32_t src_addr, int16_t* dest_addr, 
 }
 
 static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
-    int8_t field_size = (conv_params->kH - 1) / 2;
     /* copy input data, col by col */
 
     int8_t real_input_index = -1;
@@ -452,15 +455,23 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
         conv_params->real_conv_input = conv_params->conv_input;
     }
 
-    int16_t tile_h_offset = ((conv_params->input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride) % conv_params->tile_h;
-    int16_t tile_w_offset = ((conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride) % conv_params->tile_w;
-    int16_t input_w_tile_begin = conv_params->input_w - conv_params->kY - tile_w_offset;
+    int16_t tile_h_offset =
+        ((conv_params->input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride)
+        % conv_params->flags->extra.conv.output_tile_h;
+    int16_t tile_w_offset =
+        ((conv_params->input_w - conv_params->input_w_first - conv_params->kY) / conv_params->stride)
+        % conv_params->flags->extra.conv.output_tile_w;
+    int16_t input_w_tile_begin = conv_params->input_w - conv_params->kY - tile_w_offset * conv_params->stride;
+    my_printf_debug("tile_h_offset: %d" NEWLINE, tile_h_offset);
+    my_printf_debug("tile_w_offset: %d" NEWLINE, tile_w_offset);
     my_printf_debug("input_w_tile_begin: %d" NEWLINE, input_w_tile_begin);
 
+    /*
     const uint8_t* pads = conv_params->flags->extra.conv.pads;
     enum { PAD_H_BEGIN = 0, PAD_W_BEGIN = 1, PAD_H_END = 2, PAD_W_END = 3 };
     // let tile_w be equal to input_tile_w
     conv_params->tile_w += pads[PAD_W_BEGIN] + pads[PAD_W_END];
+    */
 
     /* int32_t instead of int16_t as TI's compiler cannot handle negative
      * offsets correctly. The expression `ptr + (int16_t)(-2)` is
@@ -563,12 +574,12 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
     dump_matrix_debug(lea_buffer, inputs_len, ValueInfo(conv_params->real_conv_input, nullptr), false);
 
     // reset tile_w as output_tile_w
-    conv_params->tile_w -= pads[PAD_W_BEGIN] + pads[PAD_W_END];
+    // conv_params->tile_w -= pads[PAD_W_BEGIN] + pads[PAD_W_END];
     int16_t max_input_h =
-        MIN_VAL(conv_params->input_h + conv_params->tile_h - 1 - tile_h_offset,
+        MIN_VAL(conv_params->input_h + conv_params->flags->extra.conv.output_tile_h * conv_params->stride - tile_h_offset - 1,
                 conv_params->input_h_last + conv_params->kX);
     int16_t max_input_w =
-        MIN_VAL(conv_params->input_w + conv_params->tile_w - 1 - tile_w_offset,
+        MIN_VAL(conv_params->input_w + conv_params->flags->extra.conv.output_tile_w * conv_params->stride - tile_w_offset - 1,
                 conv_params->input_w_last + conv_params->kY);
     my_printf_debug("max_input_h: %d, max_input_w: %d" NEWLINE, max_input_h, max_input_w);
     for(int32_t cur_input_w = conv_params->input_w; cur_input_w <= max_input_w; cur_input_w += conv_params->stride) {
@@ -815,13 +826,15 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
     // reserve memory for psum
     matrix_mpy_results -= output_tile_len;
-    my_printf_debug("matrix_mpy_results offset: %d" NEWLINE, matrix_mpy_results - lea_buffer);
+    my_printf_debug("matrix_mpy_results offset: %ld" NEWLINE, matrix_mpy_results - lea_buffer);
 
+    // input_tile_w/input_tile_h
     conv_params->tile_w =
         MIN_VAL(W + pads[PAD_W_BEGIN] + pads[PAD_W_END],
-            node->flags.extra.conv.output_tile_w * conv_params->stride);
+                (node->flags.extra.conv.output_tile_w - 1) * conv_params->stride + conv_params->kW);
     conv_params->tile_h =
-        MIN_VAL(H, node->flags.extra.conv.output_tile_h * conv_params->stride) + pads[PAD_H_BEGIN] + pads[PAD_H_END];
+        MIN_VAL(H + pads[PAD_H_BEGIN] + pads[PAD_H_END],
+                (node->flags.extra.conv.output_tile_h - 1) * conv_params->stride + conv_params->kH);
 
     my_printf_debug("tile_w = %d" NEWLINE, conv_params->tile_w);
     my_printf_debug("tile_h = %d" NEWLINE, conv_params->tile_h);
@@ -854,16 +867,13 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->OUTPUT_CHANNEL = output->dims[1];
     conv_params->N_FILTERS = conv_filter->dims[0];
 #if SPARSE
-    // FIXME: determine COL LEN in transform.py
-    const uint16_t COL_LEN = 50;
-    int16_t COL_VALS[COL_LEN] = {0};
+    int16_t COL_VALS[MAX_N_COL_CONV] = {0};
     int16_t col_val;
     conv_params->row_index = 0;
     conv_params->cur_row_val = 0; // cur_row_val + cur_n_cols => cur_cols_index
     conv_params->next_row_val = 0;
     conv_params->n_cols = 0;
     conv_params->cur_n_cols = 0;
-    uint16_t cur_col_index = 0;
 #else // SPARSE
     conv_params->input_tile_c_offset = 0;
     conv_params->input_tile_c_index = 0;
@@ -1099,14 +1109,15 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->filter_offset = 1 * conv_params->dest_offset;
         while (true) {
             my_printf_debug("input_h: %d/input_w: %d" NEWLINE, conv_params->input_h, conv_params->input_w);
-            for (; conv_params->input_w <= conv_params->input_w_last; conv_params->input_w += conv_params->tile_w) {
-                for (; conv_params->input_h <= conv_params->input_h_last; conv_params->input_h += conv_params->tile_h) {
+            for (; conv_params->input_w <= conv_params->input_w_last; conv_params->input_w += conv_params->flags->extra.conv.output_tile_w * conv_params->stride) {
+                for (; conv_params->input_h <= conv_params->input_h_last; conv_params->input_h += conv_params->flags->extra.conv.output_tile_h * conv_params->stride) {
                     for(; conv_params->kY < conv_params->kW;) {
                         for(; conv_params->kX < conv_params->kH;) {
                             conv_params->input_w += conv_params->kY;
                             conv_params->input_h += conv_params->kX;
                             my_printf_debug("(%d, %d) (%d, %d)" NEWLINE, conv_params->input_h, conv_params->input_w, conv_params->kX, conv_params->kY);
                             my_printf_debug("current psum buffer version: %d" NEWLINE, conv_params->psum_buffer_version);
+#if !STABLE_POWER
                             int16_t tile_h_offset =
                                 ((conv_params->input_h - conv_params->input_h_first - conv_params->kX) / conv_params->stride) %
                                 conv_params->flags->extra.conv.output_tile_h;
@@ -1118,6 +1129,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                                                 conv_params->stride,
                                     output_w = (conv_params->input_w - conv_params->input_w_first - conv_params->kY) /
                                                 conv_params->stride;
+#endif // STABLE_POWER
                             if(conv_params->cur_op == 0) {
                                 // perform psum
                                 handle_conv_inner_loop(model, conv_params);
@@ -1286,7 +1298,9 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
 #endif // STABLE_POWER
     }
+#if !STABLE_POWER or SPARSE
 EXIT_LAYER:
+#endif
     matrix_mpy_results += output_tile_len;
     flip_state_bit(model, output);
 

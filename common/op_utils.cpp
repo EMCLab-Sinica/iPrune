@@ -270,11 +270,6 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
         uint16_t output_tile_h = MIN_VAL(node->flags.extra.conv.output_tile_h, OUTPUT_H - (output_h - tile_h_offset));
         uint16_t output_tile_c = node->flags.extra.conv.output_tile_c;
         uint16_t output_len = CHANNEL * OUTPUT_W * OUTPUT_H;
-        int16_t default_output_tile_len =
-            node->flags.extra.conv.output_tile_c *
-            node->flags.extra.conv.output_tile_w *
-            node->flags.extra.conv.output_tile_h * 2;
-        int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - default_output_tile_len;
         MY_ASSERT(output_w + output_tile_w - tile_w_offset <= OUTPUT_W);
         MY_ASSERT(output_h + output_tile_h - tile_h_offset <= OUTPUT_H);
         uint16_t vm_offset = 0;
@@ -287,6 +282,11 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
                     buffer_id * output_len + // n
                     ((offset_h + output_h) * OUTPUT_W + (offset_w + output_w)) * CHANNEL + // hw
                     filter_idx; // c
+                my_printf_debug("offset_h: %d" NEWLINE, offset_h);
+                my_printf_debug("offset_w: %d" NEWLINE, offset_w);
+                my_printf_debug("output_h: %d" NEWLINE, output_h);
+                my_printf_debug("output_w: %d" NEWLINE, output_w);
+                my_printf_debug("filter_idx: %d" NEWLINE, filter_idx);
                 src = cpu_buffer + vm_offset * output_tile_c;
                 my_memcpy_to_param(output, dst, src, real_chunk_len * sizeof(int16_t), 0);
                 my_printf_debug(NEWLINE "Output offset %d" NEWLINE, dst);
