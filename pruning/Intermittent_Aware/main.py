@@ -72,6 +72,8 @@ def train(epoch):
             loss = torch.mean(criterion(output, target))
             loss.backward()
             optimizer.step()
+            if args.prune:
+                prune_op.prune_weight()
     return
 
 def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
@@ -377,10 +379,10 @@ if __name__=='__main__':
                 cur_epoch = epoch
                 cur_loss, cur_acc, best_acc = test()
                 pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
-        test(evaluate=True)
+        # test(evaluate=True)
         # prune_op.print_info()
     else:
-        for epoch in trange(1, args.epochs + 1):
+        for epoch in pbar:
             if epoch % args.lr_epochs == 0:
                 if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS':
                     if args.learning_rate_list:

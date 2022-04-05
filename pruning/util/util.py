@@ -898,7 +898,6 @@ class Prune_Op():
         if self.args.prune == 'energy':
             self.metrics_maker = EnergyCostMaker(model=model, args=args, output_shapes=self.output_shapes)
         self.metrics_maker.profile()
-        # exit()
         self.mask_maker = MaskMaker(model, args, input_shape, metrics_maker=self.metrics_maker)
         if args.sa:
             self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.25, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
