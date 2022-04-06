@@ -83,9 +83,22 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     int16_t* buffer_b = buffer_temp + OP_FILTERS;
 #endif
     make_buffer_aligned(&buffer_b);
-
+    int16_t n_tiles = output->params_len / output_len / sizeof(int16_t);
+    my_printf_debug("n_tiles=%d" NEWLINE, n_tiles);
+    MY_ASSERT(n_tiles);
     uint16_t i = 0, tile = 0, j = 0, j_with_footprints = 0;
 #if SPARSE
+    uint16_t cols[MAX_N_COL_FC] = {0};
+    uint16_t rows[MAX_ROW_LEN_FC] = {0};
+    int16_t first_tile_indices[MAX_N_FILTER_GROUP] = {0};
+    int16_t n_rows = n_tiles + 1;
+    my_memcpy_from_param_row(model, rows, B, 0, (n_rows) * sizeof(int16_t));
+    int16_t n_filter_group = output->dims[1] / OP_FILTERS;
+    my_memcpy_from_param_first_tile_index(model, first_tile_indices, B, 0, n_filter_group * sizeof(int16_t));
+    // for(int idx = 0; idx < n_filter_group; ++idx) {
+    //    my_printf("%d ", first_tile_indices[idx]);
+    //}
+    //my_printf(NEWLINE);
     uint16_t row_index = 0;
     uint16_t cur_row_val = 0; // cur_row_val + cur_n_cols => cur_cols_index
     uint16_t next_row_val = 0;
@@ -94,14 +107,19 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     uint16_t filter_tile_index = 0;
     while(!n_cols && row_index * flags->extra.gemm.tile_channel < B->dims[0]) {
         cur_row_val = next_row_val;
-        next_row_val = get_row_val(model, B, row_index + 1);
+        next_row_val = rows[row_index + 1];
         n_cols = next_row_val - cur_row_val;
         row_index++;
     }
+    my_memcpy_from_param_col(model, cols, B, rows[row_index - 1], (n_cols) * sizeof(int16_t));
+    //for(int idx = 0; idx < n_cols; ++idx) {
+    //    my_printf("%d ", cols[idx]);
+    //}
+    //my_printf(NEWLINE);
     cur_n_cols = 0;
     i = (row_index - 1) * flags->extra.gemm.tile_channel;
     tile = row_index - 1;
-    filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
+    filter_tile_index = cols[cur_n_cols];
     j = j_with_footprints = filter_tile_index * OP_FILTERS;
 #endif
 
@@ -137,13 +155,13 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
 #if SPARSE
     row_index = tile + 1;
-    cur_row_val = get_row_val(model, B, row_index - 1);
-    next_row_val = get_row_val(model, B, row_index);
+    cur_row_val = rows[row_index - 1];
+    next_row_val = rows[row_index];
     n_cols = next_row_val - cur_row_val;
     uint16_t jobs_in_an_op = OP_FILTERS / BATCH_SIZE;
     uint16_t cur_cols_index = first_unfinished_value_idx / jobs_in_an_op;
     cur_n_cols = cur_cols_index - cur_row_val;
-    filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
+    filter_tile_index = cols[cur_n_cols];
     j = j_with_footprints = filter_tile_index * OP_FILTERS;
     my_printf_debug("row_index: %d\n", row_index);
     my_printf_debug("cur_row_val: %d\n", cur_row_val);
@@ -276,7 +294,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #else
 #if SPARSE
             // append biases to first pruned tile in a filter
-            int16_t cols_first_tile_index = get_col_first_tile_index(model, B, filter_tile_index);
+            int16_t cols_first_tile_index = first_tile_indices[filter_tile_index];
             if(tile == cols_first_tile_index) {
 #else // SPARSE
             if (tile == 0) {
@@ -343,7 +361,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             if(cur_n_cols >= n_cols) {
                 break;
             }
-            uint16_t col_val = get_col_val(model, B, cur_row_val + cur_n_cols);
+            uint16_t col_val = cols[cur_n_cols];
             filter_tile_index = col_val;
             j = col_val * OP_FILTERS;
 #if STABLE_POWER
@@ -361,14 +379,18 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         cur_n_cols = 0;
         while(!n_cols && row_index * flags->extra.gemm.tile_channel < B->dims[0]) {
             cur_row_val = next_row_val;
-            next_row_val = get_row_val(model, B, row_index + 1);
+            next_row_val = rows[row_index + 1];
             n_cols = next_row_val - cur_row_val;
             row_index++;
         }
         if(n_cols) {
+            my_memcpy_from_param_col(model, cols, B, rows[row_index - 1], (n_cols) * sizeof(int16_t));
+            //for(int idx = 0; idx < n_cols; ++idx) {
+            //    my_printf("%d ", cols[idx]);
+            //}
             i = (row_index - 1) * flags->extra.gemm.tile_channel;
             tile = row_index - 1;
-            filter_tile_index = get_col_val(model, B, cur_row_val + cur_n_cols);
+            filter_tile_index = cols[cur_n_cols];
             j = j_with_footprints = filter_tile_index * OP_FILTERS;
         } else {
             i = row_index * flags->extra.gemm.tile_channel;

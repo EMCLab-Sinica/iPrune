@@ -61,7 +61,7 @@ def train(epoch):
         loss.backward()
         optimizer.step()
         if args.prune:
-            prune_op.prune_weight()
+            prune_weight(model)
     if args.arch == 'KWS':
         for batch_idx, (data, target) in enumerate(validation_loader):
             if args.cuda:
@@ -73,7 +73,7 @@ def train(epoch):
             loss.backward()
             optimizer.step()
             if args.prune:
-                prune_op.prune_weight()
+                prune_weight(model)
     return
 
 def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
@@ -101,7 +101,7 @@ def test(evaluate=False):
     correct = 0
 
     if args.prune:
-        prune_op.prune_weight()
+        prune_weight(model)
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -339,7 +339,7 @@ if __name__=='__main__':
     cur_acc = 0
     best_acc = 0
     pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
-    if args.prune:
+    if args.prune and not args.retrain:
         admm_params = None
         print('==> Start pruning ...')
         if not args.pretrained:

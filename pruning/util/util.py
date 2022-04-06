@@ -476,16 +476,17 @@ def prune_weight_layer(m, mask):
     return m.weight.data
 
 def prune_weight(model):
-    logger_.info('Start pruning weight...')
     index = 0
     for m in model.modules():
-        if isinstance(m, nn.Linear):
+        if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
             m.weight.data[model.weights_pruned[index]] = 0
             index += 1
-        elif isinstance(m, nn.Conv2d):
-            m.weight.data[model.weights_pruned[index]] = 0
-            index += 1
-    logger_.info('Finish pruning weight.')
+            # prune bias if entire filter are pruned
+            dims = m.weight.data.shape
+            for i in range(dims[0]):
+                ans = torch.sum(m.weight.data[i])
+                if ans == 0:
+                    m.bias.data[i] = 0
     return model
 
 class SimulatedAnnealing():
