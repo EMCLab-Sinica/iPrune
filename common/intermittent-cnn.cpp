@@ -131,7 +131,9 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
 #if JAPARI
     ans_len = extend_for_footprints(ans_len);
 #endif
-    uint8_t buffer_len = MIN_VAL(output_node->dims[1], ans_len);
+    uint8_t buffer_len = MIN_VAL(output_node->dims[0], ans_len);
+    if(!output_node->dims[0])
+        buffer_len = MIN_VAL(output_node->dims[1], ans_len);
     my_memcpy_from_param(model, lea_buffer, output_node, 0, buffer_len * sizeof(int16_t));
 
 #if STATEFUL
@@ -144,16 +146,16 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
 
     if (sample_idx == 0) {
         for (uint8_t buffer_idx = 0, ofm_idx = 0; buffer_idx < buffer_len; buffer_idx++) {
-            int16_t got_q15 = lea_buffer[buffer_idx];
+            // int16_t got_q15 = lea_buffer[buffer_idx];
 #if JAPARI
             if (offset_has_state(buffer_idx)) {
                 check_footprint(got_q15);
             } else
 #endif
             {
-                float got_real = q15_to_float(got_q15, ValueInfo(output_node), nullptr, false);
-                float expected = first_sample_outputs[ofm_idx];
-                float error = fabs((got_real - expected) / expected);
+                // float got_real = q15_to_float(got_q15, ValueInfo(output_node), nullptr, false);
+                // float expected = first_sample_outputs[ofm_idx];
+                // float error = fabs((got_real - expected) / expected);
                 // Errors in CIFAR-10/Stateful are quite large...
                 // MY_ASSERT(error <= 0.15,
                 //          "Value error too large at index %d: got=%f, expected=%f" NEWLINE, buffer_idx, got_real, expected);
@@ -490,7 +492,6 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
     uint16_t row_index = find_row_index(model, params_filter, output, node, cur_col_index, &cur_row_val);
     uint16_t next_row_val = get_row_val(model, params_filter, row_index + 1);
     uint16_t n_cols_ = next_row_val - cur_row_val;
-    uint16_t col_val = get_col_val(model, params_filter, cur_col_index); // [0 "2"]
 
     output_tile_c = upper_gauss(output_tile_c, BATCH_SIZE) * BATCH_SIZE;
     jobs_in_a_filter_tile = OUTPUT_H * OUTPUT_W * output_tile_c / BATCH_SIZE;
@@ -509,7 +510,6 @@ uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_fi
     my_printf_debug("input_tile_jobs: %d\n", input_tile_jobs);
     my_printf_debug("jobs_in_an_op: %d\n", jobs_in_an_op);
     my_printf_debug("cur_col_index: %d\n", cur_col_index);
-    my_printf_debug("col_val: %d\n", col_val);
     my_printf_debug("cur_row_val: %d\n", cur_row_val);
     my_printf_debug("row_index: %d\n", row_index);
     my_printf_debug("job_index & jobs_in_an_op: %d\n", (job_index & jobs_in_an_op));

@@ -418,7 +418,11 @@ void alloc_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo *
 }
 
 void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
-    const ParameterInfo *X = input[0], *params = input[1];
+#ifdef OpGemm
+    const ParameterInfo *X = input[0];
+#if SPARSE
+    const ParameterInfo *params = input[1];
+#endif // SPARSE
 
     my_printf_debug("GemmMerge!" NEWLINE);
 
@@ -436,12 +440,16 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 #endif
 
     uint16_t merge_offset = 0;
+#if SPARSE
     uint16_t unfinished_tile_index = 0;
     uint16_t filter_offset = 0;
+#endif // SPARSE
 #if INTERMITTENT
     merge_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
+#if SPARSE
     unfinished_tile_index = merge_offset / OP_FILTERS;
     filter_offset = merge_offset % OP_FILTERS;
+#endif // SPARSE
 #endif
 
     int16_t *buffer_temp = lea_buffer,
@@ -544,4 +552,5 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 
     my_printf_debug("handle_gemmmerge output" NEWLINE);
     dump_params_debug(model, output, node->output_name);
+#endif // OpGemm
 }
