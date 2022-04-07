@@ -180,12 +180,13 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
     // 2 * OUTPUT_W * OUTPUT_H * OUTPUT_CHANNEL is the offset of result of psum cmd
     uint32_t cur_output_data_offset =
         2 * conv_params->OUTPUT_W * conv_params->OUTPUT_H * conv_params->OUTPUT_CHANNEL +           // n
-        ((output_h % output_tile_h) * output_tile_w  + (output_w % output_tile_w)) * output_tile_c; // hwc
+        ((output_h % output_tile_h) * output_tile_w  + (output_w % output_tile_w)) * output_tile_c +// hwc
         channel_offset_c;                                                                           // c
 #endif // STABLE_POWER
     my_printf_debug("output_tile_w: %d" NEWLINE, output_tile_w);
     my_printf_debug("output_tile_h: %d" NEWLINE, output_tile_h);
     my_printf_debug("cur_output_data_offset: %d" NEWLINE, cur_output_data_offset);
+    my_printf_debug("channel_offset_c: %d" NEWLINE, channel_offset_c);
 #if INDIRECT_RECOVERY
     SlotInfo *cur_slot_info = conv_params->cur_slot_info;
     int16_t n_keep_state_bits = n_filters;
@@ -921,8 +922,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
         uint16_t tile_w_offset = first_unfinished_sub_layer_idx / n_output_tile_h;
         uint16_t tile_h_offset = first_unfinished_sub_layer_idx % n_output_tile_h;
-        uint16_t input_w_offset = tile_w_offset * conv_params->flags->extra.conv.output_tile_w;
-        uint16_t input_h_offset = tile_h_offset * conv_params->flags->extra.conv.output_tile_h;
+        uint16_t input_w_offset = tile_w_offset * conv_params->flags->extra.conv.output_tile_w * conv_params->stride;
+        uint16_t input_h_offset = tile_h_offset * conv_params->flags->extra.conv.output_tile_h * conv_params->stride;
         my_printf_debug("input_w_offset: %d" NEWLINE, input_w_offset);
         my_printf_debug("input_h_offset: %d" NEWLINE, input_h_offset);
         conv_params->input_w += input_w_offset;
@@ -961,6 +962,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                 conv_params->flags->extra.conv.output_tile_c; // psum, accum
 
         uint16_t n_weight_tiles = conv_params->kH * conv_params->kW;
+        my_printf_debug("n_weight_tiles: %d" NEWLINE, n_weight_tiles);
         uint16_t intra_kernel_offset = 0;
 #if SPARSE
         int16_t finished_weight_tiles = first_unfinished_job_idx / jobs_in_a_weight_tile;
@@ -997,11 +999,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         MY_ASSERT(!(conv_params->cur_op & ~1)); // should be 0 or 1
 
         first_unfinished_job_idx %= jobs_in_a_set_psum_cmd;
-        uint16_t input_tile_w_offset = first_unfinished_job_idx / (cur_output_tile_h * cur_output_tile_c);
+        uint16_t input_tile_w_offset = first_unfinished_job_idx / (cur_output_tile_h * cur_output_tile_c) * conv_params->stride;
         first_unfinished_job_idx %= (cur_output_tile_h * cur_output_tile_c);
         my_printf_debug("remain: %d" NEWLINE, first_unfinished_job_idx);
 
-        uint16_t input_tile_h_offset = first_unfinished_job_idx / cur_output_tile_c;
+        uint16_t input_tile_h_offset = first_unfinished_job_idx / cur_output_tile_c * conv_params->stride;
         my_printf_debug("input_tile_w_offset: %d" NEWLINE, input_tile_w_offset);
         my_printf_debug("input_tile_h_offset: %d" NEWLINE, input_tile_h_offset);
         my_printf_debug("jobs_in_a_set_psum_cmd: %d" NEWLINE, jobs_in_a_set_psum_cmd);
@@ -1024,6 +1026,12 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             filter_offset_in_tile;
         conv_params->input_tile_c_offset =
             conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
+        if(conv_params->input_tile_c_offset >= CHANNEL) {
+            conv_params->input_tile_c_offset = 0;
+            conv_params->input_tile_c_index = 0;
+            conv_params->model->sub_layer_idx++;
+            commit_model();
+        }
 
 #if SPARSE
         uint16_t tile_1x1xTn_offset = conv_params->cur_n_cols;
@@ -1220,13 +1228,14 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #else // SPARSE
                     conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * (input_channels / conv_params->flags->extra.conv.input_tile_c)) & 0x1 ;
 #endif // SPARSE
+#if HAWAII
+                    reset_hawaii_sub_layer_footprint(conv_params->model->layer_idx);
+#endif // HAWAII
+                    // FIXME: Handle the issue if power fails at this line
                     // commit model for sub_layer
                     conv_params->model->sub_layer_idx++;
                     commit_model();
                     my_printf_debug("sub_layer_idx: %d" NEWLINE, conv_params->model->sub_layer_idx);
-#if HAWAII
-                    reset_hawaii_sub_layer_footprint(conv_params->model->layer_idx);
-#endif // HAWAII
 #endif // STABLE_POWER
 #if SPARSE
                     int16_t next_input_h = conv_params->input_h + conv_params->flags->extra.conv.output_tile_h * conv_params->stride;
@@ -1381,8 +1390,8 @@ void handle_convmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     uint8_t n_tiles_c = conv_filter->dims[1] * conv_filter->dims[2] * conv_filter->dims[3] / node->flags.extra.conv.input_tile_c;
 #else // SPARSE
     uint8_t n_tiles_c = 1;
-#endif // SPARSE
     uint8_t input_version = 0;
+#endif // SPARSE
 
 
     MY_ASSERT(n_tiles_c);
