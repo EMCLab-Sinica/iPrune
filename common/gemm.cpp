@@ -65,6 +65,7 @@ inline void clear_filter<BATCH_SIZE>(int16_t* filter) {
 #endif
 
 void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
+#ifdef OpGemm
     const ParameterInfo *A = input[0], *B = input[1], *C = input[2];
     const NodeFlags* flags = &node->flags;
 
@@ -409,6 +410,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
     my_printf_debug("handle_gemm output" NEWLINE);
     dump_params_debug(model, output, node->output_name);
+#endif // OpGemm
 }
 
 void alloc_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node*) {

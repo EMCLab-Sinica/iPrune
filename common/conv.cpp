@@ -1229,8 +1229,8 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // HAWAII
 #endif // STABLE_POWER
 #if SPARSE
-                    int16_t next_input_h = conv_params->input_h + conv_params->tile_h;
-                    int16_t next_input_w = conv_params->input_w + conv_params->tile_w;
+                    int16_t next_input_h = conv_params->input_h + conv_params->flags->extra.conv.output_tile_h * conv_params->stride;
+                    int16_t next_input_w = conv_params->input_w + conv_params->flags->extra.conv.output_tile_w * conv_params->stride;
                     if(next_input_h > conv_params->input_h_last && next_input_w > conv_params->input_w_last) {
                         break;
                     }
