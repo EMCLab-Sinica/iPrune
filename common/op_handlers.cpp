@@ -106,7 +106,7 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     flip_state_bit(model, output);
 
     my_printf_debug("handle_relu output" NEWLINE);
-    dump_params_debug(model, output, node->output_name);
+    dump_params_nhwc_debug(model, output, node->output_name);
 }
 
 void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node*) {
