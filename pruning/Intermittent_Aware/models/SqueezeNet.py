@@ -15,7 +15,7 @@ class Fire(nn.Module):
         self.relu_squeeze = nn.ReLU(inplace=True)
         self.expand1x1 = nn.Conv2d(squeeze_planes, expand1x1_planes, kernel_size=1) #expend 1x1
         self.relu_expand1x1 = nn.ReLU(inplace=True)
-        self.expand3x3 = nn.Conv2d(squeeze_planes, expand1x1_planes, kernel_size=3, padding=(1,1)) #expend 1x1
+        self.expand3x3 = nn.Conv2d(squeeze_planes, expand3x3_planes, kernel_size=3, padding=(1,1)) #expend 1x1
         self.relu_expand3x3 = nn.ReLU(inplace=True)
 
         # using MSR initilization

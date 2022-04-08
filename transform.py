@@ -13,7 +13,7 @@ import struct
 import textwrap
 import warnings
 from typing import List
-from scipy.sparse import csr_matrix
+from scipy.sparse import bsr_matrix
 
 import onnx
 import onnx.defs
@@ -779,7 +779,8 @@ def xxxx2xcxxx(arr, config, dims):
         lists = [np.array(row[i : i + chunk_len]) for i in range(0, len(row), chunk_len)]
         lists = np.array(lists)
         group_size = (dims[2] * dims[3], config['group'][1])
-        bsr = csr_matrix(lists).tobsr(group_size)
+        bsr = bsr_matrix(lists, blocksize=group_size)
+        bsr.sort_indices()
         new_row = []
         for data in bsr.data:
             data = data.flatten() - 1
@@ -797,7 +798,8 @@ def toBSR(matrix, config, dims, op_type):
         # len(cols): the number of input_tile_c * K * K
         group_size = (config['group'][0], config['group'][1])
         dump_matrix(matrix)
-        bsr = csr_matrix(matrix).tobsr(group_size)
+        bsr = bsr_matrix(matrix, blocksize=group_size)
+        bsr.sort_indices()
         logger.debug('Data(transposed):\n{}'.format(bsr.data))
         data = bsr.data
     elif op_type == 'GEMM':
@@ -805,7 +807,8 @@ def toBSR(matrix, config, dims, op_type):
         # len(rows): the number of input_tile_c
         # len(cols): the number of filter groups
         group_size = (config['group'][1], config['group'][0])
-        bsr = csr_matrix(matrix).tobsr(group_size)
+        bsr = bsr_matrix(matrix, blocksize=group_size)
+        bsr.sort_indices()
         data = bsr.data
     data = np.reshape(data, -1)
     cols = bsr.indices

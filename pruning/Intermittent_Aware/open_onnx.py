@@ -4,7 +4,7 @@ import numpy as np
 import os
 import sys
 import logging
-from scipy.sparse import csr_matrix
+from scipy.sparse import bsr_matrix
 from config import config
 
 cwd = os.getcwd()
@@ -44,7 +44,8 @@ def im2col(tensor, shape):
     return matrix
 
 def toBSR(matrix, group_size):
-    bsr = csr_matrix(matrix).tobsr(group_size)
+    bsr = bsr_matrix(matrix, blocksize=group_size)
+    bsr.sort_indices()
     return bsr
 
 def print_matrix(matrix):

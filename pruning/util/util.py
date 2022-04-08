@@ -17,7 +17,7 @@ import subprocess
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 from abc import abstractmethod
-from scipy.sparse import csr_matrix, bsr_matrix
+from scipy.sparse import bsr_matrix
 from torchsummary import summary
 from torch.autograd import Variable
 from itertools import chain
@@ -175,7 +175,8 @@ def xxxx2xcxxx(arr, config, dims):
         lists = [np.array(row[i : i + chunk_len]) for i in range(0, len(row), chunk_len)]
         lists = np.array(lists)
         group_size = (dims[2] * dims[3], config['group'][1])
-        bsr = csr_matrix(lists).tobsr(group_size)
+        bsr = bsr_matrix(lists, blocksize=group_size)
+        bsr.sort_indices()
         new_row = []
         for data in bsr.data:
             data = data.flatten() - 1
@@ -184,7 +185,8 @@ def xxxx2xcxxx(arr, config, dims):
     return np.array(new_arr)
 
 def toBSR(matrix, group):
-    bsr = csr_matrix(matrix).tobsr(group)
+    bsr = bsr_matrix(matrix, blocksize=group)
+    bsr.sort_indices()
     return bsr
 
 def to_onnx(source, name, args):

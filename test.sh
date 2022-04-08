@@ -1,4 +1,4 @@
 rm nvm.bin
-cmake -B build -S . -D MY_DEBUG=1
+cmake -B build -S . -D MY_DEBUG=3 -D USE_PROTOBUF=OFF
 make -C ./build
-./build/intermittent-cnn
+./build/intermittent-cnn -r 1

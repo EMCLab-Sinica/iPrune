@@ -5,15 +5,15 @@ CANDIDATES_PRUNING_RATIOS='0 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5'
 MY_DEBUG='--debug 1'
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG
 
-# original training --73.93%
-# python main.py $COMMON_FLAGS --epochs 300
+# original training --75.64%
+python main.py $COMMON_FLAGS --epochs 300
+'''
 # 35.3% pruned -- 72.99%
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 0 \
 	--pretrained saved_models/$Model.origin.pth.tar \
 	--epochs 50 \
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS
-'''
 # 57.4% pruned -- 73.74%
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 1 \
