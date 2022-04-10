@@ -12,8 +12,6 @@
 
 struct ConvNodeFlags {
     uint16_t input_tile_c;
-    uint16_t input_tile_w;
-    uint16_t input_tile_h;
     uint16_t output_tile_c;
     uint16_t output_tile_w;
     uint16_t output_tile_h;
@@ -52,7 +50,7 @@ struct NodeFlags {
     ExtraNodeFlags extra;
 };
 
-static_assert(sizeof(NodeFlags) == 18, "Unexpected size for NodeFlags");
+static_assert(sizeof(NodeFlags) == 14, "Unexpected size for NodeFlags");
 
 typedef struct Node {
     char name[NODE_NAME_LEN];
@@ -70,7 +68,7 @@ typedef struct Node {
 #endif
 } Node;
 
-static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 24 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
+static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 20 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
 
 /* ParameterInfo may indicate data from the model (parameters) or intermediate values */
 typedef struct ParameterInfo {

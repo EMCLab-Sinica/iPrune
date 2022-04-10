@@ -117,8 +117,6 @@ def _Q15(arr, name):
 class ConvNodeFlags(ctypes.Structure):
     _fields_ = [
         ("input_tile_c", ctypes.c_uint16),
-        ("input_tile_w", ctypes.c_uint16),
-        ("input_tile_h", ctypes.c_uint16),
         ("output_tile_c", ctypes.c_uint16),
         ("output_tile_w", ctypes.c_uint16),
         ("output_tile_h", ctypes.c_uint16),
@@ -166,7 +164,7 @@ class NodeFlags_bits(ctypes.LittleEndianStructure):
 class NodeFlags(ctypes.Union):
     _fields_ = [
         ("b", NodeFlags_bits),
-        ("as_bytes", ctypes.c_uint8 * 18),
+        ("as_bytes", ctypes.c_uint8 * 14),
     ]
 
     def __repr__(self):
@@ -257,6 +255,7 @@ if args.config == 'pruned_mnist':
     model_config = model_configs['mnist']
 elif args.config == 'pruned_cifar10' or args.config == 'cifar10':
     model_config = model_configs['SqueezeNet']
+    Constants.CPU_BUFFER_SIZE = 400
 elif args.config == 'pruned_har' or args.config == 'har':
     model_config = model_configs['HAR']
 elif args.config == 'pruned_kws' or args.config == 'kws':
@@ -525,15 +524,11 @@ def determine_conv_tile_c(n, node_idx):
         node_flags.output_tile_w = output_tile_w
         node_flags.output_tile_h = output_tile_h
         node_flags.output_tile_c = output_tile_c
-        node_flags.input_tile_w = input_tile_w
-        node_flags.input_tile_h = input_tile_h
     else:
         print("Please select configed model.")
         exit()
 
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
-    print('input_tile_w: {}'.format(node_flags.input_tile_w))
-    print('input_tile_h: {}'.format(node_flags.input_tile_h))
     print('output_tile_c: {}'.format(node_flags.output_tile_c))
     print('output_tile_w: {}'.format(node_flags.output_tile_w))
     print('output_tile_h: {}'.format(node_flags.output_tile_h))
