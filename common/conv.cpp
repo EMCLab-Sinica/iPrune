@@ -685,6 +685,18 @@ void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
 #endif
 }
 
+#if SPARSE and STABLE_POWER
+static void append_zero_to_pruned_output_channel(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int16_t tile_h_offset, int16_t tile_w_offset, int8_t buffer_id) {
+    my_printf_debug("==> Start appending zero ..." NEWLINE);
+    init_cpu_buffer();
+    uint16_t OUTPUT_H = output->dims[2], OUTPUT_W = output->dims[3];
+    for(; output_w < OUTPUT_W; output_w += node->flags.extra.conv.output_tile_w) {
+        for(; output_h < OUTPUT_H; output_h += node->flags.extra.conv.output_tile_h) {
+            preserve_output(model, node, output, filter_idx, output_w, output_h, 0, 0, 0);
+        }
+    }
+}
+#endif
 #if SPARSE
 /* The method find the next nonzero block(or sub-tile)
  * Directly set the config of next nonzero block in conv_params.
@@ -703,13 +715,20 @@ void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
  * Note: Some members, such as "kX" and "kY", will not be modified in this method. Therefore,
  * you should change them after calling this method.
  */
-void next_nonzero_value(ConvTaskParams *conv_params, int16_t *col_val) {
+static void next_nonzero_value(const Node *node, ConvTaskParams *conv_params, int16_t *col_val) {
     // rows: the number of filter groups
     // cols: the number of input_tile_c
     while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.output_tile_c < conv_params->OUTPUT_CHANNEL) {
         conv_params->cur_row_val = conv_params->next_row_val;
         conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
         conv_params->n_cols = conv_params->next_row_val - conv_params->cur_row_val;
+#if STABLE_POWER
+        if(!conv_params->n_cols) {
+            conv_params->filter_tile_index = conv_params->row_index;
+            conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
+            append_zero_to_pruned_output_channel(conv_params->model, node, conv_params->output, conv_params->filter_idx, 0, 0, 0, 0, 0);
+        }
+#endif // STABLE_POWER
         conv_params->row_index++;
     }
     if(conv_params->n_cols) {
@@ -900,7 +919,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         conv_params->row_index = conv_params->filter_tile_index;
         conv_params->next_row_val = get_row_val(model, conv_filter, conv_params->row_index);
         // TODO: append 0 to the pruned channels
-        next_nonzero_value(conv_params, &col_val);
+        next_nonzero_value(node, conv_params, &col_val);
         if(conv_params->n_cols) {
             // XXX: add a checker to verify the result
             my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));
@@ -1054,7 +1073,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     MY_ASSERT(conv_params->input_tile_c_index <= conv_params->n_tiles_c);
 #else // INTERMITTENT
 #if SPARSE
-    next_nonzero_value(conv_params, &col_val);
+    next_nonzero_value(node, conv_params, &col_val);
     if(conv_params->n_cols) {
         // XXX: add a checker to verify the result
         my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));
@@ -1266,7 +1285,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if SPARSE
         // FIXME: handle the issues if the entire row is pruned
         conv_params->n_cols = conv_params->cur_n_cols = 0;
-        next_nonzero_value(conv_params, &col_val);
+        next_nonzero_value(node, conv_params, &col_val);
         if(conv_params->n_cols) {
             // XXX: add a checker to verify the result
             my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));

@@ -60,7 +60,7 @@ def train(epoch):
             loss = criterion(output, target)
         loss.backward()
         optimizer.step()
-        if args.prune:
+        if args.prune and batch_idx % 15 == 0:
             prune_weight(model)
     if args.arch == 'KWS':
         for batch_idx, (data, target) in enumerate(validation_loader):
@@ -72,8 +72,10 @@ def train(epoch):
             loss = torch.mean(criterion(output, target))
             loss.backward()
             optimizer.step()
-            if args.prune:
+            if args.prune and batch_idx % 15 == 0:
                 prune_weight(model)
+    if args.prune:
+        prune_weight(model)
     return
 
 def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
@@ -367,12 +369,12 @@ if __name__=='__main__':
         if not args.admm:
             for epoch in pbar:
                 if epoch % args.lr_epochs == 0:
-                    if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS':
-                        if args.learning_rate_list:
+                    if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'SqueezeNet':
+                        if args.learning_rate_list and epoch % args.lr_epochs == 0:
                             adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
                         else:
                             adjust_learning_rate(optimizer, epoch)
-                    elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
+                    elif args.arch == 'HAR':
                         # adjusted by ADAM
                         pass
                 train(epoch)
