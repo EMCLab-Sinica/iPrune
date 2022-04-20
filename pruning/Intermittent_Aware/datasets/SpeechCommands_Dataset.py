@@ -51,35 +51,36 @@ CLASSES = 'yes,no,up,down,left,right,on,off,stop,go'.split(',')
 GOOGLE_SPEECH_SAMPLE_RATE = 16000
 
 class SpeechCommandsDataset(Dataset):
-    def __init__(self, split, transform = None, sample_rate=16000, clip_duration_ms=1000, window_size_ms=40, window_stride_ms=40, dct_coefficient_count=10, silence_percentage=10, unknown_percentage=10, validation_percentage=10, testing_percentage=10, background_volume_range=0.1, background_frequency=0.8, time_shift_ms=100):
+    def __init__(self, arch, split, transform = None, sample_rate=16000, clip_duration_ms=1000, window_size_ms=40, window_stride_ms=40, dct_coefficient_count=10, silence_percentage=10, unknown_percentage=10, validation_percentage=10, testing_percentage=10, background_volume_range=0.1, background_frequency=0.8, time_shift_ms=100):
 
         classes = prepare_words_list(CLASSES)
-        if os.path.isfile("./data/"+split+"_data.json") and os.path.isfile("./data/"+split+"_label.json"):
+        path = "./data/" + arch + "/" + split
+        if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
             print("Load cached data ...")
-            with open("./data/"+split+"_data.json", "r") as fd:
+            with open(path + "_data.json", "r") as fd:
                 data = np.array(json.load(fd))
-            with open("./data/"+split+"_label.json", "r") as fl:
+            with open(path + "_label.json", "r") as fl:
                 label = np.array(json.load(fl))
         else:
             model_settings = prepare_model_settings(
                 label_count=len(classes), \
-                sample_rate=16000, \
-                clip_duration_ms=1000, \
-                window_size_ms=40, \
-                window_stride_ms=40, \
-                dct_coefficient_count=10)
+                sample_rate=sample_rate, \
+                clip_duration_ms=clip_duration_ms, \
+                window_size_ms=window_size_ms, \
+                window_stride_ms=window_stride_ms, \
+                dct_coefficient_count=dct_coefficient_count)
 
             DOWNLOAD_URL = 'http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz'
             FOLDER = pathlib.Path('~/.cache/speech_commands_v2').expanduser()
 
             audio_processor = AudioProcessor(
-                data_url=DOWNLOAD_URL, \
+                data_url=None, \
                 data_dir=FOLDER, \
-                silence_percentage=10, \
-                unknown_percentage=10, \
+                silence_percentage=silence_percentage, \
+                unknown_percentage=unknown_percentage, \
                 wanted_words=CLASSES, \
-                validation_percentage=10, \
-                testing_percentage=10, \
+                validation_percentage=validation_percentage, \
+                testing_percentage=testing_percentage, \
                 model_settings=model_settings)
 
             sess = tf.compat.v1.InteractiveSession()
@@ -98,9 +99,14 @@ class SpeechCommandsDataset(Dataset):
                 time_shift=time_shift, \
                 mode=split, \
                 sess=sess)
-            with open("./data/"+split+"_data.json", "w") as fd:
-                json.dump(data.tolist(), fd, indent=2)
-            with open("./data/"+split+"_label.json", "w") as fl:
+            if arch == 'KWS_CNN_S':
+                data = np.reshape(data, (-1, 1, 49, 10))
+                data = data.tolist()
+            elif arch == 'KWS':
+                data = data.tolist()
+            with open(path + "_data.json", "w") as fd:
+                json.dump(data, fd, indent=2)
+            with open(path + "_label.json", "w") as fl:
                 json.dump(label.tolist(), fl, indent=2)
 
         self.classes = classes

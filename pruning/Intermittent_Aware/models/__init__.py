@@ -4,3 +4,4 @@ from .mnist import *
 from .SqueezeNet import *
 from .HAR_CNN import *
 from .KWS_DNN_S import *
+from .KWS_CNN_S import *
