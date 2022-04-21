@@ -260,6 +260,9 @@ elif args.config == 'pruned_har' or args.config == 'har':
     model_config = model_configs['HAR']
 elif args.config == 'pruned_kws' or args.config == 'kws':
     model_config = model_configs['KWS']
+elif args.config == 'pruned_kws_cnn' or args.config == 'kws_cnn':
+    Constants.CPU_BUFFER_SIZE = 600
+    model_config = model_configs['KWS_CNN_S']
 
 onnx_model = load_model(config)
 # print(onnx_model)
@@ -392,7 +395,8 @@ def infer_auto_pad(node):
             raise NotImplementedError
 
 for idx, n in enumerate(nodes):
-    if n.op_type == 'Dropout':
+    if n.op_type in ('Dropout', 'BatchNormalization'):
+        print(n.op_type)
         output = n.output[:1]  # we don't care the second output `mask`
     else:
         output = n.output
@@ -482,11 +486,11 @@ def determine_conv_tile_c(n, node_idx):
         output_tile_h = model_config[node_idx]['tile']['output'][2]
         input_tile_h = output2input(tile_size=model_config[node_idx]['tile']['output'][2], \
                                     kernel_size=model_config[node_idx]['filter'][2],
-                                    stride=model_config[node_idx]['stride'])
+                                    stride=model_config[node_idx]['stride'][0])
         output_tile_w = model_config[node_idx]['tile']['output'][3]
         input_tile_w = output2input(tile_size=model_config[node_idx]['tile']['output'][3], \
                                     kernel_size=model_config[node_idx]['filter'][3],
-                                    stride=model_config[node_idx]['stride'])
+                                    stride=model_config[node_idx]['stride'][1])
         output_tile_c = model_config[node_idx]['tile']['output'][1]
 
         max_continuous_channels = CHANNEL

@@ -11,6 +11,7 @@ import struct
 import sys
 import tarfile
 import zipfile
+import json
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
 from urllib.request import urlretrieve
 
@@ -150,6 +151,22 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
 
 
     return ModelData(labels=labels, images=np.array(mfccs, dtype=np.float32), data_layout=DataLayout.NEUTRAL)
+
+def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
+    path = "./pruning/Intermittent_Aware/data/KWS_CNN_S/test"
+    if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
+        print("Load cached data ...")
+        with open(path + "_data.json", "r") as fd:
+            data = np.array(json.load(fd))
+        with open(path + "_label.json", "r") as fl:
+            label = np.array(json.load(fl))
+    else:
+        print("Download google speech first!")
+        exit()
+
+    test_data = data[-limit:]
+    labels = [list(item).index(1) for item in label[-limit:]]
+    return ModelData(labels=labels, images=np.array(test_data, dtype=np.float32), data_layout=DataLayout.NHWC)
 
 def kws_dnn_model():
     return download_file('https://github.com/ARM-software/ML-KWS-for-MCU/raw/master/Pretrained_models/DNN/DNN_S.pb', 'KWS-DNN_S.pb')
