@@ -156,15 +156,15 @@ class ExtraNodeFlags(ctypes.Union):
 class NodeFlags_bits(ctypes.LittleEndianStructure):
     _fields_ = [
         ("generic", ctypes.c_uint8, 8),
-        ("kernel_size", ctypes.c_uint8, 4),
-        ("stride", ctypes.c_uint8, 4),
+        ("kernel_size", ctypes.c_uint8, 8),
+        ("stride", ctypes.c_uint8 * 2), # stride_H/stride_W
         ("extra", ExtraNodeFlags),
     ]
 
 class NodeFlags(ctypes.Union):
     _fields_ = [
         ("b", NodeFlags_bits),
-        ("as_bytes", ctypes.c_uint8 * 14),
+        ("as_bytes", ctypes.c_uint8 * 16),
     ]
 
     def __repr__(self):
@@ -399,6 +399,8 @@ for idx, n in enumerate(nodes):
     if n.op_type == 'Conv':
         conv_param_names.add(n.input[1])
         infer_auto_pad(n)
+        strides = get_attr(n, 'strides')
+        n.flags.b.stride = (ctypes.c_uint8*2)(*strides)
     if n.op_type == 'Gemm':
         gemm_param_names.add(n.input[1])
     if n.op_type == 'MaxPool':
@@ -413,13 +415,12 @@ for idx, n in enumerate(nodes):
             strides[0] = 1
         if strides is not None:
             n.flags.b.extra.maxpool.strides = (ctypes.c_uint8*2)(*strides)
+            n.flags.b.stride = (ctypes.c_uint8*2)(*strides)
         else:
             # "If not present, the stride defaults to 1 along each spatial axis."
             # https://github.com/onnx/onnx/blob/main/docs/Operators.md#maxpool
             n.flags.b.extra.maxpool.strides = (ctypes.c_uint8*2)(1, 1)
-    if n.op_type in ('MaxPool', 'Conv'):
-        stride = get_attr(n, 'strides')[0]
-        n.flags.b.stride = stride
+            n.flags.b.stride = (ctypes.c_uint8*2)(1, 1)
     if n.op_type == 'Reshape':
         prev_node = n
         while prev_node and prev_node.op_type in inplace_update_ops:

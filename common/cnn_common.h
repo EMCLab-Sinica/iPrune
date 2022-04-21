@@ -44,13 +44,13 @@ union ExtraNodeFlags {
 };
 
 struct NodeFlags {
-    uint8_t generic : 8;
-    uint8_t kernel_size : 4;    // used in MaxPool
-    uint8_t stride : 4;         // used in Conv and MaxPool
+    uint8_t generic;
+    uint8_t kernel_size;    // used in MaxPool
+    uint8_t stride[2];         // used in Conv and MaxPool
     ExtraNodeFlags extra;
 };
 
-static_assert(sizeof(NodeFlags) == 14, "Unexpected size for NodeFlags");
+static_assert(sizeof(NodeFlags) == 16, "Unexpected size for NodeFlags");
 
 typedef struct Node {
     char name[NODE_NAME_LEN];
@@ -68,7 +68,7 @@ typedef struct Node {
 #endif
 } Node;
 
-static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 20 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
+static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 22 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
 
 /* ParameterInfo may indicate data from the model (parameters) or intermediate values */
 typedef struct ParameterInfo {
