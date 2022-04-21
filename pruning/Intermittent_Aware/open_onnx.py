@@ -101,6 +101,7 @@ def get_jobs(onnx_model, args):
     main_names = [n.input[1] for idx, n in enumerate(model.graph.node) if n.op_type == 'Conv' or n.op_type == 'Gemm']
 
     graph = []
+    node_order = []
     nodes = model.graph.initializer
     node_idx = 0
     for idx, node in enumerate(nodes):
@@ -108,6 +109,7 @@ def get_jobs(onnx_model, args):
         logger.info(shape)
         matrix = onnx.numpy_helper.to_array(node)
         if node.name in main_names:
+            node_idx = main_names.index(node.name)
             layer_config = config[args.arch][node_idx]
             logger.debug(layer_config)
             if len(shape) == 4:
@@ -127,19 +129,19 @@ def get_jobs(onnx_model, args):
                 'weights': matrix
             }
             graph.append(sparse_node)
-            node_idx += 1
+            node_order.append(node.name)
 
     # getVal(graph[], 0)
     # printGroups(graph[2])
     model_info = config[args.arch]
     output_shapes = [layer['output'] for layer in model_info]
-    node_idx = 0;
     total_job = 0
     for idx, n in enumerate(model.graph.node):
         if n.op_type == 'Conv' or n.op_type == 'Gemm':
-            job = getJob(graph[node_idx], output_shapes[node_idx], config[args.arch][node_idx]['group'])
+            node_idx = main_names.index(n.input[1])
+            node_order_idx = node_order.index(n.input[1])
+            job = getJob(graph[node_order_idx], output_shapes[node_idx], config[args.arch][node_idx]['group'])
             total_job += job
-            node_idx += 1
     print('total_job: {}'.format(total_job))
 
 if __name__ == '__main__':
