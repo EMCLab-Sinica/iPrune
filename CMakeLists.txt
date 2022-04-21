@@ -71,6 +71,8 @@ set(DSPLIB_PATH ${CMAKE_CURRENT_SOURCE_DIR}/TI-DSPLib)
 add_library(dsplib
     ${DSPLIB_PATH}/source/matrix/msp_matrix_mpy_q15.c
     ${DSPLIB_PATH}/source/vector/msp_add_q15.c
+    ${DSPLIB_PATH}/source/vector/msp_mpy_q15.c
+    ${DSPLIB_PATH}/source/vector/msp_sub_q15.c
     ${DSPLIB_PATH}/source/vector/msp_offset_q15.c
     ${DSPLIB_PATH}/source/vector/msp_max_q15.c
     ${DSPLIB_PATH}/source/vector/msp_min_q15.c

@@ -4,6 +4,9 @@
 #include <cstdlib>
 struct ParameterInfo;
 
+void my_div_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize);
+void my_mpy_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize);
+void my_sub_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize);
 void my_add_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize);
 void my_fill_q15(int16_t value, int16_t *pDst, uint32_t blockSize);
 void my_offset_q15(const int16_t *pSrc, int16_t offset, int16_t *pDst, uint32_t blockSize);
@@ -15,6 +18,7 @@ void my_matrix_mpy_q15_to_vm(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, 
                        uint16_t mask, int16_t n_keep_state_bits);
 void my_max_q15(const int16_t *pSrc, uint32_t blockSize, int16_t *pResult, uint16_t *pIndex);
 void my_min_q15(const int16_t *pSrc, uint32_t blockSize, int16_t *pResult, uint16_t *pIndex);
+void my_vsqrt_q15(int16_t* pIn, int16_t* pOut, uint32_t blockSize);
 void my_scale_q15(const int16_t *pSrc, int16_t scaleFract, uint8_t shift, int16_t *pDst, uint32_t blockSize);
 void my_interleave_q15(const int16_t *pSrc, uint16_t channel, uint16_t numChannels, int16_t *pDst, uint32_t blockSize);
 void my_deinterleave_q15(const int16_t *pSrc, uint16_t channel, uint16_t numChannels, int16_t *pDst, uint32_t blockSize);

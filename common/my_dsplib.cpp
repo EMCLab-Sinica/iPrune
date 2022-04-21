@@ -10,6 +10,7 @@
 #include "platform.h"
 #include "my_debug.h"
 #include "op_utils.h"
+#include "cnn_common.h"
 
 #if !USE_ARM_CMSIS
 #define my_checkStatus(status) MY_ASSERT(status == MSP_SUCCESS, "Error from TI-DSPLib: %d" NEWLINE, status)
@@ -19,6 +20,69 @@ void check_buffer_address(const int16_t* addr, uint32_t blockSize) {
     MY_ASSERT(addr >= lea_buffer && addr < lea_buffer + LEA_BUFFER_SIZE);
     MY_ASSERT(addr + blockSize - 1 >= lea_buffer && addr + blockSize - 1 < lea_buffer + LEA_BUFFER_SIZE);
     MY_ASSERT((addr - lea_buffer) % 2 == 0);
+}
+
+void my_div_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize) {
+    // XXX: use LEA?
+    for (uint16_t idx = 0; idx < blockSize; idx++) {
+        // https://sestevenson.wordpress.com/2010/09/20/fixed-point-division-2/
+        int32_t tmp = (static_cast<int32_t>(pSrcA[idx]) << 15) / static_cast<int32_t>(pSrcB[idx]);
+        tmp = MIN_VAL(32767, MAX_VAL(-32768, tmp));
+        pDst[idx] = static_cast<int16_t>(tmp);
+    }
+}
+
+void my_mpy_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize) {
+    check_buffer_address(pSrcA, blockSize);
+    check_buffer_address(pSrcB, blockSize);
+    check_buffer_address(pDst, blockSize);
+#if !USE_ARM_CMSIS
+    uint32_t blockSizeForLEA = blockSize / 2 * 2;
+    if (blockSizeForLEA) {
+        msp_mpy_q15_params mpy_params;
+        mpy_params.length = blockSizeForLEA;
+        msp_status status = msp_mpy_q15(&mpy_params, pSrcA, pSrcB, pDst);
+        my_checkStatus(status);
+    }
+    if (blockSize % 2) {
+        pDst[blockSize - 1] = pSrcA[blockSize - 1] + pSrcB[blockSize - 1];
+    }
+#else
+    arm_mult_q15(pSrcA, pSrcB, pDst, blockSize);
+#endif
+}
+
+void my_sub_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize) {
+    check_buffer_address(pSrcA, blockSize);
+    check_buffer_address(pSrcB, blockSize);
+    check_buffer_address(pDst, blockSize);
+#if !USE_ARM_CMSIS
+    uint32_t blockSizeForLEA = blockSize / 2 * 2;
+    if (blockSizeForLEA) {
+        msp_sub_q15_params sub_params;
+        sub_params.length = blockSizeForLEA;
+        msp_status status = msp_sub_q15(&sub_params, pSrcA, pSrcB, pDst);
+        my_checkStatus(status);
+    }
+    if (blockSize % 2) {
+        pDst[blockSize - 1] = pSrcA[blockSize - 1] + pSrcB[blockSize - 1];
+    }
+#else
+    arm_sub_q15(pSrcA, pSrcB, pDst, blockSize);
+#endif
+}
+
+void my_vsqrt_q15(int16_t* pIn, int16_t* pOut, uint32_t blockSize) {
+#if !USE_ARM_CMSIS
+    ERROR_OCCURRED();
+#else
+    // somehow arm_vsqrt_q15 is defined in headers but there is no implementation
+    for (uint32_t idx = 0; idx < blockSize; idx++) {
+        arm_sqrt_q15(*pIn, pOut);
+        pIn++;
+        pOut++;
+    }
+#endif
 }
 
 void my_add_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize) {
