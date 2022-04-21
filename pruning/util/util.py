@@ -230,14 +230,13 @@ def nhwc2nchw(arr):
     return arr.permute(0, 3, 1, 2) # NHWC -> NCHW
 
 class MetricsMaker:
-    def __init__(self, model, args, output_shapes, cost={'NVM': 100, 'VM': 1}):
+    def __init__(self, model, args, output_shapes):
         self.model_ = model
         self.args_ = args
         self.output_shapes_ = output_shapes
         self.layer_info_ = []
         self.metrics_ = None
         self.prune_order_ = None
-        self.cost_ = cost
 
     def profile(self):
         metrics = []
@@ -317,8 +316,8 @@ class MetricsMaker:
     def profile_node(self, node, node_idx, cols, rows, n_col, n_row): raise NotImplementedError
 
 class JobMaker(MetricsMaker):
-    def __init__(self, model, args, output_shapes, cost={'NVM': 100, 'VM': 1}):
-        super().__init__(model, args, output_shapes, cost)
+    def __init__(self, model, args, output_shapes):
+        super().__init__(model, args, output_shapes)
 
     def profile_node(self, node, node_idx, cols, rows, n_col, n_row):
         layer_config = config[self.args_.arch][node_idx]
@@ -365,8 +364,8 @@ class JobMaker(MetricsMaker):
         return total_jobs
 
 class EnergyCostMaker(MetricsMaker):
-    def __init__(self, model, args, output_shapes, cost={'NVM': 100, 'VM': 1}):
-        super().__init__(model, args, output_shapes, cost)
+    def __init__(self, model, args, output_shapes):
+        super().__init__(model, args, output_shapes)
         self.plat_costs_profile = PlatformCostModel.PLAT_MSP430_EXTNVM
 
     def est_memory_access_energy_cost(self, node, node_idx, cols, rows, n_col, n_row):
@@ -394,6 +393,15 @@ class EnergyCostMaker(MetricsMaker):
                 layer_config['output'][3] / \
                 n_col * EC_VM2NVM
         elif isinstance(node, nn.Conv2d):
+            input_tile_h = (layer_config['tile']['output'][2] - 1) * layer_config['stride'][0] + layer_config['filter'][2]
+            input_tile_w = (layer_config['tile']['output'][3] - 1) * layer_config['stride'][1] + layer_config['filter'][3]
+            '''
+            if n_col == layer_config['input'][1]:
+                EC_NVM2VM_IFM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](input_tile_w * n_col)
+            else:
+            '''
+            EC_NVM2VM_IFM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_col)
+            EC_NVM2VM_WGT = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_col)
             EC_NVM2VM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_col)
             EC_VM2NVM = self.plat_costs_profile['E_DMA_VM_TO_NVM'](n_row)
             op_type = 'CONV'
@@ -401,7 +409,7 @@ class EnergyCostMaker(MetricsMaker):
                 math.ceil(layer_config['output'][2] / layer_config['tile']['output'][2]) * \
                 math.ceil(layer_config['output'][3] / layer_config['tile']['output'][3])
 
-            nvm_read_weights += len(cols) * n_row * EC_NVM2VM * n_output_tile_per_weight_group
+            nvm_read_weights += len(cols) * n_row * EC_NVM2VM_WGT * n_output_tile_per_weight_group
             nvm_jobs += \
                 (layer_config['output'][0] * \
                 layer_config['output'][1] * \
@@ -414,11 +422,20 @@ class EnergyCostMaker(MetricsMaker):
                     tile_c_set = set()
                     for idx in range(rows[i - 1], rows[i]):
                         tile_c_set.add(int(cols[idx] / (layer_config['filter'][2] * layer_config['filter'][3])))
+                    '''
+                    if n_col == layer_config['input'][1]:
+                        nvm_read_inputs += \
+                            len(tile_c_set) * \
+                            EC_NVM2VM_IFM * \
+                            input_tile_h * \
+                            n_output_tile_per_weight_group
+                    else:
+                    '''
                     nvm_read_inputs += \
                         len(tile_c_set) * \
-                        EC_NVM2VM * \
-                        layer_config['output'][2] * \
-                        (layer_config['tile']['output'][3] + layer_config['pads'][1] + layer_config['pads'][3]) * \
+                        EC_NVM2VM_IFM * \
+                        input_tile_h * \
+                        input_tile_w * \
                         n_output_tile_per_weight_group
         total_data_transfer_energy_cost = nvm_read_inputs + nvm_read_weights + nvm_jobs
         self.layer_info_.append({

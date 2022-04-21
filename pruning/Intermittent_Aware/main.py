@@ -383,7 +383,7 @@ if __name__=='__main__':
             for epoch in pbar:
                 if epoch % args.lr_epochs == 0:
                     if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
-                        if args.learning_rate_list and epoch % args.lr_epochs == 0:
+                        if args.learning_rate_list:
                             adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
                         else:
                             adjust_learning_rate(optimizer, epoch)

@@ -21,7 +21,7 @@ def printArgs(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='PyTorch LeNet_5')
     parser.add_argument('--arch', action='store', default='LeNet_5',
-            help='the network structure: KWS | HAR | mnist | LeNet_5 | SqueezeNet')
+            help='the network structure: KWS | KWS_CNN_S | HAR | mnist | LeNet_5 | SqueezeNet')
     parser.add_argument('--model', action='store', default=None)
     parser.add_argument('--layout', action='store', default='nhwc', help='Select data layout: nhwc | nchw')
     parser.add_argument('--debug', action='store_true', help='Select data layout: nhwc | nchw')
@@ -44,6 +44,10 @@ if __name__ == "__main__":
         input_shape = (1,25,10)
         model = models.KWS_DNN_S(None)
         dummy_input = Variable(torch.randn(1,25,10))
+    elif args.arch == 'KWS_CNN_S':
+        input_shape = (1,49,10)
+        model = models.KWS_CNN_S(None)
+        dummy_input = Variable(torch.randn(1,1,49,10))
     elif args.arch == 'SqueezeNet':
         input_shape = (3,32,32)
         model = models.SqueezeNet(None)
