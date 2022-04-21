@@ -72,17 +72,13 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     my_printf_debug("Gemm! A: (%dx%d), B: (%dx%d)" NEWLINE,
               A->dims[0], A->dims[1], B->dims[0], B->dims[1]);
 
-    int16_t A_len = A->dims[0] * A->dims[1] + 2, // 1x256 + 2
+    int16_t A_tile_len = flags->extra.gemm.tile_channel + 2, // 1x256 + 2
             output_len = output->dims[0] * output->dims[1]; // 1x256
 
+    my_printf_debug("A_tile_len: %d" NEWLINE, A_tile_len);
     int16_t *buffer_a = lea_buffer,
-            *buffer_temp = buffer_a + A_len;
-#if JAPARI
-            buffer_temp += 2;
-    int16_t* buffer_b = buffer_temp + extend_for_footprints(OP_FILTERS);
-#else
-    int16_t* buffer_b = buffer_temp + OP_FILTERS;
-#endif
+            *buffer_temp = buffer_a + A_tile_len;
+    int16_t *buffer_b = buffer_temp + OP_FILTERS;
     make_buffer_aligned(&buffer_b);
     int16_t n_tiles = output->params_len / output_len / sizeof(int16_t);
     my_printf_debug("n_tiles=%d" NEWLINE, n_tiles);
@@ -131,15 +127,6 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #else
     uint32_t first_unfinished_value_offset = job_index_to_offset(output, first_unfinished_value_idx);
 #endif
-#if INDIRECT_RECOVERY
-    int16_t offset;
-    uint16_t next_output_turning_point;
-    uint8_t output_turning_point_idx;
-    SlotInfo *output_slot_info;
-    find_initial_state_bit(&offset, &output_turning_point_idx, &next_output_turning_point, &output_slot_info, first_unfinished_value_offset, model, output);
-    offset = -offset;
-#endif
-
     first_unfinished_value_offset = batch_start(first_unfinished_value_offset);
     fix_first_unfinished_value_offset(model, &first_unfinished_value_offset);
 
@@ -147,12 +134,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     tile = first_unfinished_value_offset / output_len;
     i = tile * flags->extra.gemm.tile_channel;
     j_with_footprints = first_unfinished_value_offset % output_len;
-
-#if JAPARI
-    j = j_with_footprints / (BATCH_SIZE + 1) * BATCH_SIZE;
-#else
     j = j_with_footprints;
-#endif
 
 #if SPARSE
     row_index = tile + 1;
@@ -183,26 +165,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     for (; i < B->dims[0];) {
         const uint16_t tile_channels = MIN_VAL(flags->extra.gemm.tile_channel, B->dims[0] - i);
         const uint16_t extended_tile_channels = tile_channels + 2;
-
-#if JAPARI
-        if (has_footprints(A)) {
-            // somehow loading many pieces is faster than loading a chunk and moving values around to remove footprints, even with external FRAM
-            uint16_t input_offset = extend_for_footprints(i);
-            for (uint16_t idx = 0, output_idx = 0; output_idx < tile_channels; idx += BATCH_SIZE + 1, output_idx += BATCH_SIZE) {
-                my_memcpy_from_param(model, buffer_a + output_idx, A, input_offset + idx, BATCH_SIZE * sizeof(uint16_t));
-            }
-        } else
-#endif
         {
             my_memcpy_from_param(model, buffer_a, A, i, tile_channels * sizeof(uint16_t));
         }
-
-#if STATEFUL
-        start_cpu_counter();
-        GemmInputChunkHandlerParams params{buffer_a, i};
-        iterate_chunks(model, A, i, tile_channels, GemmInputChunkHandler, &params);
-        stop_cpu_counter(&Counters::stripping);
-#endif
         buffer_a[tile_channels] = -0x8000;
         buffer_a[tile_channels + 1] = 0;
 
@@ -226,10 +191,6 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             }
             int16_t values_to_preserve = tile_width,
                     full_tile_width = tile_width;
-#if JAPARI
-            values_to_preserve = extend_for_footprints(tile_width);
-            full_tile_width = (values_to_preserve + 1) / 2 * 2;
-#endif
             int16_t *filter_ptr = buffer_b;
             my_fill_q15(0, filter_ptr, extended_tile_channels * full_tile_width);
 #if SPARSE
@@ -251,48 +212,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                 my_memcpy_from_param(model, filter_ptr,
                           B, (i + row) * B->dims[1] + j,
                           tile_width * sizeof(uint16_t));
-#if JAPARI
-                // move loaded filters around to create zeros for footprint kernels
-                start_cpu_counter();
-                if (incomplete_tile) {
-                    int8_t move_offset = values_to_preserve - tile_width;
-                    int8_t cur_remaining = values_to_preserve % (BATCH_SIZE + 1);
-                    for (int8_t move_dest = values_to_preserve - 1; move_dest >= 0; move_dest--) {
-                        if (cur_remaining == 0) {
-                            filter_ptr[move_dest] = 0;
-                            move_offset--;
-                            cur_remaining = BATCH_SIZE;
-                            continue;
-                        }
-                        filter_ptr[move_dest] = filter_ptr[move_dest - move_offset];
-                        cur_remaining--;
-                    }
-                } else {
-                    const uint8_t last_elem = OP_FILTERS-1;
-                    move_filter<last_elem, last_elem % BATCH_SIZE>(filter_ptr);
-                    clear_filter<last_elem/(BATCH_SIZE+1)*(BATCH_SIZE+1)+BATCH_SIZE>(filter_ptr);
-                }
-                stop_cpu_counter(&Counters::embedding);
-#endif
                 filter_ptr += full_tile_width;
             }
 #endif // SPARSE
-#if JAPARI
-            my_fill_q15(0, filter_ptr, 2 * full_tile_width);
-            uint8_t processed_biases = 0, bias_offset = 0;
-            for (uint16_t idx = 0; idx < values_to_preserve; idx++) {
-                if (processed_biases == BATCH_SIZE) {
-                    processed_biases = 0;
-                    filter_ptr[idx] = param_state_bit(model, output, output_offset);
-                } else {
-                    if (tile == 0) {
-                        filter_ptr[idx] = -static_cast<int32_t>(get_q15_param(model, C, bias_offset + j)) / A->scale;
-                    }
-                    bias_offset++;
-                    processed_biases++;
-                }
-            }
-#else
 #if SPARSE
             // append biases to first pruned tile in a filter
             int16_t cols_first_tile_index = first_tile_indices[filter_tile_index];
@@ -304,36 +226,11 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
                     filter_ptr[idx] = -static_cast<int32_t>(get_q15_param(model, C, idx + j)) / A->scale;
                 }
             }
-#endif
-
-#if INDIRECT_RECOVERY
-            check_next_turning_point(offset, output_turning_point_idx, next_output_turning_point, output_slot_info, output_offset);
-#endif
-
-#if STATEFUL
-            start_cpu_counter();
-            uint16_t tile_width_first = tile_width;
-            if (next_output_turning_point != INVALID_TURNING_POINT) {
-                my_printf_debug("next_output_turning_point=%d output_offset=%d" NEWLINE, next_output_turning_point, output_offset);
-                tile_width_first = MIN_VAL(next_output_turning_point - output_offset, tile_width);
-            }
-            my_printf_debug("tile_width_first=%d" NEWLINE, tile_width_first);
-            MY_ASSERT(tile_width_first <= tile_width);
-            my_offset_q15_batched(filter_ptr, -offset, filter_ptr, tile_width_first);
-            if (tile_width_first != tile_width) {
-                my_offset_q15_batched(filter_ptr + tile_width_first, offset, filter_ptr + tile_width_first, tile_width - tile_width_first);
-            }
-            stop_cpu_counter(&Counters::embedding);
-#endif
             my_printf_debug("j: %d" NEWLINE, j);
             my_printf_debug("j_with_footprints: %d" NEWLINE, j_with_footprints);
             my_printf_debug("Tile for B" NEWLINE);
             dump_matrix_debug(buffer_b, extended_tile_channels, full_tile_width, ValueInfo(B, model));
 
-#if STATEFUL
-            my_matrix_mpy_q15(1, extended_tile_channels, extended_tile_channels, full_tile_width, buffer_a, buffer_b, buffer_temp,
-                              output, output_offset, values_to_preserve, offset, tile_width_first);
-#else
 #if STABLE_POWER
             MY_ASSERT(B->dims[0] / tile_channels * OP_FILTERS < CPU_BUFFER_SIZE);
             my_matrix_mpy_q15_to_vm(1, extended_tile_channels, extended_tile_channels, full_tile_width, buffer_a, buffer_b, buffer_temp,
@@ -342,7 +239,6 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             my_matrix_mpy_q15(1, extended_tile_channels, extended_tile_channels, full_tile_width, buffer_a, buffer_b, buffer_temp,
                               output, output_offset, values_to_preserve, 0, 0);
 #endif // STABLE_POWER
-#endif
 
             my_printf_debug("matrix_mpy_results" NEWLINE);
             dump_matrix_debug(buffer_temp, full_tile_width, ValueInfo(output, model));
@@ -437,9 +333,6 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
     if (!output_tile_size) {
         output_tile_size = output_len;
     }
-#if JAPARI
-    output_tile_size = extend_for_footprints(output_tile_size);
-#endif
 
     uint16_t merge_offset = 0;
 #if SPARSE
@@ -521,26 +414,11 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
                 my_printf_debug("offset: %d" NEWLINE, offset);
             }
 #endif
-#if STATEFUL
-            start_cpu_counter();
-            for (uint16_t idx = BATCH_SIZE - 1; idx < cur_tile_size; idx += BATCH_SIZE) {
-                strip_state(buffer_temp + idx);
-            }
-            stop_cpu_counter(&Counters::stripping);
-#endif
             my_add_q15(buffer_gemm, buffer_temp, buffer_gemm, cur_tile_size);
             my_printf_debug("accumulated buffer_gemm" NEWLINE);
             dump_matrix_debug(buffer_gemm, cur_tile_size, ValueInfo(output, model));
         }
 
-#if INDIRECT_RECOVERY
-        start_cpu_counter();
-        OutputChunkHandlerParams params;
-        params.buffer = buffer_gemm;
-        params.buffer_offset = merge_offset;
-        iterate_chunks(model, output, merge_offset, cur_tile_size, OutputChunkHandler, &params);
-        stop_cpu_counter(&Counters::embedding);
-#endif
         my_printf_debug("buffer_gemm after adjusting states; merge_offset=%d" NEWLINE, merge_offset);
         dump_matrix_debug(buffer_gemm, cur_tile_size, ValueInfo(output, model));
 

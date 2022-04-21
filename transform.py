@@ -12,6 +12,7 @@ import pprint
 import struct
 import textwrap
 import warnings
+warnings.simplefilter("ignore", UserWarning)
 from typing import List
 from scipy.sparse import bsr_matrix
 
@@ -334,6 +335,9 @@ def transpose_gemm(onnx_model: onnx.ModelProto):
 replace_nodes()
 transpose_gemm(onnx_model)
 
+main_names = [n.input[1] for idx, n in enumerate(onnx_model.graph.node) if n.op_type == 'Conv' or n.op_type == 'Gemm']
+print(main_names)
+
 # Split Conv/Gemm into Conv/Gemm and ConvMerge/GemmMerge (for OFM scaling up and merge of OFMs from channel tiling)
 new_nodes = []
 for idx, n in enumerate(onnx_model.graph.node):
@@ -396,7 +400,6 @@ def infer_auto_pad(node):
 
 for idx, n in enumerate(nodes):
     if n.op_type in ('Dropout', 'BatchNormalization'):
-        print(n.op_type)
         output = n.output[:1]  # we don't care the second output `mask`
     else:
         output = n.output
@@ -834,7 +837,7 @@ def toBSR(matrix, config, dims, op_type):
 
 def find_first_tile_index(cols, rows, config, dims, op_type):
     if op_type == 'GEMM':
-        slice_n_output_tile_c = int(dims[0] / config['group'][0])
+        slice_n_output_tile_c = int(dims[1] / config['group'][0])
         row_len = len(rows)
         first_tile_index = [-1] * slice_n_output_tile_c
         for i in range(1, row_len):
@@ -852,7 +855,6 @@ def find_first_tile_index(cols, rows, config, dims, op_type):
 
 
 model_parameters_info = outputs['model_parameters_info']
-node_idx = 0
 for params in parameters:
     if params is None:  # input
         # Actual data for test samples are added last
@@ -900,8 +902,8 @@ for params in parameters:
             if args.sparse and (params.name in conv_param_names or params.name in gemm_param_names):
                 # transform the sparse matrix into BSR format
                 # layout: NCWHC
+                node_idx = main_names.index(params.name)
                 layer_config = model_config[node_idx]
-                node_idx += 1
                 if params.name in conv_param_names:
                     data, cols, rows = toBSR(int_data_Q15, layer_config, params.dims, 'CONV')
                 elif params.name in gemm_param_names:

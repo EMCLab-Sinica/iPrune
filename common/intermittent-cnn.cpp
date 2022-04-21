@@ -27,7 +27,7 @@ static void handle_node(Model *model, uint16_t node_idx) {
         input_id[j] = cur_node->inputs[j];
         my_printf_debug("input_id[%d] = %d" NEWLINE, j, input_id[j]);
         input[j] = get_parameter_info(input_id[j]);
-        // dump_params(input[j]);
+        // dump_params(model, input[j], cur_node->name);
     }
 #if SPARSE
 #ifdef OpGemmMerge
