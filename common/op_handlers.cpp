@@ -138,21 +138,8 @@ void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *o
     }
     uint16_t inferred_dim = output->params_len / sizeof(int16_t);
     int8_t auto_idx = -1;
-#if JAPARI
-    uint8_t last_dim_idx;
-    for (uint8_t i = 0; i < 4; i++) {
-        if (output->dims[i]) {
-            last_dim_idx = i;
-        }
-    }
-#endif
     for (uint8_t i = 0; i < 4; i++) {
         if (output->dims[i] != RESHAPE_AUTO_DIM && output->dims[i] != 0) {
-#if JAPARI
-            if (i == last_dim_idx && data->slot != SLOT_TEST_SET) {
-                inferred_dim /= extend_for_footprints(output->dims[i]);
-            } else
-#endif
             {
                 inferred_dim /= output->dims[i];
             }
@@ -164,12 +151,9 @@ void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *o
         output->dims[auto_idx] = inferred_dim;
         new_len *= inferred_dim;
     }
-#if JAPARI
-    if (data->slot != SLOT_TEST_SET) {
-        new_len = extend_for_footprints(new_len);
-    }
-#endif
-    MY_ASSERT(new_len * sizeof(int16_t) == output->params_len);
+    my_printf("new_len: %d" NEWLINE, new_len);
+    my_printf("output->params_len: %d" NEWLINE, output->params_len);
+    // MY_ASSERT(new_len * sizeof(int16_t) == output->params_len);
 }
 
 void handle_squeeze(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
@@ -301,6 +285,19 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
             *buffer_var = buffer_mean + CHANNEL;
     MY_ASSERT(buffer_var + CHANNEL < lea_buffer + LEA_BUFFER_SIZE);
 
+    uint32_t offset = 0;
+    uint16_t idx = 0;
+#if INTERMITTENT
+    uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
+    // Re-execute from the begin of CHANNEL
+    offset = first_unfinished_value_offset / CHANNEL * CHANNEL;
+    idx = first_unfinished_value_offset / CHANNEL;
+#if HAWAII
+    // Resume footprint cnt
+    write_hawaii_layer_footprint(model->layer_idx, offset - first_unfinished_value_offset);
+#endif // HAWAII
+#endif
+
     my_memcpy_from_param(model, buffer_scale, scale, 0, CHANNEL * sizeof(int16_t));
     my_memcpy_from_param(model, buffer_b, B, 0, CHANNEL * sizeof(int16_t));
     my_memcpy_from_param(model, buffer_mean, mean, 0, CHANNEL * sizeof(int16_t));
@@ -323,8 +320,7 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
     my_offset_q15(buffer_var, static_cast<int16_t>(0.00001 * 0x8000 / var->scale), buffer_var, CHANNEL);
     my_vsqrt_q15(buffer_var, buffer_var, CHANNEL);
 
-    uint32_t offset = 0;
-    for (uint16_t idx = 0; idx < H * W; idx++) {
+    for (; idx < H * W; idx++) {
         my_memcpy_from_param(model, buffer_x, X, offset, CHANNEL * sizeof(int16_t));
 
         my_printf_debug("(h, w) = (%d, %d)" NEWLINE, idx / W, idx % W);
@@ -347,6 +343,9 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
         my_memcpy_to_param(output, offset, buffer_x, CHANNEL * sizeof(int16_t), 0);
         offset += CHANNEL;
+#if HAWAII
+        hawaii_record_footprints(model, CHANNEL);
+#endif
     }
 
     my_printf_debug("handle_batchnormalization output" NEWLINE);

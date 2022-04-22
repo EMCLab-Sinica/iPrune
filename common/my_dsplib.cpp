@@ -2,6 +2,7 @@
 
 #if !USE_ARM_CMSIS
 #include <DSPLib.h>
+#include <cmath>
 #else
 #include <arm_math.h>
 #endif
@@ -74,7 +75,11 @@ void my_sub_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint3
 
 void my_vsqrt_q15(int16_t* pIn, int16_t* pOut, uint32_t blockSize) {
 #if !USE_ARM_CMSIS
-    ERROR_OCCURRED();
+    for (uint32_t idx = 0; idx < blockSize; idx++) {
+        *pOut = static_cast<int16_t> (sqrtf(*pIn * 1.0f));
+        pIn++;
+        pOut++;
+    }
 #else
     // somehow arm_vsqrt_q15 is defined in headers but there is no implementation
     for (uint32_t idx = 0; idx < blockSize; idx++) {
