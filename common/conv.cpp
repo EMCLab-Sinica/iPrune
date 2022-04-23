@@ -841,8 +841,9 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     int16_t output_tile_len =
         conv_params->flags->extra.conv.output_tile_h *
         conv_params->flags->extra.conv.output_tile_w *
-        conv_params->flags->extra.conv.output_tile_c * 2;
+        conv_params->flags->extra.conv.output_tile_c;
 
+    MY_ASSERT(output_tile_len < CPU_BUFFER_SIZE);
     // reserve memory for psum
     matrix_mpy_results -= output_tile_len;
     my_printf_debug("matrix_mpy_results offset: %ld" NEWLINE, matrix_mpy_results - lea_buffer);
