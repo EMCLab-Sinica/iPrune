@@ -824,6 +824,7 @@ static void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo 
     }
 }
 
+#ifdef OpConv
 void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
     const ParameterInfo *conv_input = input[0], *conv_filter = input[1], *conv_bias = (node->inputs_len == 3) ? input[2] : nullptr;
     my_printf_debug("Conv!" NEWLINE);
@@ -1334,6 +1335,7 @@ EXIT_LAYER:
     my_printf_debug("handle_conv output" NEWLINE);
     dump_params_nhwc_debug(model, output, node->output_name);
 }
+#endif // OpConv
 
 #if STATEFUL
 struct ConvMergeInputChunkHandlerParams {

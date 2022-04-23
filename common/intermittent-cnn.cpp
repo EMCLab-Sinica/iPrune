@@ -21,8 +21,8 @@ static void handle_node(Model *model, uint16_t node_idx) {
     my_printf("op_type = %d" NEWLINE, cur_node->op_type);
 #endif
 
-    int16_t input_id[3];
-    const ParameterInfo *input[3];
+    int16_t input_id[5];
+    const ParameterInfo *input[5];
     for (uint16_t j = 0; j < cur_node->inputs_len; j++) {
         input_id[j] = cur_node->inputs[j];
         my_printf_debug("input_id[%d] = %d" NEWLINE, j, input_id[j]);
@@ -248,7 +248,7 @@ uint8_t run_cnn_tests(uint16_t n_samples) {
             // stdout is not flushed at \n if it is not a terminal
             my_flush();
         }
-        my_printf_debug("idx=%d label=%d predicted=%d correct=%d" NEWLINE, i, label, predicted, label == predicted);
+        my_printf("idx=%d label=%d predicted=%d correct=%d" NEWLINE, i, label, predicted, label == predicted);
 #endif
     }
 #if (MY_DEBUG >= MY_DEBUG_NORMAL) || ENABLE_COUNTERS

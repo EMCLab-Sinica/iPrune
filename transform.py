@@ -12,7 +12,7 @@ import pprint
 import struct
 import textwrap
 import warnings
-warnings.simplefilter("ignore", UserWarning)
+# warnings.simplefilter("ignore", UserWarning)
 from typing import List
 from scipy.sparse import bsr_matrix
 
@@ -24,7 +24,7 @@ import numpy as np
 
 from configs import configs
 from pruning.Intermittent_Aware.config import config as model_configs
-from utils import extract_data, find_initializer, find_node_by_output, find_tensor_value_info, load_model, get_model_ops, OPS_WITH_MERGE, DataLayout
+from utils import extract_data, find_initializer, find_node_by_output, find_node_by_input, find_tensor_value_info, load_model, get_model_ops, OPS_WITH_MERGE, DataLayout
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -108,11 +108,12 @@ def _Q15(arr, name):
         np.flatnonzero(np.asarray(arr > upper))
     ))
     for idx in overflowed_indices:
-        warnings.warn(f'{name} value {arr[idx]} goes beyond the range of _q15 ({lower}, {upper})')
+        if name == 'Input':
+            warnings.warn(f'{name} value {arr[idx]} goes beyond the range of _q15 ({lower}, {upper})')
 
     arr = np.minimum(np.maximum(arr, lower), upper)
 
-    return (arr * 2 ** 15).astype(int)
+    return (arr * 2 ** 15).astype(int), len(overflowed_indices) != 0
 
 # https://stackoverflow.com/a/11481471/3786245
 class ConvNodeFlags(ctypes.Structure):
@@ -508,7 +509,7 @@ def determine_conv_tile_c(n, node_idx):
             # filters (e.g., batch size=1)
             weight_memory_usage = ((output_tile_c + 1) + Constants.TEMP_FILTER_WIDTH) * filter_len
             input_memory_usage = input_tile_h * input_tile_w * input_tile_c
-            output_memory_usage = output_tile_h * output_tile_w * output_tile_c * 2
+            output_memory_usage = output_tile_h * output_tile_w * output_tile_c
             logger.debug('Checking output_tile_h=%d, output_tile_w=%d, input_tile_h=%d, input_tile_w=%d', \
                          output_tile_h, output_tile_w, input_tile_h, input_tile_w)
             logger.debug('Checking output_tile_c=%d, input_tile_c=%d, filter_len=%d', output_tile_c, input_tile_c, filter_len)
@@ -584,9 +585,6 @@ for n in nodes:
     if n.op_type == 'Conv':
         determine_conv_tile_c(n, node_idx)
         node_idx += 1
-    if n.op_type == 'ConvMerge':
-        # XXX: insert conv_before_merge info into conv_merge
-        n.flags = graph[-1].flags
     if n.op_type == 'Gemm':
         determine_gemm_tile_sizes(n, node_idx)
         node_idx += 1
@@ -883,6 +881,7 @@ for params in parameters:
             model_parameters_info.write(to_bytes(0))
         model_parameters_info.write(to_bytes(config['input_scale']))     # scale
     else:
+        params_scale = 0
         assert len(params.dims) <= 4
         if params.data_type == onnx.TensorProto.FLOAT:
             if params.float_data:
@@ -894,7 +893,20 @@ for params in parameters:
                 logger.info('Reorder conv param %s', params.name)
                 float_data = nchw2nhwc(float_data, params.dims)
 
-            int_data_Q15 = _Q15(np.array(float_data) / config['scale'], 'Parameter')
+            params_scale = config['scale']
+            used_node = find_node_by_input(onnx_model.graph.node, params.name)
+            isOverflow = True
+            cnt = 1
+            while isOverflow:
+                if used_node.op_type == 'BatchNormalization':
+                    # Perform sqrt on scale in batchnormization layer
+                    # Therefore, the scale must be perfect square
+                    params_scale = cnt ** 2
+                else:
+                    params_scale *= 2 ** (cnt - 1)
+                cnt += 1
+                int_data_Q15, isOverflow = _Q15(np.array(float_data) / params_scale, 'Parameter')
+
             if args.sparse:
                 cols = []
                 rows = []
@@ -977,7 +989,8 @@ for params in parameters:
         # dims are always 4 uint16_t's in C++
         for _ in range(4 - len(params.dims)):
             model_parameters_info.write(to_bytes(0))
-        model_parameters_info.write(to_bytes(config['scale']))       # scale
+        print("params scale: ", params_scale)
+        model_parameters_info.write(to_bytes(params_scale))       # scale
 
     # common to input and non-inputs
     model_parameters_info.write(to_bytes(0, size=8))                 # param_flags
@@ -1000,7 +1013,7 @@ for idx, n in enumerate(nodes):
     intermediate_parameters_info.write(to_bytes(0))         # dummy
     for _ in range(4):  # dims[4]
         intermediate_parameters_info.write(to_bytes(0))
-    intermediate_parameters_info.write(to_bytes(config['scale']))   # scale
+    intermediate_parameters_info.write(to_bytes(0))   # scale
     intermediate_parameters_info.write(to_bytes(0, size=8))     # param_flags
     for _ in range(Constants.EXTRA_INFO_LEN):
         intermediate_parameters_info.write(to_bytes(0, size=8)) # extra_info
@@ -1022,7 +1035,9 @@ for idx in range(model_data.images.shape[0]):
     im = images[idx, :]
     # load_data returns NCHW
     # https://stackoverflow.com/a/34794744
-    outputs['samples'].write(to_bytes(_Q15(im.flatten(order='C') / config['input_scale'], 'Input')))
+
+    int_data_Q15, isOverflow = _Q15(im.flatten(order='C') / config['input_scale'], 'Input')
+    outputs['samples'].write(to_bytes(int_data_Q15))
     if args.write_images:
         import cv2
         os.makedirs('images', exist_ok=True)

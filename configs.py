@@ -88,8 +88,8 @@ configs = {
     },
     'pruned_kws_cnn': {
         'onnx_model': 'pruning/Intermittent_Aware/onnx_models/KWS_CNN_S.onnx',
-        'scale': 1,
-        'input_scale': 120,
+        'scale': 6,
+        'input_scale': 256,
         'num_slots': 2,
         'intermediate_values_size': 65535,
         'data_loader': load_data_google_speech_cnn,
