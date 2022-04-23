@@ -59,6 +59,9 @@ if __name__ == "__main__":
     summary(model, input_shape, device='cpu')
     # save onnx model
     converted_name = "./onnx_models/{}.onnx".format(args.arch)
-    torch.onnx.export(model, dummy_input, converted_name, opset_version=OPSET)
+    if args.arch == 'KWS_CNN_S':
+        torch.onnx.export(model, dummy_input, converted_name, opset_version=OPSET, training=2) # exported in training mode to avoid fusing the conv and batchnormalization
+    else:
+        torch.onnx.export(model, dummy_input, converted_name, opset_version=OPSET)
     print('Converted model: {}'.format(converted_name))
     get_jobs(converted_name, args)

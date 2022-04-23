@@ -52,7 +52,7 @@ def main():
     parser.add_argument('--rounds', type=int, default=0)
     parser.add_argument('--interval', type=float, default=0.01)
     parser.add_argument('--shutdown-after-writes', type=int, default=0)
-    parser.add_argument('--power-cycles-limit', type=int, default=200)
+    parser.add_argument('--power-cycles-limit', type=int, default=10000)
     parser.add_argument('--suffix', default='')
     parser.add_argument('--compress', default=False, action='store_true')
     parser.add_argument('program')
