@@ -151,8 +151,8 @@ void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *o
         output->dims[auto_idx] = inferred_dim;
         new_len *= inferred_dim;
     }
-    my_printf("new_len: %d" NEWLINE, new_len);
-    my_printf("output->params_len: %d" NEWLINE, output->params_len);
+    my_printf_debug("new_len: %d" NEWLINE, new_len);
+    my_printf_debug("output->params_len: %d" NEWLINE, output->params_len);
     // MY_ASSERT(new_len * sizeof(int16_t) == output->params_len);
 }
 

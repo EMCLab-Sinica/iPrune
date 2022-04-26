@@ -248,7 +248,7 @@ uint8_t run_cnn_tests(uint16_t n_samples) {
             // stdout is not flushed at \n if it is not a terminal
             my_flush();
         }
-        my_printf("idx=%d label=%d predicted=%d correct=%d" NEWLINE, i, label, predicted, label == predicted);
+        my_printf_debug("idx=%d label=%d predicted=%d correct=%d" NEWLINE, i, label, predicted, label == predicted);
 #endif
     }
 #if (MY_DEBUG >= MY_DEBUG_NORMAL) || ENABLE_COUNTERS
