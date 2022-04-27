@@ -12,7 +12,7 @@
 #define MY_DEBUG_VERBOSE 3
 
 #ifndef MY_DEBUG
-#define MY_DEBUG MY_DEBUG_NORMAL
+#define MY_DEBUG MY_DEBUG_NO_ASSERT
 #endif
 
 #if defined(__MSP430__) || defined(__MSP432__)
@@ -60,7 +60,7 @@ struct ValueInfo {
     ValueInfo(const ParameterInfo *cur_param, Model *model = nullptr);
     ValueInfo() = delete;
 
-    uint16_t scale;
+    float scale;
 };
 
 extern uint8_t dump_integer;

@@ -1,6 +1,7 @@
 #include "cnn_common.h"
 #include "my_debug.h"
 #include "platform.h"
+#include "op_utils.h"
 #include "intermittent-cnn.h"
 
 ParameterInfo intermediate_parameters_info_vm[MODEL_NODES_LEN];
@@ -240,4 +241,33 @@ void my_memcpy_from_param(Model* model, void *dest, const ParameterInfo *param, 
     } else {
         my_memcpy_from_intermediate_values(dest, param, offset_in_word, n);
     }
+}
+
+bool Scale::operator>(const Scale& other) const {
+    return this->toFloat() > other.toFloat();
+}
+
+Scale Scale::operator*(const Scale& other) const {
+    Scale newScale;
+    newScale.fromFloat(this->toFloat() * other.toFloat());
+    return newScale;
+}
+
+Scale Scale::operator/(const Scale& other) const {
+    Scale newScale;
+    newScale.fromFloat(this->toFloat() / other.toFloat());
+    return newScale;
+}
+
+bool Scale::operator!=(const Scale& other) const {
+    // XXX: missing accuracy?
+    return this->toFloat() != other.toFloat();
+}
+
+void Scale::fromFloat(float scale) {
+    float_to_scale_params(&this->fract, &this->shift, scale);
+}
+
+float Scale::toFloat() const {
+    return 1.0f*fract * (1<<shift) / 32768;
 }

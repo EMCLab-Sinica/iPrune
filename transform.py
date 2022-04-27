@@ -263,7 +263,7 @@ elif args.config == 'pruned_har' or args.config == 'har':
 elif args.config == 'pruned_kws' or args.config == 'kws':
     model_config = model_configs['KWS']
 elif args.config == 'pruned_kws_cnn' or args.config == 'kws_cnn':
-    Constants.CPU_BUFFER_SIZE = 600
+    Constants.CPU_BUFFER_SIZE = 700
     model_config = model_configs['KWS_CNN_S']
 
 onnx_model = load_model(config)
@@ -508,7 +508,7 @@ def determine_conv_tile_c(n, node_idx):
             # *2 as in JAPARI, the number of footprint weights is up to the number of
             # filters (e.g., batch size=1)
             weight_memory_usage = ((output_tile_c + 1) + Constants.TEMP_FILTER_WIDTH) * filter_len
-            input_memory_usage = input_tile_h * input_tile_w * input_tile_c
+            input_memory_usage = (input_tile_h + 1) * input_tile_w * input_tile_c
             output_memory_usage = output_tile_h * output_tile_w * output_tile_c
             logger.debug('Checking output_tile_h=%d, output_tile_w=%d, input_tile_h=%d, input_tile_w=%d', \
                          output_tile_h, output_tile_w, input_tile_h, input_tile_w)
@@ -748,7 +748,7 @@ for node in graph:
         output_nodes.write(to_bytes(0))
     output_nodes.write(to_bytes(node.max_output_id))
     output_nodes.write(to_bytes(ops.index(node.op_type)))
-    assert ctypes.sizeof(node.flags.as_bytes) == ctypes.sizeof(node.flags.b)
+    assert ctypes.sizeof(node.flags.as_bytes) == ctypes.sizeof(node.flags.b), f'Node flags require {ctypes.sizeof(node.flags.b)} bytes'
     for idx in range(ctypes.sizeof(node.flags.as_bytes)):
         output_nodes.write(to_bytes(node.flags.as_bytes[idx], size=8))
     if Constants.HAWAII:
@@ -768,6 +768,9 @@ def dump_matrix(arr):
     logger.debug(arr.shape)
     for row in arr:
         logger.debug(" ".join("{:>6d}".format(x) for x in row))
+
+def dump_matrix_list(arr):
+    print(" ".join("{:>6}".format(x) for x in arr))
 
 def xxxx2xcxxx(arr, config, dims):
     chunk_len = dims[1] # c
@@ -851,8 +854,28 @@ def find_first_tile_index(cols, rows, config, dims, op_type):
     logger.info('first_tile_index length: {}'.format(len(first_tile_index)))
     return first_tile_index
 
+def get_float_data(param):
+    if param.float_data:
+        float_data = param.float_data
+    else:
+        float_data = decode_raw_data(param)
+    return float_data
+
+param_limits = {}
+def get_param_limit(model, node):
+    return config['scale']
+
+def write_scale(dest, scale):
+    shift = 0
+    while scale >= 1:
+        shift += 1
+        scale /= 2
+    dest.write(to_bytes(int(scale*2**15)))             # scale.fract
+    dest.write(to_bytes(shift, size=8))     # scale.shift
+    dest.write(to_bytes(0, size=8))         # scale.dummy
 
 model_parameters_info = outputs['model_parameters_info']
+BN_scales = [4, 8, 2] # adjust manually
 for params in parameters:
     if params is None:  # input
         # Actual data for test samples are added last
@@ -865,7 +888,6 @@ for params in parameters:
             model_parameters_info.write(to_bytes(0, size=32))  # first_tile_index_offset, the place is used by sparse matrix
         model_parameters_info.write(to_bytes(16, size=8))                # bitwidth
         model_parameters_info.write(to_bytes(Constants.SLOT_TEST_SET, size=8))     # slot
-        model_parameters_info.write(to_bytes(0))                     # dummy
         # extend_dims
         model_parameters_info.write(to_bytes(1))
         if args.config == 'pruned_har':
@@ -879,32 +901,40 @@ for params in parameters:
             model_parameters_info.write(to_bytes(dim))
         for _ in range(3 - len(dims)):
             model_parameters_info.write(to_bytes(0))
-        model_parameters_info.write(to_bytes(config['input_scale']))     # scale
+        write_scale(model_parameters_info, config['input_scale'])
     else:
         params_scale = 0
         assert len(params.dims) <= 4
         if params.data_type == onnx.TensorProto.FLOAT:
-            if params.float_data:
-                float_data = params.float_data
-            else:
-                float_data = decode_raw_data(params)
-
+            float_data = get_float_data(params)
             if params.name in conv_param_names and not args.sparse:
                 logger.info('Reorder conv param %s', params.name)
                 float_data = nchw2nhwc(float_data, params.dims)
 
-            params_scale = config['scale']
             used_node = find_node_by_input(onnx_model.graph.node, params.name)
+            if used_node.op_type in ('Conv', 'Gemm'):
+                params_scale = get_param_limit(onnx_model, used_node)
+            else:
+                params_scale = config['scale']
             isOverflow = True
             cnt = 1
-            while isOverflow:
-                if used_node.op_type == 'BatchNormalization':
+            '''
+            if used_node.op_type in ('Gemm', 'BatchNormalization'):
+                print("=================== {} ===================".format(params.name))
+                print(float_data)
+                print("max: {}, min: {}".format(max(float_data), min(float_data)))
+            '''
+            print(params.name)
+            if used_node.op_type == 'BatchNormalization':
+                while isOverflow:
                     # Perform sqrt on scale in batchnormization layer
                     # Therefore, the scale must be perfect square
-                    params_scale = cnt ** 2
-                else:
-                    params_scale *= 2 ** (cnt - 1)
-                cnt += 1
+                    # root = BN_scales[int(params.name[2]) - 1]
+                    root = 2 ** (cnt - 1)
+                    params_scale = root * root
+                    int_data_Q15, isOverflow = _Q15(np.array(float_data) / params_scale, 'Parameter')
+                    cnt += 1
+            else:
                 int_data_Q15, isOverflow = _Q15(np.array(float_data) / params_scale, 'Parameter')
 
             if args.sparse:
@@ -982,7 +1012,6 @@ for params in parameters:
             channels = params.dims[1]
         else:
             channels = 0
-        model_parameters_info.write(to_bytes(0, size=16))        # dummy
         logger.info('dims = %r, length = %d', params.dims, data_len)
         for dim in params.dims:
             model_parameters_info.write(to_bytes(dim))
@@ -990,7 +1019,7 @@ for params in parameters:
         for _ in range(4 - len(params.dims)):
             model_parameters_info.write(to_bytes(0))
         print("params scale: ", params_scale)
-        model_parameters_info.write(to_bytes(params_scale))       # scale
+        write_scale(model_parameters_info, params_scale)
 
     # common to input and non-inputs
     model_parameters_info.write(to_bytes(0, size=8))                 # param_flags
@@ -1048,6 +1077,7 @@ for idx in range(model_data.images.shape[0]):
             im = 255 - im
         cv2.imwrite(f'images/test{idx:02d}.png', im)
 
+print("labels: ", model_data.labels)
 for label in model_data.labels:
     outputs['labels'].write(to_bytes(label, size=8))
 

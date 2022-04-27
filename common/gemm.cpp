@@ -14,15 +14,13 @@ void alloc_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
     MY_ASSERT(A->dims[0] == 1);
 
     output->dims[0] = A->dims[0];
-#if JAPARI
-    output->dims[1] = B->dims[1] / BATCH_SIZE * (BATCH_SIZE + 1) + B->dims[1] % BATCH_SIZE;
-#else
     output->dims[1] = B->dims[1];
-#endif
     output->bitwidth = 16;
     output->slot = get_next_slot(model, A);
     output->scale = A->scale * B->scale;
-
+    my_printf_debug("A: %f" NEWLINE, A->scale.toFloat());
+    my_printf_debug("B: %f" NEWLINE, B->scale.toFloat());
+    my_printf_debug("output: %f" NEWLINE, output->scale.toFloat());
     uint16_t output_len = output->dims[0] * output->dims[1];
 
     output->params_len = output_len * upper_gauss(B->dims[0], node->flags.extra.gemm.tile_channel) * sizeof(int16_t);
@@ -223,7 +221,7 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             if (tile == 0) {
 #endif // SPARSE
                 for (uint16_t idx = 0; idx < values_to_preserve; idx++) {
-                    filter_ptr[idx] = -static_cast<int32_t>(get_q15_param(model, C, idx + j)) / A->scale;
+                    filter_ptr[idx] = -static_cast<int32_t>(get_q15_param(model, C, idx + j)) / A->scale.toFloat();
                 }
             }
             my_printf_debug("j: %d" NEWLINE, j);

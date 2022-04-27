@@ -58,8 +58,7 @@ static void handle_node(Model *model, uint16_t node_idx) {
 #endif
     handlers[cur_node->op_type](model, input, output, cur_node);
     // For some operations (e.g., ConvMerge), scale is determined in the handlers
-    my_printf_debug("Output scale = %d" NEWLINE, output->scale);
-    MY_ASSERT(output->scale > 0);  // fail when overflow
+    my_printf_debug("Ouput scale = %f" NEWLINE, output->scale.toFloat());
 #if STATEFUL
     my_printf_debug("New output state bit=%d" NEWLINE, get_state_bit(model, output->slot));
 #endif

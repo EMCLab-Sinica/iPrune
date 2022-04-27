@@ -257,7 +257,7 @@ void handle_add(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
 
     int16_t scaleFract;
     uint8_t shift;
-    float_to_scale_params(&scaleFract, &shift, 1.0f*Y->scale/X->scale);
+    float_to_scale_params(&scaleFract, &shift, Y->scale / X->scale);
     my_scale_q15(buffer_b, scaleFract, shift, buffer_b, buffer_size);
 
     for (uint16_t idx = 0; idx < X->dims[2]; idx++) {
@@ -308,23 +308,24 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
     int16_t scaleFract;
     uint8_t shift;
-    float_to_scale_params(&scaleFract, &shift, 1.0f * mean->scale / (X->scale));
+    float_to_scale_params(&scaleFract, &shift, mean->scale / X->scale);
     my_scale_q15(buffer_mean, scaleFract, shift, buffer_mean, CHANNEL);
 
-    int16_t var_scale_sqrt = static_cast<int16_t>(sqrtf(1.0f * var->scale));
-    MY_ASSERT(var_scale_sqrt * var_scale_sqrt == var->scale);
+    Scale var_scale_sqrt;
+    var_scale_sqrt.fromFloat(sqrtf(var->scale.toFloat()));
+    MY_ASSERT((var_scale_sqrt * var_scale_sqrt).toFloat() == var->scale.toFloat());
 
-    float_to_scale_params(&scaleFract, &shift, (1.0f * var_scale_sqrt * B->scale) / (X->scale * scale->scale));
+    float_to_scale_params(&scaleFract, &shift, (var_scale_sqrt.toFloat() * B->scale.toFloat()) / (X->scale.toFloat() * scale->scale.toFloat()));
     my_scale_q15(buffer_b, scaleFract, shift, buffer_b, CHANNEL);
 
-    output->scale = scale->scale * (X->scale) / var_scale_sqrt;
-    my_printf("scale: %d" NEWLINE, scale->scale);
-    my_printf("X: %d" NEWLINE, X->scale);
-    my_printf("output: %d" NEWLINE, output->scale);
+    output->scale = scale->scale * X->scale / var_scale_sqrt;
+    my_printf_debug("scale: %f" NEWLINE, scale->scale.toFloat());
+    my_printf_debug("X: %f" NEWLINE, X->scale.toFloat());
+    my_printf_debug("output: %f" NEWLINE, output->scale.toFloat());
     // assume conventional epsilon
     my_printf_debug("var" NEWLINE);
     dump_matrix_debug(buffer_var, CHANNEL, ValueInfo(output, model));
-    my_offset_q15(buffer_var, static_cast<int16_t>(0.00001 * 0x8000 / var->scale), buffer_var, CHANNEL);
+    my_offset_q15(buffer_var, static_cast<int16_t>(0.00001 * 0x8000 / var->scale.toFloat()), buffer_var, CHANNEL);
     my_printf_debug("var + epsilon" NEWLINE);
     dump_matrix_debug(buffer_var, CHANNEL, ValueInfo(output, model));
     my_vsqrt_q15(buffer_var, buffer_var, CHANNEL);
@@ -333,8 +334,6 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
     for (; idx < area; idx++) {
         my_memcpy_from_param(model, buffer_x, X, offset, CHANNEL * sizeof(int16_t));
-
-        // my_printf_debug("(h, w) = (%d, %d)" NEWLINE, idx / W, idx % W);
 
         my_sub_q15(buffer_x, buffer_mean, buffer_x, CHANNEL);
         my_printf_debug("x - mean" NEWLINE);

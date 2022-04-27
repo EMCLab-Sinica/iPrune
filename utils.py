@@ -164,8 +164,8 @@ def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
         print("Download google speech first!")
         exit()
 
-    test_data = data[-limit:]
-    labels = [list(item).index(1) for item in label[-limit:]]
+    test_data = data[start:limit]
+    labels = [list(item).index(1) for item in label[start:limit]]
     return ModelData(labels=labels, images=np.array(test_data, dtype=np.float32), data_layout=DataLayout.NHWC)
 
 def kws_dnn_model():
