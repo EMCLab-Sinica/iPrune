@@ -53,9 +53,12 @@ def print_tensor(tensor):
     if dimensions >= 1 and np.prod(shape) != 0:
         print(f'Max={np.max(tensor)}, min={np.min(tensor)}')
 
-def prepare_model_and_data(config, limit):
+def prepare_model_and_data(config, limit, image_idx):
     model = load_model(config)
-    model_data = config['data_loader'](start=0, limit=limit)
+    if image_idx == -1:
+        model_data = config['data_loader'](start=0, limit=limit)
+    else:
+        model_data = config['data_loader'](start=image_idx, limit=image_idx + 1)
 
     dynamic_shape_inference(model, config['sample_size'])
     onnx.checker.check_model(model)
@@ -124,6 +127,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('config', choices=configs.keys())
     parser.add_argument('--limit', type=int, default=0)
+    parser.add_argument('--image-idx', type=int, default=-1)
     parser.add_argument('--compare-configs', action='store_true')
     parser.add_argument('--save-file')
     args = parser.parse_args()
@@ -132,7 +136,7 @@ def main():
         args.limit = None
 
     config = configs[args.config]
-    model, model_data = prepare_model_and_data(config, args.limit)
+    model, model_data = prepare_model_and_data(config, args.limit, args.image_idx)
     if args.compare_configs:
         compare_configs(config, model, model_data)
     else:

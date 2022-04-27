@@ -278,6 +278,9 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
     const ParameterInfo *X = input[0], *scale = input[1], *B = input[2], *mean = input[3], *var = input[4];
     const uint16_t CHANNEL = X->dims[1], H = X->dims[2], W= X->dims[3];
+    my_printf_debug("H: %d, W: %d, CHANNEL: %d" NEWLINE, H, W, CHANNEL);
+    uint16_t area = 1;
+    if(H * W != 0) area = H * W;
     int16_t *buffer_x = lea_buffer,
             *buffer_scale = buffer_x + CHANNEL,
             *buffer_b = buffer_scale + CHANNEL,
@@ -289,11 +292,11 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
     uint16_t idx = 0;
 #if INTERMITTENT
     uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
-    // Re-execute from the begin of CHANNEL
+    // re-execute from the begin of CHANNEL
     offset = first_unfinished_value_offset / CHANNEL * CHANNEL;
     idx = first_unfinished_value_offset / CHANNEL;
 #if HAWAII
-    // Resume footprint cnt
+    // reset footprint cnt
     write_hawaii_layer_footprint(model->layer_idx, offset - first_unfinished_value_offset);
 #endif // HAWAII
 #endif
@@ -305,36 +308,44 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
     int16_t scaleFract;
     uint8_t shift;
-    float_to_scale_params(&scaleFract, &shift, 1.0f * mean->scale / (X->scale * 2));
+    float_to_scale_params(&scaleFract, &shift, 1.0f * mean->scale / (X->scale));
     my_scale_q15(buffer_mean, scaleFract, shift, buffer_mean, CHANNEL);
 
     int16_t var_scale_sqrt = static_cast<int16_t>(sqrtf(1.0f * var->scale));
     MY_ASSERT(var_scale_sqrt * var_scale_sqrt == var->scale);
 
-    float_to_scale_params(&scaleFract, &shift, 1.0f * var_scale_sqrt / (X->scale * 2));
+    float_to_scale_params(&scaleFract, &shift, (1.0f * var_scale_sqrt * B->scale) / (X->scale * scale->scale));
     my_scale_q15(buffer_b, scaleFract, shift, buffer_b, CHANNEL);
 
-    output->scale = scale->scale * (X->scale * 2) / var_scale_sqrt;
-
+    output->scale = scale->scale * (X->scale) / var_scale_sqrt;
+    my_printf("scale: %d" NEWLINE, scale->scale);
+    my_printf("X: %d" NEWLINE, X->scale);
+    my_printf("output: %d" NEWLINE, output->scale);
     // assume conventional epsilon
+    my_printf_debug("var" NEWLINE);
+    dump_matrix_debug(buffer_var, CHANNEL, ValueInfo(output, model));
     my_offset_q15(buffer_var, static_cast<int16_t>(0.00001 * 0x8000 / var->scale), buffer_var, CHANNEL);
+    my_printf_debug("var + epsilon" NEWLINE);
+    dump_matrix_debug(buffer_var, CHANNEL, ValueInfo(output, model));
     my_vsqrt_q15(buffer_var, buffer_var, CHANNEL);
+    my_printf_debug("sqrt(var + epsilon)" NEWLINE);
+    dump_matrix_debug(buffer_var, CHANNEL, ValueInfo(output, model));
 
-    for (; idx < H * W; idx++) {
+    for (; idx < area; idx++) {
         my_memcpy_from_param(model, buffer_x, X, offset, CHANNEL * sizeof(int16_t));
 
-        my_printf_debug("(h, w) = (%d, %d)" NEWLINE, idx / W, idx % W);
+        // my_printf_debug("(h, w) = (%d, %d)" NEWLINE, idx / W, idx % W);
 
         my_sub_q15(buffer_x, buffer_mean, buffer_x, CHANNEL);
         my_printf_debug("x - mean" NEWLINE);
-        // dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(X->scale * 2));
-
-        my_div_q15(buffer_x, buffer_var, buffer_x, CHANNEL);
-        my_printf_debug("(x - mean)/sqrt(var+epsilon)" NEWLINE);
-        // dump_matrix_debug(buffer_x, CHANNEL, ValueInfo((X->scale * 2) / var_scale_sqrt));
+        dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
 
         my_mpy_q15(buffer_x, buffer_scale, buffer_x, CHANNEL);
-        my_printf_debug("(x - mean)/sqrt(var+epsilon)*scale" NEWLINE);
+        my_printf_debug("(x - mean)*scale" NEWLINE);
+        dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
+
+        my_div_q15(buffer_x, buffer_var, buffer_x, CHANNEL);
+        my_printf_debug("(x - mean)*scale/sqrt(var+epsilon)" NEWLINE);
         dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
 
         my_add_q15(buffer_x, buffer_b, buffer_x, CHANNEL);
