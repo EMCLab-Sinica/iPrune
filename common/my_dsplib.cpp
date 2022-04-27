@@ -26,10 +26,15 @@ void check_buffer_address(const int16_t* addr, uint32_t blockSize) {
 void my_div_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint32_t blockSize) {
     // XXX: use LEA?
     for (uint16_t idx = 0; idx < blockSize; idx++) {
-        // https://sestevenson.wordpress.com/2010/09/20/fixed-point-division-2/
-        int32_t tmp = (static_cast<int32_t>(pSrcA[idx]) << 15) / static_cast<int32_t>(pSrcB[idx]);
-        tmp = MIN_VAL(32767, MAX_VAL(-32768, tmp));
-        pDst[idx] = static_cast<int16_t>(tmp);
+        if(pSrcB[idx] == 0) {
+            // Overflow
+            pDst[idx] = 32767;
+        } else {
+            // https://sestevenson.wordpress.com/2010/09/20/fixed-point-division-2/
+            int32_t tmp = (static_cast<int32_t>(pSrcA[idx]) << 15) / static_cast<int32_t>(pSrcB[idx]);
+            tmp = MIN_VAL(32767, MAX_VAL(-32768, tmp));
+            pDst[idx] = static_cast<int16_t>(tmp);
+        }
     }
 }
 
@@ -75,10 +80,10 @@ void my_sub_q15(const int16_t *pSrcA, const int16_t *pSrcB, int16_t *pDst, uint3
 
 void my_vsqrt_q15(int16_t* pIn, int16_t* pOut, uint32_t blockSize) {
 #if !USE_ARM_CMSIS
+    const float Q15_DIVISOR = 32768.0f;
     for (uint32_t idx = 0; idx < blockSize; idx++) {
-        *pOut = static_cast<int16_t> (sqrtf(*pIn * 1.0f));
-        pIn++;
-        pOut++;
+        float real_val = (1.0f * pIn[idx]) / Q15_DIVISOR;
+        pOut[idx] = static_cast<int16_t> (sqrtf(real_val) * Q15_DIVISOR);
     }
 #else
     // somehow arm_vsqrt_q15 is defined in headers but there is no implementation
