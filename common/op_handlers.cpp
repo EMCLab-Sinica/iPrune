@@ -36,6 +36,7 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     uint16_t output_offset = 0;
 #if INTERMITTENT
     uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
+    my_printf_debug("first_unfinished_value_offset: %d" NEWLINE, first_unfinished_value_offset);
     data_offset += first_unfinished_value_offset;
     if(H != 0) {
         if(node->flags.generic == NHWC2NCHW) {
@@ -50,8 +51,8 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
     if(node->flags.generic == NHWC2NCHW) {
         // NHWC -> NCHW
-        uint16_t i = output_offset;
-        uint8_t cur_batch_offset = i % BATCH_SIZE;
+        uint16_t i = data_offset;
+        uint16_t cur_batch_offset = i % BATCH_SIZE;
         for (; i < data_len; i++) {
             int16_t output_val;
             {
@@ -75,8 +76,8 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         }
     } else {
         // NHWC -> NHWC
-        uint16_t i = output_offset;
-        uint8_t cur_batch_offset = i % BATCH_SIZE;
+        uint16_t i = data_offset;
+        uint16_t cur_batch_offset = i % BATCH_SIZE;
         for (; i < data_len; i++) {
             int16_t output_val;
             {
