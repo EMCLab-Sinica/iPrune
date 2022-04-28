@@ -443,87 +443,21 @@ uint16_t find_row_index(Model *model, const ParameterInfo *filter_params, const 
     return l - 1;
 }
 
-// XXX: support hawaii only
+// XXX: support FC x hawaii only
 uint32_t job_index_to_offset_sparse(Model *model, const ParameterInfo *params_filter, const ParameterInfo* output, uint16_t job_index) {
-    start_cpu_counter();
+    // Handle FC recovery via binary search
     const Node* node = get_node(output);
-#ifdef OpConv
-    uint8_t is_conv = (node->op_type == OpConv);
-#else
-    uint8_t is_conv = 0;
-#endif
-
-    if (!is_conv) {
-        // Handle FC recovery
-        uint16_t output_len = output->dims[0] * output->dims[1]; // 256
-        uint16_t output_jobs = output_len / BATCH_SIZE; // 256
-        uint16_t jobs_in_an_op = OP_FILTERS / BATCH_SIZE; // 2
-        uint16_t cur_col_index = job_index / jobs_in_an_op; // 165
-        uint16_t col_val = get_col_val(model, params_filter, cur_col_index); // [0 "2"] // 107
-        int16_t cur_row_val = 0; // 143
-        uint16_t row_index = find_row_index(model, params_filter, output, node, cur_col_index, &cur_row_val); // 15
-        uint16_t filter_tile_c = col_val; // 107
-        uint16_t fixed_jobs_index_in_tile_c = row_index * output_jobs + filter_tile_c * (OP_FILTERS / BATCH_SIZE) + (job_index % jobs_in_an_op);
-        my_printf_debug("fixed_jobs_index_in_tile_c: %d\n", fixed_jobs_index_in_tile_c);
-        return (fixed_jobs_index_in_tile_c + 1) * BATCH_SIZE - 1;
-    }
-
-    /* BEGIN constants */
-    uint16_t input_tile_len, input_tile_jobs, jobs_in_a_filter_tile, jobs_in_an_op, output_tile_c, OUTPUT_CHANNEL, OUTPUT_H, OUTPUT_W;
-
-    OUTPUT_CHANNEL = output->dims[1];
-    OUTPUT_H = output->dims[2];
-    OUTPUT_W = output->dims[3];
-    output_tile_c = node->flags.extra.conv.output_tile_c;
-    input_tile_len = output_tile_c * OUTPUT_H * OUTPUT_W;
-    input_tile_jobs = input_tile_len / BATCH_SIZE;
-    jobs_in_a_filter_tile = OUTPUT_H * OUTPUT_W * output_tile_c / BATCH_SIZE;
-
-    my_printf_debug("fixed_jobs_index: %d\n", job_index);
-
-    if (output_tile_c == OUTPUT_CHANNEL) {
-        return job_index * BATCH_SIZE + (BATCH_SIZE - 1);
-    }
-
-    // FIXME: fix job_index for CONV
-    uint16_t cur_col_index = job_index / jobs_in_a_filter_tile; // 1
-    int16_t cur_row_val = 0;
-    uint16_t row_index = find_row_index(model, params_filter, output, node, cur_col_index, &cur_row_val);
-    uint16_t next_row_val = get_row_val(model, params_filter, row_index + 1);
-    uint16_t n_cols_ = next_row_val - cur_row_val;
-
-    output_tile_c = upper_gauss(output_tile_c, BATCH_SIZE) * BATCH_SIZE;
-    jobs_in_a_filter_tile = OUTPUT_H * OUTPUT_W * output_tile_c / BATCH_SIZE;
-    jobs_in_an_op = output_tile_c / BATCH_SIZE;
-    // TODO: handle cases where the following condition is not met
-    MY_ASSERT(output_tile_c % BATCH_SIZE == 0);
-    /* END constants */
-
-    job_index -= cur_row_val * input_tile_jobs;
-    uint16_t channel_offset = job_index / jobs_in_a_filter_tile * output_tile_c;
-    job_index %= jobs_in_a_filter_tile;
-    uint32_t offset = cur_row_val * input_tile_len +
-                        channel_offset;
-    my_printf_debug("------------------ DUMP RECOVERED INDEX ------------------" NEWLINE);
-    my_printf_debug("input_tile_len: %d\n", input_tile_len);
-    my_printf_debug("input_tile_jobs: %d\n", input_tile_jobs);
-    my_printf_debug("jobs_in_an_op: %d\n", jobs_in_an_op);
-    my_printf_debug("cur_col_index: %d\n", cur_col_index);
-    my_printf_debug("cur_row_val: %d\n", cur_row_val);
-    my_printf_debug("row_index: %d\n", row_index);
-    my_printf_debug("job_index & jobs_in_an_op: %d\n", (job_index & jobs_in_an_op));
-    my_printf_debug("------------------ DUMP RECOVERED INDEX ------------------" NEWLINE);
-    // TODO: handle jobs in an op
-    if (jobs_in_an_op) {
-        // an op contains at least a batch
-        offset += (n_cols_ * output_tile_c) * (job_index / jobs_in_an_op);
-        offset += (job_index % jobs_in_an_op + 1) * BATCH_SIZE - 1;
-    } else {
-        // TODO
-        ERROR_OCCURRED();
-    }
-    stop_cpu_counter(&Counters::progress_seeking);
-    return offset;
+    uint16_t output_len = output->dims[0] * output->dims[1]; // 256
+    uint16_t output_jobs = output_len / BATCH_SIZE; // 256
+    uint16_t jobs_in_an_op = OP_FILTERS / BATCH_SIZE; // 2
+    uint16_t cur_col_index = job_index / jobs_in_an_op; // 165
+    uint16_t col_val = get_col_val(model, params_filter, cur_col_index); // [0 "2"] // 107
+    int16_t cur_row_val = 0; // 143
+    uint16_t row_index = find_row_index(model, params_filter, output, node, cur_col_index, &cur_row_val); // 15
+    uint16_t filter_tile_c = col_val; // 107
+    uint16_t fixed_jobs_index_in_tile_c = row_index * output_jobs + filter_tile_c * (OP_FILTERS / BATCH_SIZE) + (job_index % jobs_in_an_op);
+    my_printf_debug("fixed_jobs_index_in_tile_c: %d\n", fixed_jobs_index_in_tile_c);
+    return (fixed_jobs_index_in_tile_c + 1) * BATCH_SIZE - 1;
 }
 #endif // SPARSE
 uint32_t job_index_to_offset(const ParameterInfo* output, uint16_t job_index) {
