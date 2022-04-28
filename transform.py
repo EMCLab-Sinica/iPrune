@@ -108,12 +108,11 @@ def _Q15(arr, name):
         np.flatnonzero(np.asarray(arr > upper))
     ))
     for idx in overflowed_indices:
-        if name == 'Input':
-            warnings.warn(f'{name} value {arr[idx]} goes beyond the range of _q15 ({lower}, {upper})')
+        warnings.warn(f'{name} value {arr[idx]} goes beyond the range of _q15 ({lower}, {upper})')
 
     arr = np.minimum(np.maximum(arr, lower), upper)
 
-    return (arr * 2 ** 15).astype(int), len(overflowed_indices) != 0
+    return (arr * 2 ** 15).astype(int)
 
 # https://stackoverflow.com/a/11481471/3786245
 class ConvNodeFlags(ctypes.Structure):
@@ -862,8 +861,8 @@ def get_float_data(param):
     return float_data
 
 param_limits = {}
-def get_param_limit(model, node):
-    return config['scale']
+def get_param_limit(model, node, float_data):
+    return max([abs(data) for data in float_data]) * 1.5
 
 def write_scale(dest, scale):
     shift = 0
@@ -875,7 +874,6 @@ def write_scale(dest, scale):
     dest.write(to_bytes(0, size=8))         # scale.dummy
 
 model_parameters_info = outputs['model_parameters_info']
-BN_scales = [4, 8, 2] # adjust manually
 for params in parameters:
     if params is None:  # input
         # Actual data for test samples are added last
@@ -913,29 +911,18 @@ for params in parameters:
 
             used_node = find_node_by_input(onnx_model.graph.node, params.name)
             if used_node.op_type in ('Conv', 'Gemm'):
-                params_scale = get_param_limit(onnx_model, used_node)
+                params_scale = config['scale']
+            elif used_node.op_type in ('BatchNormalization'):
+                params_scale = get_param_limit(onnx_model, used_node, float_data)
             else:
                 params_scale = config['scale']
-            isOverflow = True
-            cnt = 1
             '''
             if used_node.op_type in ('Gemm', 'BatchNormalization'):
                 print("=================== {} ===================".format(params.name))
                 print(float_data)
                 print("max: {}, min: {}".format(max(float_data), min(float_data)))
             '''
-            print(params.name)
-            if used_node.op_type == 'BatchNormalization':
-                while isOverflow:
-                    # Perform sqrt on scale in batchnormization layer
-                    # Therefore, the scale must be perfect square
-                    # root = BN_scales[int(params.name[2]) - 1]
-                    root = 2 ** (cnt - 1)
-                    params_scale = root * root
-                    int_data_Q15, isOverflow = _Q15(np.array(float_data) / params_scale, 'Parameter')
-                    cnt += 1
-            else:
-                int_data_Q15, isOverflow = _Q15(np.array(float_data) / params_scale, 'Parameter')
+            int_data_Q15 = _Q15(np.array(float_data) / params_scale, 'Parameter')
 
             if args.sparse:
                 cols = []
@@ -1018,7 +1005,7 @@ for params in parameters:
         # dims are always 4 uint16_t's in C++
         for _ in range(4 - len(params.dims)):
             model_parameters_info.write(to_bytes(0))
-        print("params scale: ", params_scale)
+        logger.info("{} scale: {}".format(params.name, params_scale))
         write_scale(model_parameters_info, params_scale)
 
     # common to input and non-inputs
@@ -1065,7 +1052,7 @@ for idx in range(model_data.images.shape[0]):
     # load_data returns NCHW
     # https://stackoverflow.com/a/34794744
 
-    int_data_Q15, isOverflow = _Q15(im.flatten(order='C') / config['input_scale'], 'Input')
+    int_data_Q15 = _Q15(im.flatten(order='C') / config['input_scale'], 'Input')
     outputs['samples'].write(to_bytes(int_data_Q15))
     if args.write_images:
         import cv2
