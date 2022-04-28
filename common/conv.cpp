@@ -781,6 +781,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->input_h = conv_params->input_h_first;
     conv_params->input_w = conv_params->input_w_first;
 #if INTERMITTENT
+RECOVERY:
     /* Handle sub-layer footprint */
     uint32_t first_unfinished_sub_layer_idx = conv_params->model->sub_layer_idx;
     my_printf_debug("first_unfinished_sub_layer_idx: %d" NEWLINE, first_unfinished_sub_layer_idx);
@@ -833,8 +834,10 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
         // XXX: mixing output and input to calculate may be wrong
         // XXX: Handle CHANNEL % output_tile_c != 0
-        uint16_t cur_output_tile_h = MIN_VAL(conv_params->flags->extra.conv.output_tile_h, H - input_h_offset);
-        uint16_t cur_output_tile_w = MIN_VAL(conv_params->flags->extra.conv.output_tile_w, W - input_w_offset);
+        uint16_t cur_output_tile_h = MIN_VAL(conv_params->flags->extra.conv.output_tile_h,
+                conv_params->OUTPUT_H - tile_h_offset * conv_params->flags->extra.conv.output_tile_h);
+        uint16_t cur_output_tile_w = MIN_VAL(conv_params->flags->extra.conv.output_tile_w,
+                conv_params->OUTPUT_W - tile_w_offset * conv_params->flags->extra.conv.output_tile_w);
         uint16_t cur_output_tile_c = MIN_VAL(conv_params->flags->extra.conv.output_tile_c,
                 conv_params->OUTPUT_CHANNEL - conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c);
 
@@ -860,6 +863,15 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         uint16_t intra_kernel_offset = 0;
 #if SPARSE
         int16_t finished_weight_tiles = first_unfinished_job_idx / jobs_in_a_weight_tile;
+        if(finished_weight_tiles == conv_params->n_cols) {
+            // the filter tiles have finished, but power off before resetting footprint counter
+ #if HAWAII
+            reset_hawaii_layer_footprint(model->layer_idx);
+#endif // HAWAII
+            model->sub_layer_idx++;
+            commit_model();
+            goto RECOVERY;
+        }
         my_printf_debug("finished_weight_tiles: %d" NEWLINE, finished_weight_tiles);
         conv_params->input_tile_c_index = COL_VALS[finished_weight_tiles] / n_weight_tiles;
         first_unfinished_job_idx -= finished_weight_tiles * jobs_in_a_weight_tile;
@@ -935,6 +947,7 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             conv_params->kH * conv_params->kY +
             conv_params->kX;
 #endif // SPARSE
+        my_printf_debug("tile_1x1xTn_offset: %d" NEWLINE, tile_1x1xTn_offset);
         conv_params->psum_buffer_version ^= tile_1x1xTn_offset & 0x1;
     }
     my_printf_debug("initial output N = %d" NEWLINE, conv_params->input_tile_c_index);
