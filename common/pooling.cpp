@@ -43,13 +43,6 @@ void alloc_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *ou
     maxpool_params->new_W = W / maxpool_params->flags->strides[STRIDE_W];
     maxpool_params->need_nhwc2nchw = (node->flags.generic == NHWC2NCHW);
 
-#if JAPARI
-    if (maxpool_params->need_nhwc2nchw) {
-        maxpool_params->new_W = extend_for_footprints(maxpool_params->new_W);
-        CHANNEL = CHANNEL / (BATCH_SIZE + 1) * BATCH_SIZE;
-    }
-#endif
-
     output->params_len = maxpool_params->new_H * maxpool_params->new_W * CHANNEL * sizeof(int16_t);
     output->slot = get_next_slot(model, data);
     output->dims[0] = 1;
@@ -87,21 +80,7 @@ static uint8_t maxpool_patch(MaxPoolParams *maxpool_params) {
             my_memcpy_from_param(maxpool_params->model, input_buffer, maxpool_params->data, val_offset, maxpool_params->n_channels * sizeof(int16_t));
             output_channel_offset = 0;
             for (uint8_t input_channel_offset = 0; input_channel_offset < maxpool_params->n_channels; input_channel_offset++) {
-#if JAPARI
-                if (offset_has_state(maxpool_params->start_channel + input_channel_offset)) {
-                    // not checking need_nhwc2nchw here - if that is true, input footprint channels should already be skipped
-                    // before maxpool_patch is called
-                    output_channel_offset++;
-                    continue;
-                }
-#endif
                 int16_t val = input_buffer[input_channel_offset];
-#if STATEFUL
-                if (offset_has_state(maxpool_params->start_channel + input_channel_offset)) {
-                    strip_state(&val);
-                }
-                val *= 2;
-#endif
                 // dump_value_debug(model, maxpool_params->data, val_offset);
                 my_printf_debug("% 6d ", val);
                 if (val > output_buffer[output_channel_offset]) {
@@ -165,15 +144,6 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
 
     uint16_t initial_c, initial_h, initial_w;
 
-#if INDIRECT_RECOVERY
-    int16_t offset;
-    uint16_t next_output_turning_point;
-    uint8_t output_turning_point_idx;
-    SlotInfo *output_slot_info;
-    find_initial_state_bit(&offset, &output_turning_point_idx, &next_output_turning_point, &output_slot_info, first_unfinished_value_offset, model, output);
-    offset = -offset;
-#endif
-
     output_offset = first_unfinished_value_offset;
     if (!maxpool_params->need_nhwc2nchw) {
         initial_c = first_unfinished_value_offset % OUTPUT_CHANNEL;
@@ -208,15 +178,6 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
                     maxpool_params->start_channel = c;
                     len = maxpool_patch(maxpool_params);
                     my_printf_debug("output_offset=[% 5d, % 5d) ", output_offset, output_offset + len);
-#if INDIRECT_RECOVERY
-                    check_next_turning_point(offset, output_turning_point_idx, next_output_turning_point, output_slot_info, output_offset);
-                    start_cpu_counter();
-#if STATEFUL
-                    my_scale_q15(lea_buffer, 0x4000, 0, lea_buffer, len * sizeof(int16_t));
-#endif
-                    offset_vector(lea_buffer, offset, len, output_offset, next_output_turning_point);
-                    stop_cpu_counter(&Counters::embedding);
-#endif
 #if MY_DEBUG >= MY_DEBUG_VERBOSE
                     // need a space as dump_value does not append spaces when DUMP_INTEGERS is not defined
                     my_printf_debug(" max=");
@@ -237,39 +198,12 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
             output_h = 0;
         } else {
             // NCHW
-#if JAPARI
-            // extend c as input footprint channels are skipped.
-            // Not using extend_for_footprints() as the initial c may not be on a footprint channel
-            c += c / BATCH_SIZE;
-#endif
-
-#if STATEFUL
-            uint8_t cur_batch_offset = output_offset % BATCH_SIZE;
-#endif
-
             uint8_t channel_stride = 1;
             for (; c < CHANNEL; c += channel_stride) {
-#if JAPARI
-                if (offset_has_state(c)) {
-                    continue;
-                }
-#endif
                 for (; output_h < maxpool_params->new_H; output_h++) {
                     maxpool_params->output_h = output_h;
-#if !JAPARI
                     maxpool_params->output_w = output_w;
-#else
-                    maxpool_params->output_w = output_w / (BATCH_SIZE + 1) * BATCH_SIZE + output_w % (BATCH_SIZE +1);
-#endif
                     for (; output_w < maxpool_params->new_W; output_w++) {
-#if JAPARI
-                        if (offset_has_state(output_offset)) {
-                            check_next_turning_point(offset, output_turning_point_idx, next_output_turning_point, output_slot_info, output_offset);
-                            put_q15_param(output, output_offset, (offset == 0x4000 ? 1 : -1));
-                            output_offset++;
-                            continue;
-                        }
-#endif
                         maxpool_params->start_channel = c;
                         maxpool_params->n_channels = 1;
                         uint8_t len = maxpool_patch(maxpool_params);
@@ -278,15 +212,6 @@ void handle_maxpool(Model *model, const ParameterInfo *input[], ParameterInfo *o
                             continue;
                         }
                         my_printf_debug("output_offset=% 5d ", output_offset);
-#if STATEFUL
-                        lea_buffer[0] /= 2;
-                        if (cur_batch_offset == BATCH_SIZE - 1) {
-                            check_next_turning_point(offset, output_turning_point_idx, next_output_turning_point, output_slot_info, output_offset);
-                            lea_buffer[0] += offset;
-                            cur_batch_offset -= BATCH_SIZE;
-                        }
-                        cur_batch_offset++;
-#endif
                         my_printf_debug("max=% 6d " NEWLINE, lea_buffer[0]);
                         put_q15_param(output, output_offset, lea_buffer[0]);
 #if HAWAII
