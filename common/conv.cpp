@@ -622,6 +622,7 @@ static void next_nonzero_value(const Node *node, ConvTaskParams *conv_params, in
 }
 #endif // SPARSE
 
+#if !STABLE_POWER
 static void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo *output, int16_t output_w, int16_t output_h, int16_t tile_h_offset, int16_t tile_w_offset) {
     int16_t OUTPUT_C = output->dims[1],
             OUTPUT_H = output->dims[2],
@@ -700,6 +701,7 @@ static void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo 
         tile_h_offset = 0;
     }
 }
+#endif
 
 #ifdef OpConv
 void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {

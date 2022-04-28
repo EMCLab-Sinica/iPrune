@@ -433,7 +433,7 @@ for idx, n in enumerate(nodes):
         prev_node = n
         while prev_node and prev_node.op_type in inplace_update_ops:
             prev_node = find_node_by_output(nodes, prev_node.input[0])
-        if prev_node and prev_node.op_type == 'MaxPool':
+        if prev_node and prev_node.op_type in ('MaxPool', 'Relu'):
             prev_node.flags.b.generic += op_flag('NHWC2NCHW')
     if n.op_type in ('Squeeze', 'Unsqueeze'):
         axes = get_attr(n, 'axes') or []

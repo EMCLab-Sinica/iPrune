@@ -428,7 +428,7 @@ void handle_gemmmerge(Model *model, const ParameterInfo *input[], ParameterInfo 
 
     flip_state_bit(model, output);
 
-    my_printf_debug("handle_gemmmerge output" NEWLINE);
+    my_printf_debug("handle_gemmerge output" NEWLINE);
     dump_params_debug(model, output, node->output_name);
 #endif // OpGemm
 }

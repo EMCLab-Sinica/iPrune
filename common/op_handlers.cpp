@@ -10,7 +10,7 @@
 
 #define RESHAPE_AUTO_DIM static_cast<uint16_t>(-1)
 
-void alloc_relu(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node*) {
+void alloc_relu(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
     const ParameterInfo *data = input[0];
     output->slot = get_next_slot(model, data);
 }
@@ -19,6 +19,7 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     my_printf_debug("ReLu!" NEWLINE);
 
     const ParameterInfo *X = input[0];
+    uint16_t N = X->dims[0], CHANNEL = X->dims[1], H = X->dims[2], W = X->dims[3];
 
     /* XXX: use LEA? */
     uint16_t bitwidth = X->bitwidth;
@@ -27,69 +28,61 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
 #if !STABLE_POWER
     // FIXME: After removing FC merge, this branch can be removed
-    if(X->dims[2] != 0) // conv
-        data_len = X->dims[0] * X->dims[1] * X->dims[2] * X->dims[3];
+    if(H != 0) // conv
+        data_len = N * CHANNEL * H * W;
 #endif // STABLE_POWER
     my_printf_debug("data_len: %d" NEWLINE, data_len);
     uint16_t data_offset = 0;
     uint16_t output_offset = 0;
 #if INTERMITTENT
-
     uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
     data_offset += first_unfinished_value_offset;
-    output_offset += first_unfinished_value_offset;
-
-#if INDIRECT_RECOVERY
-    uint16_t next_output_turning_point;
-    int16_t offset;
-    uint8_t output_turning_point_idx;
-    SlotInfo *output_slot_info;
-    find_initial_state_bit(&offset, &output_turning_point_idx, &next_output_turning_point, &output_slot_info,
-                           first_unfinished_value_offset, model, output);
-    offset = -offset;
+    if(H != 0) {
+        if(node->flags.generic == NHWC2NCHW) {
+            output_offset += (data_offset / CHANNEL) + (data_offset % CHANNEL) * H * W;
+        } else {
+            output_offset += first_unfinished_value_offset;
+        }
+    } else {
+        output_offset += first_unfinished_value_offset;
+    }
 #endif
 
-#endif
-
-    {
+    if(node->flags.generic == NHWC2NCHW) {
+        // NHWC -> NCHW
         uint16_t i = output_offset;
-#if JAPARI
-        uint8_t cur_batch_offset = i % (BATCH_SIZE + 1);
-#else
         uint8_t cur_batch_offset = i % BATCH_SIZE;
-#endif
         for (; i < data_len; i++) {
             int16_t output_val;
-#if JAPARI
-            if (cur_batch_offset == BATCH_SIZE) {
-                cur_batch_offset -= BATCH_SIZE + 1;
-                output_val = (offset > 0? 1 : -1);
-            } else
-#endif
             {
                 int16_t input_val = get_q15_param(model, X, data_offset);
-#if INDIRECT_RECOVERY
-#if STATEFUL
-                start_cpu_counter();
-                if (offset_has_state(data_offset)) {
-                    strip_state(&input_val);
-                }
-                input_val *= 2;
-                stop_cpu_counter(&Counters::stripping);
-#endif
-                check_next_turning_point(offset, output_turning_point_idx, next_output_turning_point, output_slot_info, output_offset);
-#endif
                 output_val = MAX_VAL(input_val, 0);
             }
-#if STATEFUL
-            start_cpu_counter();
-            output_val /= 2;
+            my_printf_debug("input_offset=%d output_offset=%d output_val=%d" NEWLINE, data_offset, output_offset, output_val);
+            put_q15_param(output, output_offset, output_val);
+#if HAWAII
             if (cur_batch_offset == BATCH_SIZE - 1) {
+                write_hawaii_layer_footprint(model->layer_idx, BATCH_SIZE);
                 cur_batch_offset -= BATCH_SIZE;
-                output_val += offset;
             }
-            stop_cpu_counter(&Counters::embedding);
 #endif
+            data_offset++;
+            if(H != 0) // conv
+                output_offset = (data_offset / CHANNEL) + (data_offset % CHANNEL) * H * W;
+            else // fc
+                output_offset++;
+            cur_batch_offset++;
+        }
+    } else {
+        // NHWC -> NHWC
+        uint16_t i = output_offset;
+        uint8_t cur_batch_offset = i % BATCH_SIZE;
+        for (; i < data_len; i++) {
+            int16_t output_val;
+            {
+                int16_t input_val = get_q15_param(model, X, data_offset);
+                output_val = MAX_VAL(input_val, 0);
+            }
             my_printf_debug("input_offset=%d output_offset=%d output_val=%d" NEWLINE, data_offset, output_offset, output_val);
             put_q15_param(output, output_offset, output_val);
 #if HAWAII
@@ -107,7 +100,11 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     flip_state_bit(model, output);
 
     my_printf_debug("handle_relu output" NEWLINE);
-    dump_params_nhwc_debug(model, output, node->output_name);
+    if(node->flags.generic == NHWC2NCHW) {
+        dump_params_debug(model, output, node->output_name);
+    } else {
+        dump_params_nhwc_debug(model, output, node->output_name);
+    }
 }
 
 void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node*) {
@@ -313,7 +310,7 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
     Scale var_scale_sqrt;
     var_scale_sqrt.fromFloat(sqrtf(var->scale.toFloat()));
-    MY_ASSERT((var_scale_sqrt * var_scale_sqrt).toFloat() == var->scale.toFloat());
+    // MY_ASSERT((var_scale_sqrt * var_scale_sqrt).toFloat() == var->scale.toFloat());
 
     float_to_scale_params(&scaleFract, &shift, (var_scale_sqrt.toFloat() * B->scale.toFloat()) / (X->scale.toFloat() * scale->scale.toFloat()));
     my_scale_q15(buffer_b, scaleFract, shift, buffer_b, CHANNEL);
