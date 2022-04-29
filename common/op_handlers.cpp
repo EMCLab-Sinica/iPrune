@@ -291,7 +291,8 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 #if INTERMITTENT
     uint32_t first_unfinished_value_offset = batch_start(job_index_to_offset(output, run_recovery(model, output)));
     // re-execute from the begin of CHANNEL
-    offset = first_unfinished_value_offset / CHANNEL * CHANNEL;
+    offset = first_unfinished_value_offset & ~0x1;
+    MY_ASSERT(!(offset & 0x1));
     idx = first_unfinished_value_offset / CHANNEL;
 #if HAWAII
     // reset footprint cnt
@@ -330,30 +331,44 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
     my_printf_debug("sqrt(var + epsilon)" NEWLINE);
     dump_matrix_debug(buffer_var, CHANNEL, ValueInfo(output, model));
 
+    uint16_t channel_offset = offset % CHANNEL;
+    uint16_t cur_channel = CHANNEL - channel_offset;
+    buffer_x += channel_offset;
+    buffer_mean += channel_offset;
+    buffer_scale += channel_offset;
+    buffer_var += channel_offset;
+    buffer_b += channel_offset;
     for (; idx < area; idx++) {
-        my_memcpy_from_param(model, buffer_x, X, offset, CHANNEL * sizeof(int16_t));
+        my_memcpy_from_param(model, buffer_x, X, offset, cur_channel * sizeof(int16_t));
 
-        my_sub_q15(buffer_x, buffer_mean, buffer_x, CHANNEL);
+        my_sub_q15(buffer_x, buffer_mean, buffer_x, cur_channel);
         my_printf_debug("x - mean" NEWLINE);
         dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
 
-        my_mpy_q15(buffer_x, buffer_scale, buffer_x, CHANNEL);
+        my_mpy_q15(buffer_x, buffer_scale, buffer_x, cur_channel);
         my_printf_debug("(x - mean)*scale" NEWLINE);
         dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
 
-        my_div_q15(buffer_x, buffer_var, buffer_x, CHANNEL);
+        my_div_q15(buffer_x, buffer_var, buffer_x, cur_channel);
         my_printf_debug("(x - mean)*scale/sqrt(var+epsilon)" NEWLINE);
         dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
 
-        my_add_q15(buffer_x, buffer_b, buffer_x, CHANNEL);
+        my_add_q15(buffer_x, buffer_b, buffer_x, cur_channel);
         my_printf_debug("(x - mean)/sqrt(var+epsilon)*scale+B" NEWLINE);
         dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
 
-        my_memcpy_to_param(output, offset, buffer_x, CHANNEL * sizeof(int16_t), 0);
-        offset += CHANNEL;
+        my_memcpy_to_param(output, offset, buffer_x, cur_channel * sizeof(int16_t), 0);
+        offset += cur_channel;
 #if HAWAII
-        hawaii_record_footprints(model, CHANNEL);
+        hawaii_record_footprints(model, cur_channel);
 #endif
+        cur_channel += channel_offset;
+        buffer_x -= channel_offset;
+        buffer_mean -= channel_offset;
+        buffer_scale -= channel_offset;
+        buffer_var -= channel_offset;
+        buffer_b -= channel_offset;
+        channel_offset = 0;
     }
 
     my_printf_debug("handle_batchnormalization output" NEWLINE);
