@@ -761,6 +761,11 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->CHANNEL = CHANNEL;
     conv_params->OUTPUT_CHANNEL = output->dims[1];
     conv_params->N_FILTERS = conv_filter->dims[0];
+
+#if INTERMITTENT
+RECOVERY:
+#endif
+
 #if SPARSE
     int16_t COL_VALS[MAX_N_COL_CONV] = {0};
     int16_t col_val;
@@ -781,7 +786,6 @@ void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     conv_params->input_h = conv_params->input_h_first;
     conv_params->input_w = conv_params->input_w_first;
 #if INTERMITTENT
-RECOVERY:
     /* Handle sub-layer footprint */
     uint32_t first_unfinished_sub_layer_idx = conv_params->model->sub_layer_idx;
     my_printf_debug("first_unfinished_sub_layer_idx: %d" NEWLINE, first_unfinished_sub_layer_idx);
@@ -865,7 +869,7 @@ RECOVERY:
         int16_t finished_weight_tiles = first_unfinished_job_idx / jobs_in_a_weight_tile;
         if(finished_weight_tiles == conv_params->n_cols) {
             // the filter tiles have finished, but power off before resetting footprint counter
- #if HAWAII
+#if HAWAII
             reset_hawaii_layer_footprint(model->layer_idx);
 #endif // HAWAII
             model->sub_layer_idx++;
@@ -879,6 +883,14 @@ RECOVERY:
         intra_kernel_offset = COL_VALS[conv_params->cur_n_cols] % n_weight_tiles;
         jobs_in_a_weight_tile = 2 * cur_output_tile_w * cur_output_tile_h * cur_output_tile_c; // psum, accum
 #else // SPARSE
+        if(first_unfinished_job_idx == n_weight_tiles * jobs_in_a_weight_tile) {
+#if HAWAII
+            reset_hawaii_layer_footprint(model->layer_idx);
+#endif // HAWAII
+            model->sub_layer_idx++;
+            commit_model();
+            goto RECOVERY;
+        }
         conv_params->input_tile_c_index = first_unfinished_job_idx / (jobs_in_a_weight_tile * n_weight_tiles);
         first_unfinished_job_idx %= (jobs_in_a_weight_tile * n_weight_tiles);
         jobs_in_a_weight_tile = 2 * cur_output_tile_w * cur_output_tile_h * cur_output_tile_c; // psum, accum

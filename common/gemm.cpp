@@ -317,7 +317,10 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #if STABLE_POWER
     preserve_output(model, node, output, 0, 0, 0, 0, 0, 0);
 #endif // STABLE_POWER
+
+#if INTERMITTENT
 FINISH_LAYER:
+#endif
     flip_state_bit(model, output);
 
     my_printf_debug("handle_gemm output" NEWLINE);
