@@ -431,14 +431,10 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
             // reserve space for padding 0
             int16_t *dest_addr = matrix_mpy_results - conv_params->tile_w * cur_input_tile_c;
             uint32_t src_addr = input_src_offset;
-            if(cur_input_tile_c == cur_input_channel) {
-                load_input_vector(src_addr, dest_addr, cur_input_tile_c * (w_end - w_start + 1), conv_params);
-            } else {
-                for(int32_t w = w_start; w <= w_end; ++w) {
-                    load_input_vector(src_addr, dest_addr, cur_input_tile_c, conv_params);
-                    dest_addr += cur_input_tile_c;
-                    src_addr += cur_input_channel;
-                }
+            for(int32_t w = w_start; w <= w_end; ++w) {
+                load_input_vector(src_addr, dest_addr, cur_input_tile_c, conv_params);
+                dest_addr += cur_input_tile_c;
+                src_addr += cur_input_channel;
             }
             // interleave input data
             int16_t *temp_dest = dest;
@@ -566,12 +562,12 @@ void alloc_conv(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
 }
 
 #if SPARSE and STABLE_POWER
-static void append_zero_to_pruned_output_channel(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t output_w, int16_t output_h, int16_t tile_h_offset, int16_t tile_w_offset, int8_t buffer_id) {
+static void append_zero_to_pruned_output_channel(Model *model, const Node *node, ParameterInfo *output, uint16_t filter_idx, int16_t tile_h_offset, int16_t tile_w_offset, int8_t buffer_id) {
     my_printf_debug("==> Start appending zero ..." NEWLINE);
     init_cpu_buffer();
     uint16_t OUTPUT_H = output->dims[2], OUTPUT_W = output->dims[3];
-    for(; output_w < OUTPUT_W; output_w += node->flags.extra.conv.output_tile_w) {
-        for(; output_h < OUTPUT_H; output_h += node->flags.extra.conv.output_tile_h) {
+    for(uint16_t output_w = 0; output_w < OUTPUT_W; output_w += node->flags.extra.conv.output_tile_w) {
+        for(uint16_t output_h = 0; output_h < OUTPUT_H; output_h += node->flags.extra.conv.output_tile_h) {
             preserve_output(model, node, output, filter_idx, output_w, output_h, 0, 0, 0);
         }
     }
@@ -606,7 +602,7 @@ static void next_nonzero_value(const Node *node, ConvTaskParams *conv_params, in
         if(!conv_params->n_cols) {
             conv_params->filter_tile_index = conv_params->row_index;
             conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
-            append_zero_to_pruned_output_channel(conv_params->model, node, conv_params->output, conv_params->filter_idx, 0, 0, 0, 0, 0);
+            append_zero_to_pruned_output_channel(conv_params->model, node, conv_params->output, conv_params->filter_idx, 0, 0, 0);
         }
 #endif // STABLE_POWER
         conv_params->row_index++;
@@ -1094,6 +1090,8 @@ RECOVERY:
                             }
                             conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
                             conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
+                            conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
+                            conv_params->cached_kX = conv_params->cached_kY = -1;
 #else // SPARSE
                             conv_params->kX++;
 #endif // SPARSE
@@ -1160,6 +1158,8 @@ RECOVERY:
                     col_val = COL_VALS[conv_params->cur_n_cols];
                     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
                     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
+                    conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
+                    conv_params->cached_kX = conv_params->cached_kY = -1;
 #endif // SPARSE
                     conv_params->input_tile_c_index = 0;
                     conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
@@ -1205,9 +1205,9 @@ RECOVERY:
         conv_params->filter_tile_index++;
         conv_params->filter_idx = conv_params->filter_tile_index * conv_params->flags->extra.conv.output_tile_c;
         conv_params->kX = conv_params->kY = 0;
+#endif // SPARSE
         conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
         conv_params->cached_kX = conv_params->cached_kY = -1;
-#endif // SPARSE
         conv_params->input_h = conv_params->input_h_first;
         conv_params->input_w = conv_params->input_w_first;
         /* init version */
