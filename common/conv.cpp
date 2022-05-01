@@ -631,7 +631,7 @@ static void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo 
     int16_t default_output_tile_len =
         conv_params->flags->extra.conv.output_tile_c *
         conv_params->flags->extra.conv.output_tile_w *
-        conv_params->flags->extra.conv.output_tile_h * 2;
+        conv_params->flags->extra.conv.output_tile_h;
     int16_t *partial_result = lea_buffer + LEA_BUFFER_SIZE - default_output_tile_len;
     uint16_t output_len = OUTPUT_C * OUTPUT_W * OUTPUT_H;
     int16_t psum_offset =
@@ -879,7 +879,7 @@ RECOVERY:
         intra_kernel_offset = COL_VALS[conv_params->cur_n_cols] % n_weight_tiles;
         jobs_in_a_weight_tile = 2 * cur_output_tile_w * cur_output_tile_h * cur_output_tile_c; // psum, accum
 #else // SPARSE
-        if(first_unfinished_job_idx == n_weight_tiles * jobs_in_a_weight_tile) {
+        if(first_unfinished_job_idx == n_weight_tiles * jobs_in_a_weight_tile * conv_params->n_tiles_c) {
 #if HAWAII
             reset_hawaii_layer_footprint(model->layer_idx);
 #endif // HAWAII

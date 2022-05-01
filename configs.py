@@ -88,7 +88,7 @@ configs = {
     },
     'pruned_kws_cnn': {
         'onnx_model': 'pruning/Intermittent_Aware/onnx_models/KWS_CNN_S.onnx',
-        'scale': 1,
+        'scale': 1.6,
         'input_scale': 120,
         'num_slots': 2,
         'intermediate_values_size': 65535,
