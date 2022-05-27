@@ -667,8 +667,7 @@ class SimulatedAnnealing():
                 # if not, accept with probability e^(-deltaE/current_temperature)
                 else:
                     delta_E = np.abs(evaluation_result - self.cur_perf_)
-                    probability = math.exp(-1 * delta_E /
-                                           self.cur_temp_)
+                    probability = math.exp(-1 * delta_E / self.cur_temp_)
                     if np.random.uniform(0, 1) < probability:
                         logger_.info('Escape local optimized value.')
                         self.cur_perf_ = evaluation_result
@@ -705,12 +704,18 @@ class MaskMaker():
     def setPruningRatios(self, model, candidates, output_shapes):
         # https://gist.github.com/georgesung/ddb3a0b0412513d8811696293d8b1771
         pruning_ratios = [0] * len(output_shapes)
-        metrics, order = self.metrics_maker_.getMetrics()
-        for i in range(len(order)):
-            pruning_ratios[order[i]] = candidates[i]
-        logger_.debug("Metrics : {}".format(metrics))
-        logger_.debug("Pruning Order: {}".format(order))
-        logger_.debug('pruning_ratios: {}'.format(pruning_ratios))
+        if self.args_.sen_ana:
+            # perform sensitivity analysis
+            for i in range(len(output_shapes)):
+                pruning_ratios[i] = candidates[i]
+            logger_.debug('pruning_ratios: {}'.format(pruning_ratios))
+        else:
+            metrics, order = self.metrics_maker_.getMetrics()
+            for i in range(len(order)):
+                pruning_ratios[order[i]] = candidates[i]
+            logger_.debug("Metrics : {}".format(metrics))
+            logger_.debug("Pruning Order: {}".format(order))
+            logger_.debug('pruning_ratios: {}'.format(pruning_ratios))
         return pruning_ratios
 
     def criteria(self, tmp_pruned, pruning_ratio, pruned_ratio):
@@ -902,7 +907,7 @@ class ADMMPruner():
         return self.model_
 
 class Prune_Op():
-    def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=None, evaluate=False):
+    def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, overall_pruning_ratio=0.2, admm_params=None, evaluate=False):
         # args.group: [n_filter, n_channel]
         global logger_
         logger_ = set_logger(args)
@@ -920,7 +925,7 @@ class Prune_Op():
         self.metrics_maker.profile()
         self.mask_maker = MaskMaker(model, args, input_shape, metrics_maker=self.metrics_maker)
         if args.sa:
-            self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=0.25, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
+            self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=overall_pruning_ratio, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
         if not evaluate:
             if args.sa:
                 if args.admm and admm_params != None:

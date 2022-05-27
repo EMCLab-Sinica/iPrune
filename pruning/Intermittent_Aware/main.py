@@ -4,11 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import matplotlib.pyplot as plt
 import os
 import sys
 import subprocess
 import pathlib
 import fcntl
+import csv
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
@@ -23,6 +25,35 @@ from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
 from datasets import *
+
+def plot_sensitivity(sensitivity):
+    pruning_ratios = sensitivity[0]['pruning_ratios']
+    plt.figure(figsize=(15, 10), dpi=100, linewidth=2)
+
+    def get_cmap(n, name='hsv'):
+        return plt.cm.get_cmap(name, n)
+    cmap = get_cmap(15)
+
+    for node_sen in sensitivity:
+        plt.plot(pruning_ratios, node_sen['accuracy'], 'o-', color=cmap(node_sen['node']), label='layer_' + str(node_sen['node']))
+    plt.xlabel('pruning ratio')
+    plt.ylabel('accuracy')
+    plt.legend(loc='upper right')
+    plt.savefig('logs/'+args.prune+'/'+args.arch+'/stage_'+str(args.stage)+'_sensitivity.png')
+    with open('logs/'+args.prune+'/'+args.arch+'/stage_'+str(args.stage)+'_sensitivity.csv', 'w') as csvfile:
+        fields = pruning_ratios
+        fields.insert(0, 'node')
+        writer = csv.DictWriter(csvfile, fieldnames=fields)
+        writer.writeheader()
+        for item in sensitivity:
+            row = {}
+            for idx, field in enumerate(fields):
+                if idx == 0:
+                    row[field] = item[field]
+                else:
+                    row[field] = item['accuracy'][idx - 1]
+            writer.writerow(row)
+    plt.show()
 
 def save_state(model, acc):
     global logger_
@@ -218,6 +249,10 @@ if __name__=='__main__':
             help='w/ or w/o ADMM')
     parser.add_argument('--sa', action='store_true', default=False,
             help='w/ or w/o simulated annealling')
+    parser.add_argument('--sen-ana', action='store_true', default=False,
+            help='w/ or w/o sensitivity analysis')
+    parser.add_argument('--overall-pruning-ratio', type=float, default=0.2, metavar='M',
+            help='Overall pruning ratio (default: 0.2)')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
             help='Learning rate step gamma (default: 0.7)')
     args = parser.parse_args()
@@ -240,10 +275,10 @@ if __name__=='__main__':
     # generate the model
     if args.arch == 'LeNet_5' or args.arch == 'mnist':
         train_loader = torch.utils.data.DataLoader(
-                datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
+                datasets.MNIST('~/.cache/MNIST', train=True, download=True, transform=transforms.ToTensor()),
                 batch_size=args.batch_size, shuffle=True, **kwargs)
         test_loader = torch.utils.data.DataLoader(
-                datasets.MNIST('data', train=False, transform=transforms.ToTensor()),
+                datasets.MNIST('~/.cache/MNIST', train=False, transform=transforms.ToTensor()),
                 batch_size=args.test_batch_size, shuffle=True, **kwargs)
         if args.arch == 'LeNet_5':
             model = models.LeNet_5(args.prune)
@@ -281,10 +316,10 @@ if __name__=='__main__':
         model = models.KWS_CNN_S(args.prune)
     elif args.arch == 'SqueezeNet':
         train_loader = torch.utils.data.DataLoader(
-                datasets.CIFAR10('data', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
+                datasets.CIFAR10('~/.cache/cifar10', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
                 batch_size=args.batch_size, shuffle=True, **kwargs)
         test_loader = torch.utils.data.DataLoader(
-                datasets.CIFAR10('data', train=False, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
+                datasets.CIFAR10('~/.cache/cifar10', train=False, transform=transforms.Compose([transforms.ToTensor(), transforms.RandomHorizontalFlip()])),
                 batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
         model = models.SqueezeNet(args.prune)
@@ -292,17 +327,21 @@ if __name__=='__main__':
         print('ERROR: {} arch is not suppported'.format(args.arch))
         exit()
 
-    if not args.pretrained:
-        best_acc = 0.0
-        model.weights_pruned = None
-    else:
-        pretrained_model = torch.load(args.pretrained)
-        best_acc = pretrained_model['acc']
-        load_state(model, pretrained_model['state_dict'])
-        if args.prune and ('weights_pruned' in pretrained_model.keys()):
-            model.weights_pruned = pretrained_model['weights_pruned']
-        else:
+    def init_model(model):
+        global best_acc
+        if not args.pretrained:
             model.weights_pruned = None
+        else:
+            pretrained_model = torch.load(args.pretrained)
+            best_acc = pretrained_model['acc']
+            load_state(model, pretrained_model['state_dict'])
+            if args.prune and ('weights_pruned' in pretrained_model.keys()):
+                model.weights_pruned = pretrained_model['weights_pruned']
+            else:
+                model.weights_pruned = None
+    best_acc = 0.0
+    init_model(model)
+    print(best_acc)
 
     if args.cuda:
         model.cuda()
@@ -347,12 +386,13 @@ if __name__=='__main__':
     def trainer(model, optimizer, criterion, epoch, logger): #for ADMM pruning
         return my_train(model, optimizer, criterion, epoch, args, train_loader, logger)
 
-    cur_epoch = 0
-    cur_loss = 0
-    cur_acc = 0
-    best_acc = 0
-    pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
-    if args.prune and not args.retrain:
+    def process_prune():
+        global best_acc
+        cur_epoch = 0
+        cur_loss = 0
+        cur_acc = 0
+        best_acc = 0
+        pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
         admm_params = None
         print('==> Start pruning ...')
         if not args.pretrained:
@@ -378,25 +418,34 @@ if __name__=='__main__':
                 'criterion': criterion
             }
 
-        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, admm_params=admm_params)
+        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, args.overall_pruning_ratio, admm_params=admm_params)
         if not args.admm:
-            for epoch in pbar:
-                if epoch % args.lr_epochs == 0:
-                    if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
-                        if args.learning_rate_list:
-                            adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
-                        else:
-                            adjust_learning_rate(optimizer, epoch)
-                    elif args.arch == 'HAR':
-                        # adjusted by ADAM
-                        pass
-                train(epoch)
-                cur_epoch = epoch
+            if args.sen_ana:
                 cur_loss, cur_acc, best_acc = test()
-                pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
+            else:
+                for epoch in pbar:
+                    if epoch % args.lr_epochs == 0:
+                        if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
+                            if args.learning_rate_list:
+                                adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                            else:
+                                adjust_learning_rate(optimizer, epoch)
+                        elif args.arch == 'HAR':
+                            # adjusted by ADAM
+                            pass
+                    train(epoch)
+                    cur_epoch = epoch
+                    cur_loss, cur_acc, best_acc = test()
+                    pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
         # test(evaluate=True)
         # prune_op.print_info()
-    else:
+
+    def process_train():
+        cur_epoch = 0
+        cur_loss = 0
+        cur_acc = 0
+        best_acc = 0
+        pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
         for epoch in pbar:
             if epoch % args.lr_epochs == 0:
                 if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
@@ -411,3 +460,30 @@ if __name__=='__main__':
             cur_epoch = epoch
             cur_loss, cur_acc, best_acc = test()
             pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
+
+    layer_sensitivity = []
+    if args.sen_ana:
+        args.sa = False
+        print('=> Start sensitivity analysis')
+        for node_idx in range(len(args.candidates_pruning_ratios)):
+            print('==> layer '+str(node_idx))
+            args.candidates_pruning_ratios = [0] * len(args.candidates_pruning_ratios)
+            layer_sensitivity.append({
+                'node': node_idx,
+                'pruning_ratios': [],
+                'accuracy': []
+            })
+            for i in range(10):
+                pruning_ratio = i * 0.1
+                if i != 0:
+                    args.candidates_pruning_ratios[node_idx] = pruning_ratio
+                    process_prune()
+                layer_sensitivity[-1]['pruning_ratios'].append('{:.2f}'.format(pruning_ratio))
+                layer_sensitivity[-1]['accuracy'].append(best_acc)
+                init_model(model)
+        plot_sensitivity(layer_sensitivity)
+    else:
+        if args.prune and not args.retrain:
+            process_prune()
+        else:
+            process_train()
