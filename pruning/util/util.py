@@ -14,7 +14,7 @@ import copy
 import logging
 import subprocess
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 from abc import abstractmethod
 from scipy.sparse import bsr_matrix

@@ -11,10 +11,10 @@ import subprocess
 import pathlib
 import fcntl
 import csv
+print(torch.cuda.device_count())
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import models
 
 from torchvision import datasets, transforms
@@ -81,7 +81,7 @@ def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
-            data, target = data.cuda(), target.cuda()
+            data, target = data.to(device), target.to(device)
         data, target = Variable(data.type(torch.float)), Variable(target)
         optimizer.zero_grad()
         output = model(data)
@@ -96,7 +96,7 @@ def train(epoch):
     if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
         for batch_idx, (data, target) in enumerate(validation_loader):
             if args.cuda:
-                data, target = data.cuda(), target.cuda()
+                data, target = data.to(device), target.to(device)
             data, target = Variable(data.type(torch.float)), Variable(target)
             optimizer.zero_grad()
             output = model(data)
@@ -202,7 +202,7 @@ def adjust_learning_rate(optimizer, epoch, new_learning_rate=None):
         return lr
 
 if __name__=='__main__':
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser = argparse.ArgumentParser(description='PyTorch Example')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
             help='input batch size for training (default: 128)')
     parser.add_argument('--test-batch-size', type=int, default=128, metavar='N',
@@ -243,6 +243,8 @@ if __name__=='__main__':
             help='set debug level')
     parser.add_argument('--candidates-pruning-ratios', action='store', nargs='+', type=float, default=[0, 0, 0, 0, 0],
             help='candidates of pruning ratios for weight pruning')
+    parser.add_argument('--gpus', action='store', nargs='+', type=int, default=[0],
+            help='gpu used to train')
     parser.add_argument('--learning_rate_list', action='store', nargs='+', type=float, default=None,
             help='learning rates of each learning step')
     parser.add_argument('--admm', action='store_true', default=False,
@@ -257,6 +259,8 @@ if __name__=='__main__':
             help='Learning rate step gamma (default: 0.7)')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
+    device = torch.device('cuda' if args.cuda else 'cpu')
+    print(torch.cuda.device_count())
 
     # check options
     if not (args.prune_target in [None, 'conv', 'ip']):
@@ -270,7 +274,7 @@ if __name__=='__main__':
         torch.cuda.manual_seed(args.seed)
 
     # load data
-    kwargs = {'num_workers': 2, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
     # generate the model
     if args.arch == 'LeNet_5' or args.arch == 'mnist':
@@ -339,13 +343,9 @@ if __name__=='__main__':
                 model.weights_pruned = pretrained_model['weights_pruned']
             else:
                 model.weights_pruned = None
+        model = nn.DataParallel(model, device_ids=args.gpus).to(device)
     best_acc = 0.0
     init_model(model)
-    print(best_acc)
-
-    if args.cuda:
-        model.cuda()
-
     print(model)
     param_dict = dict(model.named_parameters())
     params = []
@@ -367,6 +367,8 @@ if __name__=='__main__':
         optimizer = optim.Adam(params, lr=args.lr)
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
+
+    #optimizer = nn.DataParallel(optimizer, device_ids=[0,1,2,3])
 
     if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
         criterion = F.cross_entropy
@@ -420,7 +422,7 @@ if __name__=='__main__':
 
         prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, args.overall_pruning_ratio, admm_params=admm_params)
         if not args.admm:
-            if args.sen_ana:
+            if not args.sen_ana:
                 cur_loss, cur_acc, best_acc = test()
             else:
                 for epoch in pbar:

@@ -4,6 +4,7 @@ import librosa
 import warnings
 import pathlib
 import json
+import subprocess
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 from torch.utils.data.dataset import Dataset
@@ -71,6 +72,7 @@ class SpeechCommandsDataset(Dataset):
                 dct_coefficient_count=dct_coefficient_count)
 
             DOWNLOAD_URL = 'http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz'
+            subprocess.call('mkdir -p ~/.cache/speech_commands_v2', shell=True)
             FOLDER = pathlib.Path('~/.cache/speech_commands_v2').expanduser()
 
             audio_processor = AudioProcessor(
@@ -104,6 +106,8 @@ class SpeechCommandsDataset(Dataset):
                 data = data.tolist()
             elif arch == 'KWS':
                 data = data.tolist()
+            subprocess.call('mkdir -p ./data/', shell=True)
+            subprocess.call('mkdir -p ./data/'+arch+'/', shell=True)
             with open(path + "_data.json", "w") as fd:
                 json.dump(data, fd, indent=2)
             with open(path + "_label.json", "w") as fl:
