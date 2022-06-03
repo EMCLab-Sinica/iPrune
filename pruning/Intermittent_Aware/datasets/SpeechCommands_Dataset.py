@@ -76,7 +76,7 @@ class SpeechCommandsDataset(Dataset):
             FOLDER = pathlib.Path('~/.cache/speech_commands_v2').expanduser()
 
             audio_processor = AudioProcessor(
-                data_url=None, \
+                data_url=DOWNLOAD_URL, \
                 data_dir=FOLDER, \
                 silence_percentage=silence_percentage, \
                 unknown_percentage=unknown_percentage, \

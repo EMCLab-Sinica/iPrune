@@ -80,8 +80,7 @@ def save_state(model, acc):
 def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
-        if args.cuda:
-            data, target = data.to(device), target.to(device)
+        data, target = data.to(device), target.to(device)
         data, target = Variable(data.type(torch.float)), Variable(target)
         optimizer.zero_grad()
         output = model(data)
@@ -109,23 +108,6 @@ def train(epoch):
         prune_weight(model)
     return
 
-def my_train(model, optimizer, criterion, epoch, args, train_loader, logger):
-    model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data.type(torch.float)), Variable(target)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = criterion(output, target)
-        loss.backward()
-        optimizer.step()
-        if batch_idx % args.log_interval == 0:
-            logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
-    return
-
 @torch.no_grad()
 def test(evaluate=False):
     global best_acc
@@ -136,8 +118,7 @@ def test(evaluate=False):
     if args.prune:
         prune_weight(model)
     for data, target in test_loader:
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
+        data, target = data.to(device), target.to(device)
         data, target = Variable(data.type(torch.float)), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
@@ -163,8 +144,7 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
     correct = 0
 
     for data, target in test_loader:
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
+        data, target = data.to(device), target.to(device)
         data, target = Variable(data.type(torch.float)), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
@@ -247,16 +227,12 @@ if __name__=='__main__':
             help='gpu used to train')
     parser.add_argument('--learning_rate_list', action='store', nargs='+', type=float, default=None,
             help='learning rates of each learning step')
-    parser.add_argument('--admm', action='store_true', default=False,
-            help='w/ or w/o ADMM')
     parser.add_argument('--sa', action='store_true', default=False,
             help='w/ or w/o simulated annealling')
     parser.add_argument('--sen-ana', action='store_true', default=False,
             help='w/ or w/o sensitivity analysis')
     parser.add_argument('--overall-pruning-ratio', type=float, default=0.2, metavar='M',
             help='Overall pruning ratio (default: 0.2)')
-    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
-            help='Learning rate step gamma (default: 0.7)')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device('cuda' if args.cuda else 'cpu')
@@ -368,8 +344,6 @@ if __name__=='__main__':
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
 
-    #optimizer = nn.DataParallel(optimizer, device_ids=[0,1,2,3])
-
     if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
         criterion = F.cross_entropy
     else:
@@ -385,8 +359,6 @@ if __name__=='__main__':
 
     def evaluate_function(model, logger):
         return my_test(model, args, test_loader, criterion, logger)
-    def trainer(model, optimizer, criterion, epoch, logger): #for ADMM pruning
-        return my_train(model, optimizer, criterion, epoch, args, train_loader, logger)
 
     def process_prune():
         global best_acc
@@ -395,7 +367,6 @@ if __name__=='__main__':
         cur_acc = 0
         best_acc = 0
         pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
-        admm_params = None
         print('==> Start pruning ...')
         if not args.pretrained:
             print('==> ERROR: Please assign the pretrained model')
@@ -413,32 +384,24 @@ if __name__=='__main__':
         elif args.arch == 'SqueezeNet':
             input_shape = (3, 32, 32)
 
-        if args.admm:
-            admm_params = {
-                'train_function': trainer,
-                'optimizer': optimizer,
-                'criterion': criterion
-            }
-
-        prune_op = Prune_Op(model, train_loader, criterion, input_shape, args, evaluate_function, args.overall_pruning_ratio, admm_params=admm_params)
-        if not args.admm:
-            if not args.sen_ana:
+        prune_op = Prune_Op(model, criterion, input_shape, args, evaluate_function, args.overall_pruning_ratio)
+        if not args.sen_ana:
+            cur_loss, cur_acc, best_acc = test()
+        else:
+            for epoch in pbar:
+                if epoch % args.lr_epochs == 0:
+                    if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
+                        if args.learning_rate_list:
+                            adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                        else:
+                            adjust_learning_rate(optimizer, epoch)
+                    elif args.arch == 'HAR':
+                        # adjusted by ADAM
+                        pass
+                train(epoch)
+                cur_epoch = epoch
                 cur_loss, cur_acc, best_acc = test()
-            else:
-                for epoch in pbar:
-                    if epoch % args.lr_epochs == 0:
-                        if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
-                            if args.learning_rate_list:
-                                adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
-                            else:
-                                adjust_learning_rate(optimizer, epoch)
-                        elif args.arch == 'HAR':
-                            # adjusted by ADAM
-                            pass
-                    train(epoch)
-                    cur_epoch = epoch
-                    cur_loss, cur_acc, best_acc = test()
-                    pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
+                pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
         # test(evaluate=True)
         # prune_op.print_info()
 

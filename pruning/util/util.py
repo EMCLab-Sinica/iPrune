@@ -829,89 +829,11 @@ class MaskMaker():
                 masks.append(torch.zeros(shape, dtype=torch.bool))
         return masks
 
-class ADMMPruner():
-    def __init__(self, model, args, trainer, criterion, optimizer, input_shape, sparsities_maker, mask_maker, row=1e-4, n_iterations=5, n_training_epochs=10):
-        self.model_ = model
-        self.args_ = args
-        self.trainer_ = trainer
-        self.criterion_ = criterion
-        self.optimizer_ = optimizer
-        self.row_ = row
-        self.n_iter_ = n_iterations
-        self.n_training_epochs_ = n_training_epochs
-        self.mask_maker_ = mask_maker
-        self.sparsities_maker_ = sparsities_maker
-
-        self.patch_optimizer(self, self.callback_)
-
-    def callback_(self):
-        # callback function to do additonal optimization, refer to the deriatives of Formula (7)
-        node_idx = 0
-        for m in self.model_.modules():
-            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                m.weight.data -= self.row_ * \
-                    (m.weight.data - self.Z[node_idx] + self.U[node_idx])
-                node_idx += 1
-
-    def patch_optimizer(self, *tasks):
-        def patch_step(old_step):
-            def new_step(_, *args, **kwargs):
-                for task in tasks:
-                    if callable(task):
-                        task()
-                output = old_step(*args, **kwargs)
-                return output
-            return new_step
-        if self.optimizer_ is not None:
-            self.optimizer_.step = types.MethodType(patch_step(self.optimizer_.step), self.optimizer_)
-
-    def projection(self, weight, wrapper):
-        wrapper_cpy = copy.deepcopy(wrapper)
-        wrapper_cpy.weight.data = weight
-        sparsity = self.sparsities_maker_.get_sparsities()
-        mask = self.mask_maker_.get_masks(sparsity)
-        return prune_weight_layer(wrapper_cpy, mask)
-
-    def compresss(self):
-        logger_.info('Start AMDD pruning ...')
-        # initiaze Z, U
-        # Z_i^0 = W_i^0
-        # U_i^0 = 0
-        self.Z = []
-        self.U = []
-        for m in self.model_.modules():
-            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                z = m.weight.data
-                self.Z.append(z)
-                self.U.append(torch.zeros_like(z))
-
-        # Loss = cross_entropy +  l2 regulization + \Sum_{i=1}^N \row_i ||W_i - Z_i^k + U_i^k||^2
-        # optimization iteration
-        for k in range(self.n_iter_):
-            logger_.info('ADMM iteration : %d', k)
-
-            # step 1: optimize W with AdamOptimizer
-            for epoch in trange(1, self.n_training_epochs_+1):
-                self.trainer_(self.model_, optimizer=self.optimizer_, criterion=self.criterion_, epoch=epoch, logger=logger_)
-
-            # step 2: update Z, U
-            # Z_i^{k+1} = projection(W_i^{k+1} + U_i^k)
-            # U_i^{k+1} = U^k + W_i^{k+1} - Z_i^{k+1}
-            node_idx = 0
-            for m in enumerate(self.model_.modules()):
-                if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                    z = m.weight.data + self.U[node_idx]
-                    self.Z[node_idx] = self.projection(z, m)
-                    torch.cuda.empty_cache()
-                    self.U[node_idx] = self.U[node_idx] + m.weight.data - self.Z[node_idx]
-        return self.model_
-
 class Prune_Op():
-    def __init__(self, model, train_loader, criterion, input_shape, args, evaluate_function, overall_pruning_ratio=0.2, admm_params=None, evaluate=False):
+    def __init__(self, model, criterion, input_shape, args, evaluate_function, overall_pruning_ratio=0.2, evaluate=False):
         # args.group: [n_filter, n_channel]
         global logger_
         logger_ = set_logger(args)
-        self.train_loader = train_loader
         self.criterion = criterion
         self.args = args
         self.input_shape = input_shape
@@ -926,14 +848,9 @@ class Prune_Op():
         self.mask_maker = MaskMaker(model, args, input_shape, metrics_maker=self.metrics_maker)
         if args.sa:
             self.sparsities_maker = SimulatedAnnealing(model, start_temp=100, stop_temp=20, cool_down_rate=0.9, perturbation_magnitude=0.35, target_sparsity=overall_pruning_ratio, args=args, evaluate_function=evaluate_function, input_shape=self.input_shape, output_shapes=self.output_shapes, mask_maker=self.mask_maker, metrics_maker=self.metrics_maker)
-        if not evaluate:
-            if args.sa:
-                if args.admm and admm_params != None:
-                    pruner = ADMMPruner(model=model, args=args, trainer=admm_params['train_function'], criterion=admm_params['criterion'], optimizer=admm_params['optimizer'], input_shape=self.input_shape, mask_maker=self.mask_maker, sparsities_maker=self.sparsities_maker)
-                    model = pruner.compresss()
-                model.weights_pruned = self.mask_maker.get_masks(self.sparsities_maker.get_sparsities())
-            else:
-                model.weights_pruned = self.mask_maker.get_masks()
+            model.weights_pruned = self.mask_maker.get_masks(self.sparsities_maker.get_sparsities())
+        else:
+            model.weights_pruned = self.mask_maker.get_masks()
 
         self.weights_pruned = model.weights_pruned
         self.model = model

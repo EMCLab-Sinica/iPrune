@@ -1,12 +1,11 @@
 Model='HAR'
 PRUNE_METHOD=$1
 COMMON_FLAGS='--arch '$Model' --batch-size 600 --test-batch-size 600 --lr 0.0001 --epochs 500'
-CANDIDATES_PRUNING_RATIOS='0.25 0.3 0.35 0.4'
+CANDIDATES_PRUNING_RATIOS='0 0 0 0'
 MY_DEBUG='--debug 1' # -1: none, 0: info, 1: debug
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --overall-pruning-ratio 0.2'
 SENSITIVITY_ANALYSIS_FLAGS='--arch '$Model' --batch-size 600 --test-batch-size 600 --lr 0.0001 --epochs 200 --prune '$PRUNE_METHOD' --sen-ana'
 			    # intermittent/energy
-'''
 # original training -- 92.50%
 python main.py $COMMON_FLAGS
 '''
@@ -15,7 +14,6 @@ python main.py $SENSITIVITY_ANALYSIS_FLAGS \
 	--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
 	--stage 0 \
 	--pretrained saved_models/HAR.origin.pth.tar
-'''
 # 25% pruned -- 92.16/92.20
 python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
 	--stage 0 \
