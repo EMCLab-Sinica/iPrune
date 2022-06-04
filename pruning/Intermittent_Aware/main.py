@@ -11,7 +11,6 @@ import subprocess
 import pathlib
 import fcntl
 import csv
-print(torch.cuda.device_count())
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
@@ -94,8 +93,7 @@ def train(epoch):
             prune_weight(model)
     if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
         for batch_idx, (data, target) in enumerate(validation_loader):
-            if args.cuda:
-                data, target = data.to(device), target.to(device)
+            data, target = data.to(device), target.to(device)
             data, target = Variable(data.type(torch.float)), Variable(target)
             optimizer.zero_grad()
             output = model(data)
@@ -225,6 +223,8 @@ if __name__=='__main__':
             help='candidates of pruning ratios for weight pruning')
     parser.add_argument('--gpus', action='store', nargs='+', type=int, default=[0],
             help='gpu used to train')
+    parser.add_argument('--visible-gpus', action='store', default=None,
+            help='visible gpus on the server')
     parser.add_argument('--learning_rate_list', action='store', nargs='+', type=float, default=None,
             help='learning rates of each learning step')
     parser.add_argument('--sa', action='store_true', default=False,
@@ -234,7 +234,9 @@ if __name__=='__main__':
     parser.add_argument('--overall-pruning-ratio', type=float, default=0.2, metavar='M',
             help='Overall pruning ratio (default: 0.2)')
     args = parser.parse_args()
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.visible_gpus
     args.cuda = not args.no_cuda and torch.cuda.is_available()
+    print(torch.cuda.device_count())
     device = torch.device('cuda' if args.cuda else 'cpu')
     print(torch.cuda.device_count())
 
@@ -385,14 +387,14 @@ if __name__=='__main__':
             input_shape = (3, 32, 32)
 
         prune_op = Prune_Op(model, criterion, input_shape, args, evaluate_function, args.overall_pruning_ratio)
-        if not args.sen_ana:
+        if args.sen_ana:
             cur_loss, cur_acc, best_acc = test()
         else:
             for epoch in pbar:
                 if epoch % args.lr_epochs == 0:
                     if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
                         if args.learning_rate_list:
-                            adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                            adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int((epoch - 1) / args.lr_epochs)])
                         else:
                             adjust_learning_rate(optimizer, epoch)
                     elif args.arch == 'HAR':
@@ -415,7 +417,7 @@ if __name__=='__main__':
             if epoch % args.lr_epochs == 0:
                 if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
                     if args.learning_rate_list and epoch % args.lr_epochs == 0:
-                        adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int(epoch / args.lr_epochs)])
+                        adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int((epoch - 1) / args.lr_epochs)])
                     else:
                         adjust_learning_rate(optimizer, epoch)
                 elif args.arch == 'SqueezeNet' or args.arch == 'HAR':
