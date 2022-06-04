@@ -34,7 +34,7 @@ PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --overall-pruning-r
 SENSITIVITY_ANALYSIS_FLAGS='--arch '$Model' --batch-size 256 --test-batch-size 256 --lr 0.0005 --epochs 100 --lr-epochs 50 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST' --prune '$PRUNE_METHOD' --sen-ana'
 
 """
-origin: xx%
+origin: 77.05%
 |stage|intermittent prune|energy prune|
 |0|||
 |1|||
@@ -43,9 +43,9 @@ origin: xx%
 |4|||
 """
 
-if [ $PRUNE_METHOD == '' ]; then
+if [[ $PRUNE_METHOD == '' ]]; then
 	python main.py $COMMON_FLAGS
-elif [ $STAGE == '0' ]; then
+elif [[ $STAGE == '0' ]]; then
 	# sensitivity analysis
 	python main.py $SENSITIVITY_ANALYSIS_FLAGS \
 		--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
@@ -55,7 +55,7 @@ elif [ $STAGE == '0' ]; then
 		--stage 0 \
 		--pretrained saved_models/$Model.origin.pth.tar
 else
-	if [ $SENA = 'ON' ]; then
+	if [[ $SENA = 'ON' ]]; then
 		# sensitivity analysis
 		python main.py $SENSITIVITY_ANALYSIS_FLAGS \
 			--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \

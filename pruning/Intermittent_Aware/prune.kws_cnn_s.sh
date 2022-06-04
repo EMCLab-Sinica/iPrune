@@ -40,12 +40,12 @@ origin: 88.23%
 |1|87.73|87.16|
 |2|87.38|87.03|
 |3|85.95|85.66|
-|4|||
+|4|84.76|82.09|
 """
 
-if [ $PRUNE_METHOD == '' ]; then
+if [[ $PRUNE_METHOD == '' ]]; then
 	python main.py $COMMON_FLAGS
-elif [ $STAGE == '0' ]; then
+elif [[ $STAGE == '0' ]]; then
 	# sensitivity analysis
 	python main.py $SENSITIVITY_ANALYSIS_FLAGS \
 		--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
@@ -55,7 +55,7 @@ elif [ $STAGE == '0' ]; then
 		--stage 0 \
 		--pretrained saved_models/$Model.origin.pth.tar
 else
-	if [ $SENA = 'ON' ]; then
+	if [[ $SENA = 'ON' ]]; then
 		# sensitivity analysis
 		python main.py $SENSITIVITY_ANALYSIS_FLAGS \
 			--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
