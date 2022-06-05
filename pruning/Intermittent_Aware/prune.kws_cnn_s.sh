@@ -37,23 +37,26 @@ SENSITIVITY_ANALYSIS_FLAGS='--arch '$Model' --batch-size 512 --test-batch-size 5
 origin: 88.23%
 |stage|intermittent prune|energy prune|
 |0|87.93|88.04|
-|1|87.73|87.16|
-|2|87.38|87.03|
-|3|85.95|85.66|
-|4|84.76|82.09|
+|1|87.73|87.32|
+|2|87.38|87.46|
+|3|85.95|85.85|
+|4|84.76|85.54|
 """
 
 if [[ $PRUNE_METHOD == '' ]]; then
 	python main.py $COMMON_FLAGS
 elif [[ $STAGE == '0' ]]; then
-	# sensitivity analysis
-	python main.py $SENSITIVITY_ANALYSIS_FLAGS \
-		--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
-		--stage 0 \
-		--pretrained saved_models/$Model.origin.pth.tar
-	python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
-		--stage 0 \
-		--pretrained saved_models/$Model.origin.pth.tar
+	if [[ $SENA = 'ON' ]]; then
+		# sensitivity analysis
+		python main.py $SENSITIVITY_ANALYSIS_FLAGS \
+			--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
+			--stage 0 \
+			--pretrained saved_models/$Model.origin.pth.tar
+	else
+		python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
+			--stage 0 \
+			--pretrained saved_models/$Model.origin.pth.tar
+	fi
 else
 	if [[ $SENA = 'ON' ]]; then
 		# sensitivity analysis
@@ -63,6 +66,7 @@ else
 			--pretrained saved_models/$PRUNE_METHOD/$Model/stage_$(($STAGE - 1)).pth.tar
 	else
 		python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
+			--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
 			--stage $STAGE \
 			--pretrained saved_models/$PRUNE_METHOD/$Model/stage_$(($STAGE - 1)).pth.tar
 	fi
