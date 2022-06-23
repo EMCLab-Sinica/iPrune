@@ -289,8 +289,14 @@ void my_matrix_mpy_q15_to_vm(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, 
     matrix_mpy_params.srcACols = A_cols;
     matrix_mpy_params.srcBRows = B_rows;
     matrix_mpy_params.srcBCols = B_cols;
+#if ENABLE_COUNTERS
+    start_cpu_counter();
+#endif
     // Replace "my_memcpy_to_param" with the function of copying param to cpu buffer OR accumulating the partial in cpu_buffer
     msp_status status = msp_matrix_mpy_q15(&matrix_mpy_params, pSrcA, pSrcB, pDst, my_accumulate_to_vm, param, offset_in_word, values_to_preserve, mask, n_keep_state_bits);
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::accelerator_invoc);
+#endif
     my_checkStatus(status);
 #else
     arm_matrix_instance_q15 A, B, C;

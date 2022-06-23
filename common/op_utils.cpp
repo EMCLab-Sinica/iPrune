@@ -292,7 +292,13 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
                 my_printf_debug("output_w: %d" NEWLINE, output_w);
                 my_printf_debug("filter_idx: %d" NEWLINE, filter_idx);
                 src = cpu_buffer + vm_offset * output_tile_c;
+#if ENABLE_COUNTERS
+                start_cpu_counter();
+#endif
                 my_memcpy_to_param(output, dst, src, real_chunk_len * sizeof(int16_t), 0);
+#if ENABLE_COUNTERS
+                stop_cpu_counter(&Counters::dma_write_ofm);
+#endif
                 my_printf_debug(NEWLINE "Output offset %d" NEWLINE, dst);
                 my_printf_debug("Preserved chunk" NEWLINE);
                 dump_matrix_debug(src, real_chunk_len, ValueInfo(output));

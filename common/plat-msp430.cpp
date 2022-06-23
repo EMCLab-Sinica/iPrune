@@ -19,9 +19,9 @@
 #include "Tools/dvfs.h"
 
 #ifdef __MSP430__
-#pragma DATA_SECTION(".nvm2")
+#define DATA_SECTION_NVM _Pragma("DATA_SECTION(\".nvm2\")")
 #endif
-static Counters counters_data[COUNTERS_LEN];
+DATA_SECTION_NVM Counters counters_data[COUNTERS_LEN];
 Counters *counters(uint16_t idx) {
     return counters_data + idx;
 }
@@ -120,7 +120,7 @@ void copy_samples_data(void) {
 #define GPIO_RESET_PIN GPIO_PIN5
 #endif
 
-#define STABLE_POWER_ITERATIONS 10
+#define STABLE_POWER_ITERATIONS 1
 
 void IntermittentCNNTest() {
     GPIO_setAsOutputPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
@@ -150,7 +150,7 @@ void IntermittentCNNTest() {
         notify_model_finished();
 
         // for energy profiling
-        // while(GPIO_getInputPinValue(GPIO_ENERGY_PROFILE_PORT, GPIO_ENERGY_PROFILE_PIN));
+        while(GPIO_getInputPinValue(GPIO_ENERGY_PROFILE_PORT, GPIO_ENERGY_PROFILE_PIN));
 
         for (uint8_t idx = 0; idx < STABLE_POWER_ITERATIONS; idx++) {
             run_cnn_tests(1);

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include "data.h"
 
-#define ENABLE_COUNTERS 0
+#define ENABLE_COUNTERS 1
 
 /**********************************
  *        Data structures         *
@@ -145,16 +145,12 @@ static_assert(sizeof(Model) == 10 + NUM_SLOTS * (2 + INDIRECT_RECOVERY * (2 + TU
 struct Counters {
     uint32_t power_counters;
     uint32_t dma_invocations;
+    uint32_t dma_read_filter;
+    uint32_t dma_read_input;
+    uint32_t dma_write_ofm;
+    uint32_t accelerator_invoc;
+    uint32_t indexing;
     uint32_t dma_bytes;
-
-    uint32_t embedding;
-    uint32_t stripping;
-    uint32_t overflow_handling;
-
-    uint32_t state_query;
-    uint32_t table_updates;
-    uint32_t table_preservation;
-    uint32_t table_loading;
 
     uint32_t progress_seeking;
 };

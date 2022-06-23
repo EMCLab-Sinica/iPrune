@@ -83,6 +83,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     MY_ASSERT(n_tiles);
     uint16_t i = 0, tile = 0, j = 0, j_with_footprints = 0;
 #if SPARSE
+#if ENABLE_COUNTERS
+    start_cpu_counter();
+#endif
     uint16_t cols[MAX_N_COL_FC] = {0};
     uint16_t rows[MAX_ROW_LEN_FC] = {0};
     int16_t first_tile_indices[MAX_N_FILTER_GROUP] = {0};
@@ -90,6 +93,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     my_memcpy_from_param_row(model, rows, B, 0, n_rows * sizeof(int16_t));
     int16_t n_filter_group = output->dims[1] / OP_FILTERS;
     my_memcpy_from_param_first_tile_index(model, first_tile_indices, B, 0, n_filter_group * sizeof(int16_t));
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::indexing);
+#endif
     //for(int idx = 0; idx < n_filter_group; ++idx) {
     //  my_printf("%d ", first_tile_indices[idx]);
     //}
@@ -123,7 +129,13 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     cur_row_val = rows[row_index - 1];
     next_row_val = rows[row_index];
     n_cols = next_row_val - cur_row_val;
+#if ENABLE_COUNTERS
+    start_cpu_counter();
+#endif
     my_memcpy_from_param_col(model, cols, B, rows[row_index - 1], n_cols * sizeof(int16_t));
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::indexing);
+#endif
     //for(int idx = 0; idx < n_cols; ++idx) {
     //    my_printf("%d ", cols[idx]);
     //}
@@ -140,6 +152,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
 #else // INTERMITTENT
 #if SPARSE
+#if ENABLE_COUNTERS
+    start_cpu_counter();
+#endif
     while(!n_cols && row_index * flags->extra.gemm.tile_channel < B->dims[0]) {
         cur_row_val = next_row_val;
         next_row_val = rows[row_index + 1];
@@ -147,6 +162,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         row_index++;
     }
     my_memcpy_from_param_col(model, cols, B, rows[row_index - 1], n_cols * sizeof(int16_t));
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::indexing);
+#endif
     //for(int idx = 0; idx < n_cols; ++idx) {
     //    my_printf("%d ", cols[idx]);
     //}
@@ -181,7 +199,13 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
         const uint16_t tile_channels = MIN_VAL(flags->extra.gemm.tile_channel, B->dims[0] - i);
         const uint16_t extended_tile_channels = tile_channels + 2;
         {
+#if ENABLE_COUNTERS
+            start_cpu_counter();
+#endif
             my_memcpy_from_param(model, buffer_a, A, i, tile_channels * sizeof(uint16_t));
+#if ENABLE_COUNTERS
+            stop_cpu_counter(&Counters::dma_read_input);
+#endif
         }
         buffer_a[tile_channels] = -0x8000;
         buffer_a[tile_channels + 1] = 0;
@@ -223,10 +247,16 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             filter_ptr += buffer_size;
 #else // SPARSE
             for (uint16_t row = 0; row < tile_channels; row++) {
+#if ENABLE_COUNTERS
+                start_cpu_counter();
+#endif
                 // Load the # of filters in a weight tile per DMA
                 my_memcpy_from_param(model, filter_ptr,
                           B, (i + row) * B->dims[1] + j,
                           tile_width * sizeof(uint16_t));
+#if ENABLE_COUNTERS
+                stop_cpu_counter(&Counters::dma_read_filter);
+#endif
                 filter_ptr += full_tile_width;
             }
 #endif // SPARSE
@@ -238,7 +268,13 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             if (tile == 0) {
 #endif // SPARSE
                 for (uint16_t idx = 0; idx < values_to_preserve; idx++) {
+#if ENABLE_COUNTERS
+                start_cpu_counter();
+#endif
                     filter_ptr[idx] = -static_cast<int32_t>(get_q15_param(model, C, idx + j)) / A->scale.toFloat();
+#if ENABLE_COUNTERS
+                stop_cpu_counter(&Counters::dma_read_filter);
+#endif
                 }
             }
             my_printf_debug("j: %d" NEWLINE, j);
@@ -287,6 +323,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // SPARSE
         }
 #if SPARSE
+#if ENABLE_COUNTERS
+        start_cpu_counter();
+#endif
         n_cols = 0;
         cur_n_cols = 0;
         while(!n_cols && row_index * flags->extra.gemm.tile_channel < B->dims[0]) {
@@ -309,13 +348,22 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             tile = row_index;
             j = j_with_footprints = 0;
         }
+#if ENABLE_COUNTERS
+        stop_cpu_counter(&Counters::indexing);
+#endif
 #else // SPARSE
         j = j_with_footprints = 0;
         i += flags->extra.gemm.tile_channel, tile++;
 #endif // SPARSE
     }
 #if STABLE_POWER
+#if ENABLE_COUNTERS
+    start_cpu_counter();
+#endif
     preserve_output(model, node, output, 0, 0, 0, 0, 0, 0);
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::dma_write_ofm);
+#endif
 #endif // STABLE_POWER
 
 #if INTERMITTENT

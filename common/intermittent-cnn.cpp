@@ -127,30 +127,14 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
     int16_t max = INT16_MIN;
     uint16_t u_ans;
     uint8_t ans_len = sizeof(first_sample_outputs) / sizeof(float);
-#if JAPARI
-    ans_len = extend_for_footprints(ans_len);
-#endif
     uint8_t buffer_len = MIN_VAL(output_node->dims[1], ans_len);
     if(!output_node->dims[1])
         buffer_len = MIN_VAL(output_node->dims[0], ans_len);
     my_memcpy_from_param(model, lea_buffer, output_node, 0, buffer_len * sizeof(int16_t));
 
-#if STATEFUL
-    start_cpu_counter();
-    for (uint8_t idx = BATCH_SIZE - 1; idx < buffer_len; idx += BATCH_SIZE) {
-        strip_state(lea_buffer + idx);
-    }
-    stop_cpu_counter(&Counters::stripping);
-#endif
-
     if (sample_idx == 0) {
         for (uint8_t buffer_idx = 0, ofm_idx = 0; buffer_idx < buffer_len; buffer_idx++) {
             // int16_t got_q15 = lea_buffer[buffer_idx];
-#if JAPARI
-            if (offset_has_state(buffer_idx)) {
-                check_footprint(got_q15);
-            } else
-#endif
             {
                 // float got_real = q15_to_float(got_q15, ValueInfo(output_node), nullptr, false);
                 // float expected = first_sample_outputs[ofm_idx];
@@ -164,9 +148,6 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
     }
 
     my_max_q15(lea_buffer, buffer_len, &max, &u_ans);
-#if JAPARI
-    u_ans = u_ans / (BATCH_SIZE + 1) * BATCH_SIZE + u_ans % (BATCH_SIZE + 1);
-#endif
     *ansptr = u_ans;
 #endif
 }
@@ -201,16 +182,12 @@ static void print_results(const ParameterInfo *output_node) {
     uint32_t total_dma_bytes = 0, total_overhead = 0;
     my_printf(NEWLINE "Power counters:      "); print_counters<&Counters::power_counters>();
     my_printf(NEWLINE "DMA invocations:     "); print_counters<&Counters::dma_invocations>();
+    my_printf(NEWLINE "DMA read of filter:  "); print_counters<&Counters::dma_read_filter>();
+    my_printf(NEWLINE "DMA read of input:   "); print_counters<&Counters::dma_read_input>();
+    my_printf(NEWLINE "DMA write of ofm:    "); print_counters<&Counters::dma_write_ofm>();
+    my_printf(NEWLINE "LEA invocations:     "); print_counters<&Counters::accelerator_invoc>();
+    my_printf(NEWLINE "Indexing:            "); print_counters<&Counters::indexing>();
     my_printf(NEWLINE "DMA bytes:           "); total_dma_bytes = print_counters<&Counters::dma_bytes>();
-    // state-embedding overheads
-    my_printf(NEWLINE "Embeddings:          "); total_overhead += print_counters<&Counters::embedding>();
-    my_printf(NEWLINE "Strippings:          "); total_overhead += print_counters<&Counters::stripping>();
-    my_printf(NEWLINE "Overflow handling:   "); total_overhead += print_counters<&Counters::overflow_handling>();
-    // state-assignment overheads
-    my_printf(NEWLINE "State queries:       "); total_overhead += print_counters<&Counters::state_query>();
-    my_printf(NEWLINE "Table updates:       "); total_overhead += print_counters<&Counters::table_updates>();
-    my_printf(NEWLINE "Table preservation:  "); total_overhead += print_counters<&Counters::table_preservation>();
-    my_printf(NEWLINE "Table loading:       "); total_overhead += print_counters<&Counters::table_loading>();
     // recovery overheads
     my_printf(NEWLINE "Progress seeking:    "); total_overhead += print_counters<&Counters::progress_seeking>();
 

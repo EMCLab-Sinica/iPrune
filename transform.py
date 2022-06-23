@@ -1155,6 +1155,11 @@ struct Node;
     # data
     for idx, name in enumerate(other_flags):
         output_h.write(f'#define {name} {2**idx}\n')
+    output_h.write(f'#ifdef __MSP430__ \n')
+    output_h.write(f'#define DATA_SECTION_NVM _Pragma("DATA_SECTION(\\".nvm2\\")")\n')
+    output_h.write(f'#else\n')
+    output_h.write(f'#define DATA_SECTION_NVM\n')
+    output_h.write(f'#endif\n')
 
     def hex_str(arr):
         return '  ' + ', '.join([f'0x{num:02x}' for num in arr]) + ',\n'
@@ -1166,7 +1171,7 @@ extern const uint8_t * const {var_name};
 ''')
         # #define with _Pragma seems to be broken :/
         output_c.write(f'''
-const uint8_t _{var_name}[{len(data)}] = {{
+DATA_SECTION_NVM const uint8_t _{var_name}[{len(data)}] = {{
 ''')
         n_pieces, remaining = divmod(len(data), 16)
         for idx in range(n_pieces):

@@ -204,14 +204,26 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
 #if SPARSE
             // XXX: Need re-checking
             uint16_t cur_filter_src_offset = filter_src_offset + (conv_params->filter_idx % output_tile_c + idx) * filter_offset;
+#if ENABLE_COUNTERS
+            start_cpu_counter();
+#endif // ENABLE_COUNTERS
             my_memcpy_from_param(conv_params->model, filter_dest_ptr, conv_params->conv_filter, cur_filter_src_offset, buffer_size);
+#if ENABLE_COUNTERS
+            stop_cpu_counter(&Counters::dma_read_filter);
+#endif // ENABLE_COUNTERS
 #else // SPARSE
+#if ENABLE_COUNTERS
+            start_cpu_counter();
+#endif // ENABLE_COUNTERS
             uint16_t filter_src_offset = (conv_params->filter_idx + idx) * filter_len;
             // only load one vector
             int16_t *filter_dest_ptr = filter_tmp;
             uint16_t cur_filter_src_offset = filter_src_offset + conv_params->kX * conv_params->kW * conv_params->CHANNEL + conv_params->input_tile_c_offset;
             cur_filter_src_offset += conv_params->kY * conv_params->CHANNEL;
             my_memcpy_from_param(conv_params->model, filter_dest_ptr, conv_params->conv_filter, cur_filter_src_offset, buffer_size);
+#if ENABLE_COUNTERS
+            stop_cpu_counter(&Counters::dma_read_filter);
+#endif // ENABLE_COUNTERS
 #endif // SPARSE
             {
                 // XXX: why is this needed? Should already be zero with my_fill_q15 above
@@ -227,7 +239,13 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
                 // If the dividend is negative, the quotient is wrong
                 int16_t bias_val = 0;
                 if (conv_params->conv_bias) {
+#if ENABLE_COUNTERS
+                    start_cpu_counter();
+#endif // ENABLE_COUNTERS
                     bias_val = -static_cast<int32_t>(get_q15_param(conv_params->model, conv_params->conv_bias, conv_params->filter_idx + idx)) / conv_params->conv_input->scale.toFloat();
+#if ENABLE_COUNTERS
+                    stop_cpu_counter(&Counters::dma_read_filter);
+#endif // ENABLE_COUNTERS
                 }
                 filter_tmp[conv_params->filter_offset - 1] = bias_val;
             }
@@ -432,7 +450,13 @@ static void handle_conv_inner_loop(Model *model, ConvTaskParams *conv_params) {
             int16_t *dest_addr = matrix_mpy_results - conv_params->tile_w * cur_input_tile_c;
             uint32_t src_addr = input_src_offset;
             for(int32_t w = w_start; w <= w_end; ++w) {
+#if ENABLE_COUNTERS
+                start_cpu_counter();
+#endif // ENABLE_COUNTERS
                 load_input_vector(src_addr, dest_addr, cur_input_tile_c, conv_params);
+#if ENABLE_COUNTERS
+                stop_cpu_counter(&Counters::dma_read_input);
+#endif // ENABLE_COUNTERS
                 dest_addr += cur_input_tile_c;
                 src_addr += cur_input_channel;
             }
@@ -974,11 +998,17 @@ RECOVERY:
     MY_ASSERT(conv_params->input_tile_c_index <= conv_params->n_tiles_c);
 #else // INTERMITTENT
 #if SPARSE
+#if ENABLE_COUNTERS
+        start_cpu_counter();
+#endif
     next_nonzero_value(node, conv_params, &col_val);
     if(conv_params->n_cols) {
         // XXX: add a checker to verify the result
         my_memcpy_from_param_col(model, COL_VALS, conv_filter, conv_params->cur_row_val, conv_params->n_cols * sizeof(int16_t));
     }
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::indexing);
+#endif
     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
 #if STABLE_POWER
@@ -1081,12 +1111,13 @@ RECOVERY:
                             }
                             col_val = COL_VALS[conv_params->cur_n_cols];
                             my_printf_debug("col_val: %d" NEWLINE, col_val);
+                            my_printf_debug("conv_params->input_tile_c_index: %d" NEWLINE, conv_params->input_tile_c_index);
                             if(col_val / (conv_params->kH * conv_params->kW) != conv_params->input_tile_c_index) {
                                 conv_params->input_tile_c_index = col_val / (conv_params->kH * conv_params->kW);
                                 conv_params->cached_input_h = conv_params->input_h_first - 1;
                                 conv_params->cached_input_w = conv_params->input_w_first - 1;
                                 conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
-                                my_printf_debug("Swap tile_c !" NEWLINE);
+                                my_printf_debug("Swap tile_c !" NEWLINE "input_tile_c: %d" NEWLINE, conv_params->input_tile_c_offset);
                             }
                             conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
                             conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
@@ -1156,12 +1187,15 @@ RECOVERY:
                     }
                     conv_params->cur_n_cols = 0;
                     col_val = COL_VALS[conv_params->cur_n_cols];
+                    my_printf_debug("col_val: %d" NEWLINE, col_val);
                     conv_params->kY = (col_val % (conv_params->kW * conv_params->kH)) / conv_params->kH;
                     conv_params->kX = (col_val % (conv_params->kW * conv_params->kH)) % conv_params->kH;
                     conv_params->cached_filter_idx = conv_params->cached_input_tile_c_offset = -1;
                     conv_params->cached_kX = conv_params->cached_kY = -1;
-#endif // SPARSE
+                    conv_params->input_tile_c_index = col_val / (conv_params->kW * conv_params->kH);
+#else
                     conv_params->input_tile_c_index = 0;
+#endif // SPARSE
                     conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
                     conv_params->cached_input_h = conv_params->input_h_first - 1;
                     my_printf_debug("Swap tile_h !" NEWLINE);
@@ -1183,6 +1217,9 @@ RECOVERY:
         my_printf_debug("Finish output channel [%d, %d)" NEWLINE, conv_params->filter_idx,
                     conv_params->filter_idx + conv_params->flags->extra.conv.output_tile_c);
 #if SPARSE
+#if ENABLE_COUNTERS
+    start_cpu_counter();
+#endif
         // FIXME: handle the issues if the entire row is pruned
         conv_params->n_cols = conv_params->cur_n_cols = 0;
         next_nonzero_value(node, conv_params, &col_val);
@@ -1194,6 +1231,9 @@ RECOVERY:
         } else {
             goto EXIT_LAYER;
         }
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::indexing);
+#endif
 #if HAWAII
         // commit model for sub_layer
         conv_params->model->sub_layer_idx = conv_params->filter_tile_index * sub_layers_in_a_filter_tile;
