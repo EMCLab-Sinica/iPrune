@@ -302,7 +302,13 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 #endif // STABLE_POWER
             my_printf_debug("output_offset=%d" NEWLINE, output_offset);
 #if HAWAII
+#if ENABLE_COUNTERS
+            start_cpu_counter();
+#endif
             hawaii_record_footprints(model, values_to_preserve);
+#if ENABLE_COUNTERS
+            stop_cpu_counter(&Counters::dma_write_fp);
+#endif
 #endif
 #if SPARSE
             cur_n_cols++;

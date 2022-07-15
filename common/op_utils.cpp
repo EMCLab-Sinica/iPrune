@@ -304,7 +304,13 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
                 dump_matrix_debug(src, real_chunk_len, ValueInfo(output));
                 vm_offset++;
 #if HAWAII
+#if ENABLE_COUNTERS
+                start_cpu_counter();
+#endif
                 hawaii_record_footprints(model, real_chunk_len);
+#if ENABLE_COUNTERS
+                stop_cpu_counter(&Counters::dma_write_fp);
+#endif
 #endif
                 chunk_offset = 0;
             }
@@ -320,9 +326,21 @@ void preserve_output(Model *model, const Node *node, ParameterInfo *output, uint
         uint32_t total_offset = filter_idx;
         uint32_t output_len = output->dims[0] * output->dims[1];
 #if STABLE_POWER
+#if ENABLE_COUNTERS
+        start_cpu_counter();
+#endif
         my_memcpy_to_param(output, total_offset, cpu_buffer, output_len * sizeof(int16_t), 0);
+#if ENABLE_COUNTERS
+        stop_cpu_counter(&Counters::dma_write_ofm);
+#endif
 #else // STABLE_POWER
+#if ENABLE_COUNTERS
+        start_cpu_counter();
+#endif
         my_memcpy_to_param(output, total_offset, lea_buffer, output_len * sizeof(int16_t), 0);
+#if ENABLE_COUNTERS
+        stop_cpu_counter(&Counters::dma_write_ofm);
+#endif
 #endif // STABLE_POWER
     }
 #endif // OpGemm
