@@ -120,7 +120,7 @@ void copy_samples_data(void) {
 #define GPIO_RESET_PIN GPIO_PIN5
 #endif
 
-#define STABLE_POWER_ITERATIONS 1
+#define STABLE_POWER_ITERATIONS 10
 
 void IntermittentCNNTest() {
     GPIO_setAsOutputPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
@@ -172,7 +172,10 @@ void button_pushed(uint16_t button1_status, uint16_t button2_status) {
 
 void notify_model_finished(void) {
     my_printf("." NEWLINE);
-    GPIO_toggleOutputOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
+    //GPIO_setOutputHighOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
+    //my_printf("%d" NEWLINE, GPIO_getInputPinValue(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN));
+    //our_delay_cycles(5E-3 * getFrequency(FreqLevel));
+    //GPIO_setOutputLowOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
 }
 
 void start_cpu_counter(void) {

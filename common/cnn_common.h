@@ -4,7 +4,7 @@
 #include <cstdint>
 #include "data.h"
 
-#define ENABLE_COUNTERS 1
+#define ENABLE_COUNTERS 0
 
 /**********************************
  *        Data structures         *
@@ -62,13 +62,15 @@ typedef struct Node {
     NodeFlags flags;
 #if HAWAII
     struct Footprint {
+        uint16_t dummy;
+        uint16_t sub_layer_idx;
         uint16_t value;
         uint8_t version;
     } footprint[2];
 #endif
 } Node;
 
-static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 22 + NUM_INPUTS * 2 + HAWAII * 8, "Unexpected size for Node");
+static_assert(sizeof(Node) == NODE_NAME_LEN * 2 + 22 + NUM_INPUTS * 2 + HAWAII * 16, "Unexpected size for Node");
 
 struct Scale {
     int16_t fract;
@@ -130,13 +132,13 @@ typedef struct Model {
     uint16_t running;
     uint16_t run_counter;
     uint16_t layer_idx;
-    uint16_t sub_layer_idx;
+    // uint16_t sub_layer_idx; // move to footprint
     SlotInfo slots_info[NUM_SLOTS];
     uint8_t dummy;
     uint8_t version; // must be the last field in this struct
 } Model;
 
-static_assert(sizeof(Model) == 10 + NUM_SLOTS * (2 + INDIRECT_RECOVERY * (2 + TURNING_POINTS_LEN * 2)), "Unexpected size for Model");
+static_assert(sizeof(Model) == 8 + NUM_SLOTS * (2 + INDIRECT_RECOVERY * (2 + TURNING_POINTS_LEN * 2)), "Unexpected size for Model");
 
 /**********************************
  *          Global data           *
@@ -148,6 +150,7 @@ struct Counters {
     uint32_t dma_read_filter;
     uint32_t dma_read_input;
     uint32_t dma_write_ofm;
+    uint32_t dma_write_fp;
     uint32_t accelerator_invoc;
     uint32_t indexing;
     uint32_t dma_bytes;

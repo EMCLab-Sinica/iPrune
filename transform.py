@@ -683,7 +683,6 @@ model = outputs['model']
 model.write(to_bytes(0))  # Model.running
 model.write(to_bytes(0))  # Model.run_counter
 model.write(to_bytes(0))  # Model.layer_idx
-model.write(to_bytes(0))  # Model.sub_layer_idx
 for _ in range(config['num_slots']): # Model.slots_info
     if Constants.INDIRECT_RECOVERY:
         model.write(to_bytes(1, size=8)) # SlotInfo.state_bit
@@ -752,7 +751,7 @@ for node in graph:
         output_nodes.write(to_bytes(node.flags.as_bytes[idx], size=8))
     if Constants.HAWAII:
         for _ in range(2):
-            output_nodes.write(to_bytes(0, size=32))  # Node::Footprint
+            output_nodes.write(to_bytes(0, size=64))  # Node::Footprint
 
 parameter_info_idx = 0
 
@@ -1136,7 +1135,6 @@ struct Node;
                     SlotInfo *cur_slot_info = get_slot_info(model, output->slot);
                     if (cur_slot_info) {{
                         cur_slot_info->user = model->layer_idx;
-                        cur_slot_info->user = model->sub_layer_idx;
                     }}
                 }}
             '''))

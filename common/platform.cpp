@@ -206,6 +206,18 @@ void reset_hawaii_sub_layer_footprint(uint16_t layer_idx) {
     my_printf_debug("Finish reseting HAWAII sub layer footprint" NEWLINE);
 }
 
+void write_hawaii_sub_layer_footprint(uint16_t layer_idx, int16_t sub_layer_value) {
+    Node::Footprint* footprint_vm = footprints_vm + layer_idx;
+    footprint_vm->sub_layer_idx += sub_layer_value;
+    footprint_vm->value = 0;
+    my_printf_debug("footprint_vm->sub_layer_idx/value: %d/%d" NEWLINE, footprint_vm->sub_layer_idx, footprint_vm->value);
+    MY_ASSERT(footprint_vm->value < INTERMEDIATE_VALUES_SIZE);
+    commit_versioned_data<Node::Footprint>(layer_idx);
+    my_printf_debug("Write HAWAII layer footprint %d/%d for layer %d" NEWLINE, footprint_vm->sub_layer_idx, footprint_vm->value, layer_idx);
+    MY_ASSERT(footprint_vm->value % BATCH_SIZE == 0);
+    my_printf_debug("Finish writing HAWAII sub layer footprint" NEWLINE);
+}
+
 void write_hawaii_layer_footprint(uint16_t layer_idx, int16_t n_jobs) {
     Node::Footprint* footprint_vm = footprints_vm + layer_idx;
     footprint_vm->value += n_jobs;
@@ -216,6 +228,12 @@ void write_hawaii_layer_footprint(uint16_t layer_idx, int16_t n_jobs) {
     MY_ASSERT(footprint_vm->value % BATCH_SIZE == 0);
 }
 
+uint16_t read_hawaii_sub_layer_footprint(uint16_t layer_idx) {
+    uint16_t footprint = get_versioned_data<Node::Footprint>(layer_idx)->sub_layer_idx;
+    my_printf_debug("HAWAII sub layer footprint=%d for layer %d" NEWLINE, footprint, layer_idx);
+    return footprint;
+}
+
 uint16_t read_hawaii_layer_footprint(uint16_t layer_idx) {
     uint16_t footprint = get_versioned_data<Node::Footprint>(layer_idx)->value;
     my_printf_debug("HAWAII layer footprint=%d for layer %d" NEWLINE, footprint, layer_idx);
@@ -223,9 +241,21 @@ uint16_t read_hawaii_layer_footprint(uint16_t layer_idx) {
     return footprint;
 }
 
+uint16_t read_hawaii_sub_layer_footprint_vm(uint16_t layer_idx) {
+    Node::Footprint* footprint_vm = footprints_vm + layer_idx;
+    my_printf_debug("HAWAII sub layer footprint=%d for layer %d" NEWLINE, footprint_vm->sub_layer_idx, layer_idx);
+    return footprint_vm->sub_layer_idx;
+}
+
+uint16_t read_hawaii_layer_footprint_vm(uint16_t layer_idx) {
+    Node::Footprint* footprint_vm = footprints_vm + layer_idx;
+    my_printf_debug("HAWAII layer footprint=%d for layer %d" NEWLINE, footprint_vm->value, layer_idx);
+    return footprint_vm->value;
+}
+
 void reset_hawaii_layer_footprint(uint16_t layer_idx) {
     Node::Footprint footprint;
-    footprint.value = footprint.version = 0;
+    footprint.sub_layer_idx = footprint.value = footprint.version = 0;
     write_to_nvm(&footprint, nvm_addr<Node::Footprint>(0, layer_idx), sizeof(Node::Footprint));
     write_to_nvm(&footprint, nvm_addr<Node::Footprint>(1, layer_idx), sizeof(Node::Footprint));
     my_printf_debug("Reset HAWAII layer footprint for layer %d" NEWLINE, layer_idx);

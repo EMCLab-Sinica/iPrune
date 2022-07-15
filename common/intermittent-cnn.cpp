@@ -84,7 +84,6 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
     if (!model->running) {
         // reset model
         model->layer_idx = 0;
-        model->sub_layer_idx = 0;
         for (uint8_t idx = 0; idx < NUM_SLOTS; idx++) {
             SlotInfo *cur_slot_info = get_slot_info(model, idx);
             cur_slot_info->user = -1;
@@ -110,7 +109,6 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
     for (uint16_t node_idx = model->layer_idx; node_idx < MODEL_NODES_LEN; node_idx++) {
         handle_node(model, node_idx);
         model->layer_idx++;
-        model->sub_layer_idx = 0;
 
         commit_model();
 
@@ -185,6 +183,7 @@ static void print_results(const ParameterInfo *output_node) {
     my_printf(NEWLINE "DMA read of filter:  "); print_counters<&Counters::dma_read_filter>();
     my_printf(NEWLINE "DMA read of input:   "); print_counters<&Counters::dma_read_input>();
     my_printf(NEWLINE "DMA write of ofm:    "); print_counters<&Counters::dma_write_ofm>();
+    my_printf(NEWLINE "DMA write of fp:     "); print_counters<&Counters::dma_write_fp>();
     my_printf(NEWLINE "LEA invocations:     "); print_counters<&Counters::accelerator_invoc>();
     my_printf(NEWLINE "Indexing:            "); print_counters<&Counters::indexing>();
     my_printf(NEWLINE "DMA bytes:           "); total_dma_bytes = print_counters<&Counters::dma_bytes>();

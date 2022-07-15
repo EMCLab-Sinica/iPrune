@@ -29,7 +29,11 @@ void notify_model_finished(void);
 uint64_t get_nvm_writes(void);
 #if HAWAII
 void write_hawaii_layer_footprint(uint16_t layer_idx, int16_t n_jobs);
+void write_hawaii_sub_layer_footprint(uint16_t layer_idx, int16_t sub_layer_value);
 uint16_t read_hawaii_layer_footprint(uint16_t layer_idx);
+uint16_t read_hawaii_sub_layer_footprint(uint16_t layer_idx);
+uint16_t read_hawaii_layer_footprint_vm(uint16_t layer_idx);
+uint16_t read_hawaii_sub_layer_footprint_vm(uint16_t layer_idx);
 void reset_hawaii_layer_footprint(uint16_t layer_idx);
 void reset_hawaii_sub_layer_footprint(uint16_t layer_idx);
 #endif

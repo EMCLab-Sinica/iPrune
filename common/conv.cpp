@@ -319,7 +319,13 @@ static void convTask(int16_t cur_input_w, int16_t cur_input_h, ConvTaskParams *c
     MY_ASSERT(cur_output_data_offset + n_filters < INTERMEDIATE_VALUES_SIZE * NUM_SLOTS);
 
 #if HAWAII
+#if ENABLE_COUNTERS
+    start_cpu_counter();
+#endif
     hawaii_record_footprints(conv_params->model, values_to_preserve);
+#if ENABLE_COUNTERS
+    stop_cpu_counter(&Counters::dma_write_fp);
+#endif
 #endif
 
 #if INDIRECT_RECOVERY
@@ -601,7 +607,7 @@ static void append_zero_to_pruned_output_channel(Model *model, const Node *node,
 /* The method find the next nonzero block(or sub-tile)
  * Directly set the config of next nonzero block in conv_params.
  *
- * Following members of conv_params wiil be modified:
+ * Following members of conv_params will be modified:
  * 1. n_cols
  * 2. cur_n_cols
  * 3. cur_row_val
@@ -618,6 +624,11 @@ static void append_zero_to_pruned_output_channel(Model *model, const Node *node,
 static void next_nonzero_value(const Node *node, ConvTaskParams *conv_params, int16_t *col_val) {
     // rows: the number of filter groups
     // cols: the number of input_tile_c
+    my_printf_debug("==== Before ====" NEWLINE);
+    my_printf_debug("filter_tile_index: %d" NEWLINE, conv_params->filter_tile_index);
+    my_printf_debug("filter_idx: %d" NEWLINE, conv_params->filter_idx);
+    my_printf_debug("input_tile_c_index: %d" NEWLINE, conv_params->input_tile_c_index);
+    my_printf_debug("input_tile_c_offset: %d" NEWLINE, conv_params->input_tile_c_offset);
     while(!conv_params->n_cols && conv_params->row_index * conv_params->flags->extra.conv.output_tile_c < conv_params->OUTPUT_CHANNEL) {
         conv_params->cur_row_val = conv_params->next_row_val;
         conv_params->next_row_val = get_row_val(conv_params->model, conv_params->conv_filter, conv_params->row_index + 1);
@@ -639,6 +650,11 @@ static void next_nonzero_value(const Node *node, ConvTaskParams *conv_params, in
         conv_params->input_tile_c_index = *col_val / (conv_params->kH * conv_params->kW);
         conv_params->input_tile_c_offset = conv_params->input_tile_c_index * conv_params->flags->extra.conv.input_tile_c;
     }
+    my_printf_debug("==== After ====" NEWLINE);
+    my_printf_debug("filter_tile_index: %d" NEWLINE, conv_params->filter_tile_index);
+    my_printf_debug("filter_idx: %d" NEWLINE, conv_params->filter_idx);
+    my_printf_debug("input_tile_c_index: %d" NEWLINE, conv_params->input_tile_c_index);
+    my_printf_debug("input_tile_c_offset: %d" NEWLINE, conv_params->input_tile_c_offset);
 }
 #endif // SPARSE
 
@@ -807,7 +823,7 @@ RECOVERY:
     conv_params->input_w = conv_params->input_w_first;
 #if INTERMITTENT
     /* Handle sub-layer footprint */
-    uint32_t first_unfinished_sub_layer_idx = conv_params->model->sub_layer_idx;
+    uint32_t first_unfinished_sub_layer_idx = read_hawaii_sub_layer_footprint(conv_params->model->layer_idx);
     my_printf_debug("first_unfinished_sub_layer_idx: %d" NEWLINE, first_unfinished_sub_layer_idx);
 
 
@@ -890,10 +906,8 @@ RECOVERY:
         if(finished_weight_tiles == conv_params->n_cols) {
             // the filter tiles have finished, but power off before resetting footprint counter
 #if HAWAII
-            reset_hawaii_layer_footprint(model->layer_idx);
+            write_hawaii_sub_layer_footprint(model->layer_idx, 1);
 #endif // HAWAII
-            model->sub_layer_idx++;
-            commit_model();
             goto RECOVERY;
         }
         my_printf_debug("finished_weight_tiles: %d" NEWLINE, finished_weight_tiles);
@@ -905,10 +919,8 @@ RECOVERY:
 #else // SPARSE
         if(first_unfinished_job_idx == n_weight_tiles * jobs_in_a_weight_tile * conv_params->n_tiles_c) {
 #if HAWAII
-            reset_hawaii_layer_footprint(model->layer_idx);
+            write_hawaii_sub_layer_footprint(model->layer_idx, 1);
 #endif // HAWAII
-            model->sub_layer_idx++;
-            commit_model();
             goto RECOVERY;
         }
         conv_params->input_tile_c_index = first_unfinished_job_idx / (jobs_in_a_weight_tile * n_weight_tiles);
@@ -967,8 +979,9 @@ RECOVERY:
         if(conv_params->input_tile_c_offset >= CHANNEL) {
             conv_params->input_tile_c_offset = 0;
             conv_params->input_tile_c_index = 0;
-            conv_params->model->sub_layer_idx++;
-            commit_model();
+#if HAWAII
+            write_hawaii_sub_layer_footprint(model->layer_idx, 1);
+#endif
         }
 
 #if SPARSE
@@ -1171,13 +1184,9 @@ RECOVERY:
                     conv_params->psum_buffer_version = (conv_params->kH * conv_params->kW * (input_channels / conv_params->flags->extra.conv.input_tile_c)) & 0x1 ;
 #endif // SPARSE
 #if HAWAII
-                    reset_hawaii_sub_layer_footprint(conv_params->model->layer_idx);
-#endif // HAWAII
-                    // FIXME: Handle the issue if power fails at this line
                     // commit model for sub_layer
-                    conv_params->model->sub_layer_idx++;
-                    commit_model();
-                    my_printf_debug("sub_layer_idx: %d" NEWLINE, conv_params->model->sub_layer_idx);
+                    write_hawaii_sub_layer_footprint(conv_params->model->layer_idx, 1);
+#endif // HAWAII
 #endif // STABLE_POWER
 #if SPARSE
                     int16_t next_input_h = conv_params->input_h + conv_params->flags->extra.conv.output_tile_h * conv_params->stride_h;
@@ -1236,9 +1245,9 @@ RECOVERY:
 #endif
 #if HAWAII
         // commit model for sub_layer
-        conv_params->model->sub_layer_idx = conv_params->filter_tile_index * sub_layers_in_a_filter_tile;
-        commit_model();
-        my_printf_debug("sub_layer_idx: %d" NEWLINE, conv_params->model->sub_layer_idx);
+        my_printf_debug("current sub_layer_idx: %d" NEWLINE, read_hawaii_sub_layer_footprint_vm(conv_params->model->layer_idx));
+        my_printf_debug("new sub_layer_idx: %d" NEWLINE, conv_params->filter_tile_index * sub_layers_in_a_filter_tile);
+        write_hawaii_sub_layer_footprint(conv_params->model->layer_idx, conv_params->filter_tile_index * sub_layers_in_a_filter_tile - read_hawaii_sub_layer_footprint_vm(conv_params->model->layer_idx));
 #endif // HAWAII
 #else // SPARSE
         conv_params->input_tile_c_index = conv_params->input_tile_c_offset = 0;
@@ -1268,7 +1277,7 @@ EXIT_LAYER:
     flip_state_bit(model, output);
 
     my_printf_debug("handle_conv output" NEWLINE);
-    dump_params_nhwc_debug(model, output, node->output_name);
+    //dump_params_nhwc_debug(model, output, node->output_name);
 }
 #endif // OpConv
 
