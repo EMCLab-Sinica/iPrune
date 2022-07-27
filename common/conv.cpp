@@ -677,15 +677,19 @@ static void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo 
     int16_t psum_offset =
         conv_params->psum_buffer_version * output_len +
         (output_h * OUTPUT_W + output_w) * OUTPUT_C + conv_params->filter_idx; // NHWC
+    int16_t dst =
+        (conv_params->psum_buffer_version ^ 0x1) * output_len +
+        (output_h * OUTPUT_W + output_w) * OUTPUT_C + conv_params->filter_idx; // NHWC
 #if !STABLE_POWER
     int16_t input_offset =
         2 * output_len +
         ((output_h % conv_params->flags->extra.conv.output_tile_h) * conv_params->flags->extra.conv.output_tile_w  + (output_w % conv_params->flags->extra.conv.output_tile_w)) * output_tile_c; // hwc
     uint16_t cur_input_offset = input_offset;
-#endif // STABLE_POWER
+#endif // !STABLE_POWER
     int16_t vm_offset = 0;
     int16_t chunk_offset = 0;
     uint16_t cur_psum_offset = psum_offset;
+    uint16_t cur_dst = dst;
     int16_t *to_add, *be_add;
     for(int16_t offset_w = 0; offset_w < output_tile_w - tile_w_offset; ++offset_w) {
         for(int16_t offset_h = 0; offset_h < output_tile_h - tile_h_offset; ++offset_h) {
@@ -694,14 +698,15 @@ static void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo 
             be_add = cpu_buffer + vm_offset;
 #if !STABLE_POWER
             cur_input_offset += chunk_offset;
-#endif //STABLE_POWER
+#endif // !STABLE_POWER
             cur_psum_offset += chunk_offset;
+            cur_dst += chunk_offset;
 #if !STABLE_POWER
             my_memcpy_from_param(model, be_add, output, cur_input_offset, real_chunk_len * sizeof(int16_t));
             my_printf_debug(NEWLINE "input offset %d, VM offset %d" NEWLINE, cur_input_offset, vm_offset);
             my_printf_debug("Loaded chunk" NEWLINE);
             dump_matrix_debug(be_add, real_chunk_len, ValueInfo(output));
-#endif //STABLE_POWER
+#endif // !STABLE_POWER
             my_memcpy_from_param(model, to_add, output, cur_psum_offset, real_chunk_len * sizeof(int16_t));
             my_printf_debug(NEWLINE "psum offset %d, VM offset %d" NEWLINE, cur_psum_offset, output_tile_h * output_tile_w * output_tile_c + vm_offset);
 #if !STABLE_POWER
@@ -714,30 +719,54 @@ static void conv_merge(Model *model, ConvTaskParams *conv_params, ParameterInfo 
                 memset(to_add, 0, real_chunk_len * sizeof(int16_t));
             }
 #endif // SPARSE
-#endif // STABLE_POWER
+#endif // !STABLE_POWER
             my_printf_debug("Loaded chunk" NEWLINE);
             dump_matrix_debug(to_add, real_chunk_len, ValueInfo(output));
             // perform accum
             my_add_q15(be_add, to_add, be_add, real_chunk_len);
             my_printf_debug("Adding Result" NEWLINE);
             dump_matrix_debug(be_add, real_chunk_len, ValueInfo(output));
+#if !STABLE_POWER
+#if ENABLE_COUNTERS
+            start_cpu_counter();
+#endif // ENABLE_COUNTERS
+            my_memcpy_to_param(output, cur_dst, be_add, real_chunk_len * sizeof(int16_t), 0);
+#if ENABLE_COUNTERS
+            stop_cpu_counter(&Counters::dma_write_ofm);
+#endif // ENABLE_COUNTERS
+            my_printf_debug(NEWLINE "Output offset %d" NEWLINE, cur_dst);
+            my_printf_debug("Preserved chunk" NEWLINE);
+            dump_matrix_debug(be_add, real_chunk_len, ValueInfo(output));
+#if HAWAII
+#if ENABLE_COUNTERS
+            start_cpu_counter();
+#endif // ENABLE_COUNTERS
+            hawaii_record_footprints(model, real_chunk_len);
+#if ENABLE_COUNTERS
+            stop_cpu_counter(&Counters::dma_write_fp);
+#endif // ENABLE_COUNTERS
+#endif // HAWAII
+#endif // !STABLE_POWER
             chunk_offset = 0;
             cur_psum_offset += OUTPUT_C * OUTPUT_W;
+            cur_dst += OUTPUT_C * OUTPUT_W;
 #if !STABLE_POWER
             cur_input_offset += conv_params->flags->extra.conv.output_tile_c * conv_params->flags->extra.conv.output_tile_w;
-#endif // STABLE_POWER
+#endif // !STABLE_POWER
             vm_offset += real_chunk_len;
         }
 #if !STABLE_POWER
         input_offset -= tile_h_offset * conv_params->flags->extra.conv.output_tile_c * conv_params->flags->extra.conv.output_tile_w;
         cur_input_offset = input_offset + conv_params->flags->extra.conv.output_tile_c * (offset_w + 1);
-#endif // STABLE_POWER
+#endif // !STABLE_POWER
         psum_offset -= tile_h_offset * OUTPUT_W * OUTPUT_C;
+        dst -= tile_h_offset * OUTPUT_W * OUTPUT_C;
         cur_psum_offset = psum_offset + OUTPUT_C * (offset_w + 1);
+        cur_dst = dst + OUTPUT_C * (offset_w + 1);
         tile_h_offset = 0;
     }
 }
-#endif
+#endif // !STABLE_POWER
 
 #ifdef OpConv
 void handle_conv(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node* node) {
@@ -1106,7 +1135,7 @@ RECOVERY:
                                 my_printf_debug("output_h: %d, output_w: %d" NEWLINE, output_h, output_w);
                                 // perform accum
                                 conv_merge(model, conv_params, output, output_w, output_h, tile_h_offset, tile_w_offset);
-                                preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, tile_h_offset, tile_w_offset, conv_params->psum_buffer_version ^ 0x1);
+                                // preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, tile_h_offset, tile_w_offset, conv_params->psum_buffer_version ^ 0x1);
                                 conv_params->cur_op ^= 1;
                                 conv_params->input_h -= tile_h_offset * conv_params->stride_h;
                                 conv_params->input_w -= tile_w_offset * conv_params->stride_w;
