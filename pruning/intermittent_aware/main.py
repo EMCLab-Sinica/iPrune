@@ -23,7 +23,7 @@ from util import *
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
-from datasets import *
+from ../../datasets import *
 
 def plot_sensitivity(sensitivity):
     pruning_ratios = sensitivity[0]['pruning_ratios']

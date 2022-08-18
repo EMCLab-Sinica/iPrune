@@ -13,6 +13,7 @@
 /data/others.txt
 /data/SqueezeNet_vs_CIFAR10
 /data/deep-learning-HAR
+/data/KWS_CNN_S
 
 # CCS-generated files
 .launches/

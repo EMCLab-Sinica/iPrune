@@ -14,6 +14,7 @@ import zipfile
 import json
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
 from urllib.request import urlretrieve
+from datasets import *
 
 import numpy as np
 import onnx
@@ -153,7 +154,7 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
     return ModelData(labels=labels, images=np.array(mfccs, dtype=np.float32), data_layout=DataLayout.NEUTRAL)
 
 def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
-    path = "./pruning/intermittent_aware/data/KWS_CNN_S/test"
+    path = "./data/KWS_CNN_S/test"
     if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
         print("Load cached data ...")
         with open(path + "_data.json", "r") as fd:
@@ -161,6 +162,9 @@ def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
         with open(path + "_label.json", "r") as fl:
             label = np.array(json.load(fl))
     else:
+        SpeechCommandsDataset(arch='KWS_CNN_S', split='train', window_stride_ms=20)
+        SpeechCommandsDataset(arch='KWS_CNN_S', split='validation', window_stride_ms=20, background_frequency=0, background_volume_range=0)
+        SpeechCommandsDataset(arch='KWS_CNN_S', split='test', window_stride_ms=20, background_frequency=0, background_volume_range=0)
         print("Download google speech first!")
         exit()
 

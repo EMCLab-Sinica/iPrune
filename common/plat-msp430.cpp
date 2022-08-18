@@ -150,7 +150,7 @@ void IntermittentCNNTest() {
         notify_model_finished();
 
         // for energy profiling
-        while(GPIO_getInputPinValue(GPIO_ENERGY_PROFILE_PORT, GPIO_ENERGY_PROFILE_PIN));
+        //while(GPIO_getInputPinValue(GPIO_ENERGY_PROFILE_PORT, GPIO_ENERGY_PROFILE_PIN));
 
         for (uint8_t idx = 0; idx < STABLE_POWER_ITERATIONS; idx++) {
             run_cnn_tests(1);
