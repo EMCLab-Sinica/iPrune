@@ -155,6 +155,7 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
 
 def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
     path = "./data/KWS_CNN_S/test"
+    #path = "~/.cache/KWS_CNN_S/test"
     if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
         print("Load cached data ...")
         with open(path + "_data.json", "r") as fd:

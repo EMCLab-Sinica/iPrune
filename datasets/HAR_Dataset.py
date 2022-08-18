@@ -13,6 +13,7 @@ class HAR_Dataset(Dataset):
         if not os.path.isdir('~/.cache/UCI HAR Dataset/'):
             sys.path.append(cwd + '/../../')
             from utils import download_file, extract_archive
+            print('Download HAR dataset ...')
             archive_dir = download_file('https://archive.ics.uci.edu/ml/machine-learning-databases/00240/UCI%20HAR%20Dataset.zip', filename='UCI HAR Dataset.zip', post_processor=functools.partial(extract_archive, subdir='UCI HAR Dataset'))
         root =  pathlib.Path('~/.cache/UCI HAR Dataset/').expanduser()
         sys.path.append(cwd + '/../../data/deep-learning-HAR/utils')

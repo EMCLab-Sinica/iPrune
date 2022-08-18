@@ -55,7 +55,12 @@ class SpeechCommandsDataset(Dataset):
     def __init__(self, arch, split, transform = None, sample_rate=16000, clip_duration_ms=1000, window_size_ms=40, window_stride_ms=40, dct_coefficient_count=10, silence_percentage=10, unknown_percentage=10, validation_percentage=10, testing_percentage=10, background_volume_range=0.1, background_frequency=0.8, time_shift_ms=100):
 
         classes = prepare_words_list(CLASSES)
-        path = "./data/" + arch + "/" + split
+        ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+        subprocess.call('mkdir -p ' + ROOT_DIR + '/../data/', shell=True)
+        subprocess.call('mkdir -p ' + ROOT_DIR + '/../data/KWS_CNN_S/', shell=True)
+        path = ROOT_DIR + '/../data/KWS_CNN_S/' + split
+        #subprocess.call('mkdir -p ~/.cache/KWS_CNN_S/', shell=True)
+        #path = '~/.cache/KWS_CNN_S/' + split
         if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
             print("Load cached data ...")
             with open(path + "_data.json", "r") as fd:
@@ -104,10 +109,6 @@ class SpeechCommandsDataset(Dataset):
             if arch == 'KWS_CNN_S':
                 data = np.reshape(data, (-1, 1, 49, 10))
                 data = data.tolist()
-            elif arch == 'KWS':
-                data = data.tolist()
-            subprocess.call('mkdir -p ./data/', shell=True)
-            subprocess.call('mkdir -p ./data/'+arch+'/', shell=True)
             with open(path + "_data.json", "w") as fd:
                 json.dump(data, fd, indent=2)
             with open(path + "_label.json", "w") as fl:
