@@ -27,23 +27,27 @@ echo "overall pruning ratio: "$OVERALL_PRUNING_RATIO;
 echo "stage: "$STAGE;
 echo ""
 
-COMMON_FLAGS='--arch '$Model' --batch-size 8 --test-batch-size 8 --lr 0.0001 --epochs 300 --lr-epochs 150 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
+COMMON_FLAGS='--arch '$Model' --batch-size 128 --test-batch-size 128 --lr 0.0001 --epochs 150 --lr-epochs 75 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
 CANDIDATES_PRUNING_RATIOS='0 0 0 0 0 0 0 0 0 0 0'
 MY_DEBUG='--debug -1'
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --overall-pruning-ratio '$OVERALL_PRUNING_RATIO
-SENSITIVITY_ANALYSIS_FLAGS='--arch '$Model' --batch-size 256 --test-batch-size 256 --lr 0.0005 --epochs 100 --lr-epochs 50 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST' --prune '$PRUNE_METHOD' --sen-ana'
+SENSITIVITY_ANALYSIS_FLAGS='--arch '$Model' --batch-size 256 --test-batch-size 256 --lr 0.0005 --epochs 150 --lr-epochs 75 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST' --prune '$PRUNE_METHOD' --sen-ana'
 
 if [[ $PRUNE_METHOD == '' ]]; then
 	python main.py $COMMON_FLAGS
 elif [[ $STAGE == '0' ]]; then
-	# sensitivity analysis
-	python main.py $SENSITIVITY_ANALYSIS_FLAGS \
-		--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
-		--stage 0 \
-		--pretrained saved_models/$Model.origin.pth.tar
-	python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
-		--stage 0 \
-		--pretrained saved_models/$Model.origin.pth.tar
+	if [[ $SENA = 'ON' ]]; then
+		# sensitivity analysis
+		python main.py $SENSITIVITY_ANALYSIS_FLAGS \
+			--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
+			--stage 0 \
+			--pretrained saved_models/$Model.origin.pth.tar
+	else
+		python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
+			--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
+			--stage 0 \
+			--pretrained saved_models/$Model.origin.pth.tar
+	fi
 else
 	if [[ $SENA = 'ON' ]]; then
 		# sensitivity analysis
@@ -53,6 +57,7 @@ else
 			--pretrained saved_models/$PRUNE_METHOD/$Model/stage_$(($STAGE - 1)).pth.tar
 	else
 		python main.py $COMMON_FLAGS $PRUNE_COMMON_FLAGS \
+			--candidates-pruning-ratios $CANDIDATES_PRUNING_RATIOS \
 			--stage $STAGE \
 			--pretrained saved_models/$PRUNE_METHOD/$Model/stage_$(($STAGE - 1)).pth.tar
 	fi
