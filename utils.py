@@ -153,7 +153,7 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
     return ModelData(labels=labels, images=np.array(mfccs, dtype=np.float32), data_layout=DataLayout.NEUTRAL)
 
 def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
-    path = "./pruning/Intermittent_Aware/data/KWS_CNN_S/test"
+    path = "./pruning/intermittent_aware/data/KWS_CNN_S/test"
     if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
         print("Load cached data ...")
         with open(path + "_data.json", "r") as fd:
@@ -294,9 +294,12 @@ def get_model_ops(onnx_model):
 
     return ops
 
-def load_model(config):
+def load_model(config, method):
     # https://github.com/onnx/onnx/blob/master/docs/PythonAPIOverview.md
-    onnx_model = onnx.load_model(TOPDIR / config['onnx_model'])
+    if method is not None:
+        onnx_model = onnx.load_model(TOPDIR / config['onnx_model'][method])
+    else:
+        onnx_model = onnx.load_model(TOPDIR / config['onnx_model'])
 
     # onnxoptimizer requires known dimensions, so set the batch size=1.
     # The batch size will be changed to a variable after dynamic_shape_inference, anyway.

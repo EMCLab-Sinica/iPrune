@@ -100,12 +100,12 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
 
     flip_state_bit(model, output);
 
-    my_printf_debug("handle_relu output" NEWLINE);
-    if(node->flags.generic == NHWC2NCHW) {
-        dump_params_debug(model, output, node->output_name);
-    } else {
-        dump_params_nhwc_debug(model, output, node->output_name);
-    }
+    // my_printf_debug("handle_relu output" NEWLINE);
+    // if(node->flags.generic == NHWC2NCHW) {
+    //    dump_params_debug(model, output, node->output_name);
+    // } else {
+    //    dump_params_nhwc_debug(model, output, node->output_name);
+    // }
 }
 
 void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node*) {
@@ -294,6 +294,9 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
     offset = first_unfinished_value_offset & ~0x1;
     MY_ASSERT(!(offset & 0x1));
     idx = first_unfinished_value_offset / CHANNEL;
+    if (idx == area) {
+        goto EXIT_LAYER;
+    }
 #if HAWAII
     // reset footprint cnt
     write_hawaii_layer_footprint(model->layer_idx, offset - first_unfinished_value_offset);
@@ -331,8 +334,9 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
     my_printf_debug("sqrt(var + epsilon)" NEWLINE);
     dump_matrix_debug(buffer_var, CHANNEL, ValueInfo(output, model));
 
-    uint16_t channel_offset = offset % CHANNEL;
-    uint16_t cur_channel = CHANNEL - channel_offset;
+    uint16_t channel_offset, cur_channel;
+    channel_offset = offset % CHANNEL;
+    cur_channel = CHANNEL - channel_offset;
     buffer_x += channel_offset;
     buffer_mean += channel_offset;
     buffer_scale += channel_offset;
@@ -343,19 +347,19 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
 
         my_sub_q15(buffer_x, buffer_mean, buffer_x, cur_channel);
         my_printf_debug("x - mean" NEWLINE);
-        dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
+        dump_matrix_debug(buffer_x, cur_channel, ValueInfo(output, model));
 
         my_mpy_q15(buffer_x, buffer_scale, buffer_x, cur_channel);
         my_printf_debug("(x - mean)*scale" NEWLINE);
-        dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
+        dump_matrix_debug(buffer_x, cur_channel, ValueInfo(output, model));
 
         my_div_q15(buffer_x, buffer_var, buffer_x, cur_channel);
         my_printf_debug("(x - mean)*scale/sqrt(var+epsilon)" NEWLINE);
-        dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
+        dump_matrix_debug(buffer_x, cur_channel, ValueInfo(output, model));
 
         my_add_q15(buffer_x, buffer_b, buffer_x, cur_channel);
         my_printf_debug("(x - mean)/sqrt(var+epsilon)*scale+B" NEWLINE);
-        dump_matrix_debug(buffer_x, CHANNEL, ValueInfo(output, model));
+        dump_matrix_debug(buffer_x, cur_channel, ValueInfo(output, model));
 
         my_memcpy_to_param(output, offset, buffer_x, cur_channel * sizeof(int16_t), 0);
         offset += cur_channel;
@@ -370,7 +374,9 @@ void handle_batchnormalization(Model* model, const ParameterInfo* input[], Param
         buffer_b -= channel_offset;
         channel_offset = 0;
     }
-
+#if INTERMITTENT
+EXIT_LAYER:
+#endif // INTERMITTENT
     my_printf_debug("handle_batchnormalization output" NEWLINE);
-    dump_params_nhwc_debug(model, output);
+    // dump_params_nhwc_debug(model, output);
 }

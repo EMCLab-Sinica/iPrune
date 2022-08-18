@@ -23,7 +23,7 @@ import onnx.numpy_helper
 import numpy as np
 
 from configs import configs
-from pruning.Intermittent_Aware.config import config as model_configs
+from pruning.intermittent_aware.config import config as model_configs
 from utils import extract_data, find_initializer, find_node_by_output, find_node_by_input, find_tensor_value_info, load_model, get_model_ops, OPS_WITH_MERGE, DataLayout
 
 logging.basicConfig()
@@ -207,6 +207,8 @@ parser.add_argument('--all-samples', action='store_true')
 parser.add_argument('--write-images', action='store_true')
 parser.add_argument('--batch-size', type=int, default=1)
 parser.add_argument('--target', choices=('msp430', 'msp432'), required=True)
+parser.add_argument('--method', default='intermittent',
+                    help='choose pruned models: energy | intermittent')
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--sparse', action='store_true')
 parser.add_argument('--stable-power', action='store_true')
@@ -252,20 +254,16 @@ if args.target == 'msp432':
 Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
 
-if args.config == 'pruned_mnist':
-    model_config = model_configs['mnist']
-elif args.config == 'pruned_cifar10' or args.config == 'cifar10':
+if args.config == 'pruned_cifar10':
     model_config = model_configs['SqueezeNet']
     Constants.CPU_BUFFER_SIZE = 400
-elif args.config == 'pruned_har' or args.config == 'har':
+elif args.config == 'pruned_har':
     model_config = model_configs['HAR']
-elif args.config == 'pruned_kws' or args.config == 'kws':
-    model_config = model_configs['KWS']
-elif args.config == 'pruned_kws_cnn' or args.config == 'kws_cnn':
+elif args.config == 'pruned_kws_cnn':
     Constants.CPU_BUFFER_SIZE = 700
     model_config = model_configs['KWS_CNN_S']
 
-onnx_model = load_model(config)
+onnx_model = load_model(config, args.method)
 # print(onnx_model)
 names = {}
 
@@ -1058,9 +1056,6 @@ for idx in range(model_data.images.shape[0]):
         os.makedirs('images', exist_ok=True)
         # Restore conanical image format (H, W, C)
         im = np.squeeze(im * 256)
-        if args.config == 'mnist' or args.config == 'pruned_mnist':
-            im = np.expand_dims(im, axis=-1)
-            im = 255 - im
         cv2.imwrite(f'images/test{idx:02d}.png', im)
 
 print("labels: ", model_data.labels)

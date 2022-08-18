@@ -83,7 +83,7 @@ def train(epoch):
         data, target = Variable(data.type(torch.float)), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
+        if args.arch == 'KWS_CNN_S':
             loss = torch.mean(criterion(output, target))
         else:
             loss = criterion(output, target)
@@ -91,7 +91,7 @@ def train(epoch):
         optimizer.step()
         if args.prune and batch_idx % 15 == 0:
             prune_weight(model)
-    if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
+    if args.arch == 'KWS_CNN_S':
         for batch_idx, (data, target) in enumerate(validation_loader):
             data, target = data.to(device), target.to(device)
             data, target = Variable(data.type(torch.float)), Variable(target)
@@ -121,7 +121,7 @@ def test(evaluate=False):
         output = model(data)
         test_loss += criterion(output, target).item()
         pred = output.data.max(1, keepdim=True)[1]
-        if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
+        if args.arch == 'KWS_CNN_S':
             target.data = target.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -146,7 +146,7 @@ def my_test(model, args, test_loader, criterion, logger, evaluate=True):
         data, target = Variable(data.type(torch.float)), Variable(target)
         output = model(data)
         test_loss += criterion(output, target).item()
-        if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
+        if args.arch == 'KWS_CNN_S':
             target.data = target.data.max(1, keepdim=True)[1]
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
@@ -202,7 +202,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default=None,
-            help='the MNIST network structure: mnist | LeNet_5 | HAR | KWS | KWS_CNN_S | SqueezeNet')
+            help='the network structure: SqueezeNet | HAR | KWS_CNN_S ')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -255,18 +255,7 @@ if __name__=='__main__':
     kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
     # generate the model
-    if args.arch == 'LeNet_5' or args.arch == 'mnist':
-        train_loader = torch.utils.data.DataLoader(
-                datasets.MNIST('~/.cache/MNIST', train=True, download=True, transform=transforms.ToTensor()),
-                batch_size=args.batch_size, shuffle=True, **kwargs)
-        test_loader = torch.utils.data.DataLoader(
-                datasets.MNIST('~/.cache/MNIST', train=False, transform=transforms.ToTensor()),
-                batch_size=args.test_batch_size, shuffle=True, **kwargs)
-        if args.arch == 'LeNet_5':
-            model = models.LeNet_5(args.prune)
-        else:
-            model = models.MNIST(args.prune)
-    elif args.arch == 'HAR':
+    if args.arch == 'HAR':
         train_loader = torch.utils.data.DataLoader(
             HAR_Dataset(split='train'),
             batch_size=args.batch_size, shuffle=False, **kwargs)
@@ -274,17 +263,6 @@ if __name__=='__main__':
             HAR_Dataset(split='test'),
             batch_size=args.test_batch_size, shuffle=False, **kwargs)
         model = models.HAR_CNN(args.prune, n_channels=9, n_classes=6)
-    elif args.arch == 'KWS':
-        train_loader = torch.utils.data.DataLoader(
-            SpeechCommandsDataset(arch=args.arch, split='train'),
-            batch_size=args.batch_size, shuffle=True, **kwargs)
-        validation_loader = torch.utils.data.DataLoader(
-            SpeechCommandsDataset(arch=args.arch, split='validation', background_frequency=0, background_volume_range=0),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
-        test_loader = torch.utils.data.DataLoader(
-            SpeechCommandsDataset(arch=args.arch, split='test', background_frequency=0, background_volume_range=0),
-            batch_size=args.test_batch_size, shuffle=True, **kwargs)
-        model = models.KWS_DNN_S(args.prune)
     elif args.arch == 'KWS_CNN_S':
         train_loader = torch.utils.data.DataLoader(
             SpeechCommandsDataset(arch=args.arch, split='train', window_stride_ms=20),
@@ -334,19 +312,14 @@ if __name__=='__main__':
             'weight_decay': args.weight_decay,
             'key':key}]
 
-    if args.arch == 'LeNet_5' or args.arch == 'mnist':
-        optimizer = optim.SGD(params, \
-                              lr=args.lr, \
-                              momentum=args.momentum, \
-                              weight_decay=args.weight_decay)
-    elif args.arch == 'HAR':
+    if args.arch == 'HAR':
         optimizer = optim.Adam(params, lr=args.lr)
-    elif args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
+    elif args.arch == 'KWS_CNN_S':
         optimizer = optim.Adam(params, lr=args.lr)
     elif args.arch == 'SqueezeNet':
         optimizer = optim.Adam(params, lr=args.lr)
 
-    if args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
+    if args.arch == 'KWS_CNN_S':
         criterion = F.cross_entropy
     else:
         criterion = nn.CrossEntropyLoss()
@@ -373,14 +346,10 @@ if __name__=='__main__':
         if not args.pretrained:
             print('==> ERROR: Please assign the pretrained model')
             exit()
-        if args.arch == 'LeNet_5' or args.arch == 'mnist':
-            input_shape = (1, 28, 28)
-        elif args.arch == 'HAR':
+        if args.arch == 'HAR':
             seq_len = 128
             n_channels = 9
             input_shape = (n_channels, 1, seq_len)
-        elif args.arch == 'KWS':
-            input_shape = (1, 25, 10)
         elif args.arch == 'KWS_CNN_S':
             input_shape = (1, 49, 10)
         elif args.arch == 'SqueezeNet':
@@ -392,7 +361,7 @@ if __name__=='__main__':
         else:
             for epoch in pbar:
                 if epoch % args.lr_epochs == 0:
-                    if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
+                    if args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
                         if args.learning_rate_list:
                             adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int((epoch - 1) / args.lr_epochs)])
                         else:
@@ -415,7 +384,7 @@ if __name__=='__main__':
         pbar = tqdm(iterable=range(1, args.epochs + 1), desc='[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
         for epoch in pbar:
             if epoch % args.lr_epochs == 0:
-                if args.arch == 'LeNet_5' or args.arch == 'mnist' or args.arch == 'KWS' or args.arch == 'KWS_CNN_S':
+                if args.arch == 'KWS_CNN_S':
                     if args.learning_rate_list and epoch % args.lr_epochs == 0:
                         adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int((epoch - 1) / args.lr_epochs)])
                     else:

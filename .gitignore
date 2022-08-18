@@ -11,6 +11,8 @@
 /samples.bin
 /images/
 /data/others.txt
+/data/SqueezeNet_vs_CIFAR10
+/data/deep-learning-HAR
 
 # CCS-generated files
 .launches/
@@ -31,13 +33,19 @@
 /tags
 
 # Dataset
-/pruning/Intermittent_Aware/data/
+/pruning/intermittent_aware/data/
 
 # Pruned models
-/pruning/Intermittent_Aware/saved_models/
+/pruning/intermittent_aware/saved_models/
 
 # Pruning logs
-/pruning/Intermittent_Aware/logs/
+/pruning/intermittent_aware/logs/
 
 # ipy
-/pruning/Intermittent_Aware/.ipynb_checkpoints/
+/pruning/intermittent_aware/.ipynb_checkpoints/
+/pruning/intermittent_aware/plot.ipynb
+/pruning/intermittent_aware/results/
+
+# ssh
+/pruning/intermittent_aware/open_ssh_tunnel.sh
+/pruning/intermittent_aware/cpy_from_server.sh

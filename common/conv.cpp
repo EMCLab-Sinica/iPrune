@@ -1135,7 +1135,6 @@ RECOVERY:
                                 my_printf_debug("output_h: %d, output_w: %d" NEWLINE, output_h, output_w);
                                 // perform accum
                                 conv_merge(model, conv_params, output, output_w, output_h, tile_h_offset, tile_w_offset);
-                                // preserve_output(model, node, output, conv_params->filter_idx, output_w, output_h, tile_h_offset, tile_w_offset, conv_params->psum_buffer_version ^ 0x1);
                                 conv_params->cur_op ^= 1;
                                 conv_params->input_h -= tile_h_offset * conv_params->stride_h;
                                 conv_params->input_w -= tile_w_offset * conv_params->stride_w;

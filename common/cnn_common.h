@@ -151,7 +151,6 @@ struct Counters {
     uint32_t dma_read_input;
     uint32_t dma_write_ofm;
     uint32_t dma_write_fp;
-    uint32_t accelerator_invoc;
     uint32_t indexing;
     uint32_t dma_bytes;
 

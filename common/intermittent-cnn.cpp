@@ -184,7 +184,6 @@ static void print_results(const ParameterInfo *output_node) {
     my_printf(NEWLINE "DMA read of input:   "); print_counters<&Counters::dma_read_input>();
     my_printf(NEWLINE "DMA write of ofm:    "); print_counters<&Counters::dma_write_ofm>();
     my_printf(NEWLINE "DMA write of fp:     "); print_counters<&Counters::dma_write_fp>();
-    my_printf(NEWLINE "LEA invocations:     "); print_counters<&Counters::accelerator_invoc>();
     my_printf(NEWLINE "Indexing:            "); print_counters<&Counters::indexing>();
     my_printf(NEWLINE "DMA bytes:           "); total_dma_bytes = print_counters<&Counters::dma_bytes>();
     // recovery overheads
