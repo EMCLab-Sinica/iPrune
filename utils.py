@@ -162,11 +162,15 @@ def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
         with open(path + "_label.json", "r") as fl:
             label = np.array(json.load(fl))
     else:
+        print("Download KWS_CNN_S dataset ...")
         SpeechCommandsDataset(arch='KWS_CNN_S', split='train', window_stride_ms=20)
         SpeechCommandsDataset(arch='KWS_CNN_S', split='validation', window_stride_ms=20, background_frequency=0, background_volume_range=0)
         SpeechCommandsDataset(arch='KWS_CNN_S', split='test', window_stride_ms=20, background_frequency=0, background_volume_range=0)
-        print("Download google speech first!")
-        exit()
+        print("Load data ...")
+        with open(path + "_data.json", "r") as fd:
+            data = np.array(json.load(fd))
+        with open(path + "_label.json", "r") as fl:
+            label = np.array(json.load(fl))
 
     test_data = data[start:limit]
     labels = [list(item).index(1) for item in label[start:limit]]

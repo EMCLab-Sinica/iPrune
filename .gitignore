@@ -23,9 +23,6 @@
 # External projects
 /msp430/driverlib
 /msp432/driverlib
-/ARM-CMSIS/*
-!/ARM-CMSIS/*.sh
-!/ARM-CMSIS/*.diff
 
 # Trace code index
 /cscope.in.out

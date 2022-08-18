@@ -334,7 +334,6 @@ replace_nodes()
 transpose_gemm(onnx_model)
 
 main_names = [n.input[1] for idx, n in enumerate(onnx_model.graph.node) if n.op_type == 'Conv' or n.op_type == 'Gemm']
-print(main_names)
 
 # Split Conv/Gemm into Conv/Gemm and ConvMerge/GemmMerge (for OFM scaling up and merge of OFMs from channel tiling)
 new_nodes = []
@@ -534,10 +533,12 @@ def determine_conv_tile_c(n, node_idx):
         print("Please select configed model.")
         exit()
 
+    '''
     print('input_tile_c: {}'.format(node_flags.input_tile_c))
     print('output_tile_c: {}'.format(node_flags.output_tile_c))
     print('output_tile_w: {}'.format(node_flags.output_tile_w))
     print('output_tile_h: {}'.format(node_flags.output_tile_h))
+    '''
 
 def determine_gemm_tile_sizes(n, node_idx):
     logger.debug('Determine tile size for Gemm node %s', n.name)
@@ -571,8 +572,10 @@ def determine_gemm_tile_sizes(n, node_idx):
     else:
         # manually set tile size
         node_flags.tile_channel = model_config[node_idx]['group'][1]
+    '''
     print('tile_channel: {}'.format(node_flags.tile_channel))
     print('tile_size_unit: {}'.format(tile_size_unit))
+    '''
 
     assert tile_size_unit * (node_flags.tile_channel + 2) <= Constants.ARM_PSTATE_LEN
 
