@@ -5,12 +5,3 @@
 [submodule "data/deep-learning-HAR"]
 	path = data/deep-learning-HAR
 	url = ssh://git@github.com/EMCLab-Sinica/deep-learning-HAR.git
-[submodule "Tools"]
-	path = Tools
-	url = ssh://git@github.com/EMCLab-Sinica/Tools.git
-[submodule "TI-DSPLib"]
-	path = TI-DSPLib
-	url = ssh://git@github.com/EMCLab-Sinica/DSPLib.git
-[submodule "ARM-CMSIS"]
-	path = ARM-CMSIS
-	url = ssh://git@github.com/EMCLab-Sinica/ARM-CMSIS.git

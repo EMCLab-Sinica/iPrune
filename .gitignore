@@ -23,6 +23,7 @@
 # External projects
 /msp430/driverlib
 /msp432/driverlib
+/TI-DSPLib/*
 
 # Trace code index
 /cscope.in.out
