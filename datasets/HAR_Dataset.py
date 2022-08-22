@@ -16,8 +16,8 @@ class HAR_Dataset(Dataset):
             print('Download HAR dataset ...')
             archive_dir = download_file('https://archive.ics.uci.edu/ml/machine-learning-databases/00240/UCI%20HAR%20Dataset.zip', filename='UCI HAR Dataset.zip', post_processor=functools.partial(extract_archive, subdir='UCI HAR Dataset'))
         root =  pathlib.Path('~/.cache/UCI HAR Dataset/').expanduser()
-        sys.path.append(cwd + '/../../data/deep-learning-HAR/utils')
-        from utilities import read_data
+        sys.path.append(cwd + '/../../utils')
+        from har_utils import read_data
         self.imgs, self.labels, self.list_ch_train = read_data(data_path=root, split=split) # train
         # make sure they contain only valid labels [0 ~ class -1]
         self.labels = self.labels - 1
