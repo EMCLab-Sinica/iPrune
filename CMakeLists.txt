@@ -32,41 +32,6 @@ endif ()
 
 set(COMMON_SRC_PATH ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
-
-file(GLOB CCS_ARM_ROOT $ENV{HOME}/ti/ccs*/ccs/ccs_base/arm)
-if (NOT "${CCS_ARM_ROOT}" STREQUAL "")
-    message(STATUS "Found CCS ARM root at ${CCS_ARM_ROOT}")
-    option (BUILD_MSP432 "Build for MSP432" ON)
-else ()
-    message(WARNING "No CCS ARM root found. Not building plat-msp432.")
-    option (BUILD_MSP432 "Build for MSP432" OFF)
-endif ()
-
-# Keep this list in sync with ARM-CMSIS/sync-cmsis.py
-set(ARM_CMSIS_PATH ${CMAKE_CURRENT_SOURCE_DIR}/ARM-CMSIS/CMSIS)
-add_library(arm_cmsis_dsp
-    ${ARM_CMSIS_PATH}/DSP/Source/BasicMathFunctions/arm_add_q15.c
-    ${ARM_CMSIS_PATH}/DSP/Source/BasicMathFunctions/arm_offset_q15.c
-    ${ARM_CMSIS_PATH}/DSP/Source/BasicMathFunctions/arm_scale_q15.c
-    ${ARM_CMSIS_PATH}/DSP/Source/MatrixFunctions/arm_mat_init_q15.c
-    ${ARM_CMSIS_PATH}/DSP/Source/MatrixFunctions/arm_mat_mult_fast_q15.c
-    ${ARM_CMSIS_PATH}/DSP/Source/StatisticsFunctions/arm_max_q15.c
-    ${ARM_CMSIS_PATH}/DSP/Source/StatisticsFunctions/arm_min_q15.c
-    ${ARM_CMSIS_PATH}/DSP/Source/SupportFunctions/arm_fill_q15.c
-)
-target_include_directories(arm_cmsis_dsp
-    SYSTEM PUBLIC
-        ${ARM_CMSIS_PATH}/Core/Include
-        ${ARM_CMSIS_PATH}/DSP/Include
-    PRIVATE
-        ${COMMON_SRC_PATH}
-        ${CMAKE_BINARY_DIR}
-)
-target_compile_definitions(arm_cmsis_dsp
-    PRIVATE
-        ARM_MATH_MATRIX_CHECK
-)
-
 set(DSPLIB_PATH ${CMAKE_CURRENT_SOURCE_DIR}/TI-DSPLib)
 add_library(dsplib
     ${DSPLIB_PATH}/source/matrix/msp_matrix_mpy_q15.c
@@ -123,7 +88,7 @@ target_include_directories(intermittent-cnn
         ${CMAKE_BINARY_DIR}
 )
 
-target_link_libraries(intermittent-cnn arm_cmsis_dsp dsplib)
+target_link_libraries(intermittent-cnn dsplib)
 
 if (USE_PROTOBUF)
     target_compile_definitions(intermittent-cnn
@@ -134,27 +99,4 @@ if (USE_PROTOBUF)
         PRIVATE ${CMAKE_CURRENT_BINARY_DIR}  # for *.pb.h files
     )
     target_link_libraries(intermittent-cnn protobuf::libprotobuf)
-endif ()
-
-# Below is not actually used for the build on PC. I added it here so that
-# clangd can identify platform-dependent codes
-
-if (BUILD_MSP432)
-    add_library(plat-msp432 ${COMMON_SRC_PATH}/plat-msp430.cpp)
-    target_include_directories(plat-msp432
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/msp432
-    )
-    target_include_directories(plat-msp432
-        SYSTEM PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/msp432/driverlib/MSP432P4xx
-            ${CMAKE_BINARY_DIR}
-            ${CCS_ARM_ROOT}/include
-            $<TARGET_PROPERTY:arm_cmsis_dsp,INCLUDE_DIRECTORIES>
-    )
-    target_compile_definitions(plat-msp432
-        PRIVATE
-            __MSP432__
-            __MSP432P401R__
-    )
 endif ()
