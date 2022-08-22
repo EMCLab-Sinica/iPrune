@@ -56,9 +56,9 @@ class SpeechCommandsDataset(Dataset):
 
         classes = prepare_words_list(CLASSES)
         ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-        subprocess.call('mkdir -p ' + ROOT_DIR + '/../data/', shell=True)
-        subprocess.call('mkdir -p ' + ROOT_DIR + '/../data/KWS_CNN_S/', shell=True)
-        path = ROOT_DIR + '/../data/KWS_CNN_S/' + split
+        subprocess.call('mkdir -p ' + ROOT_DIR + '/../datasets/', shell=True)
+        subprocess.call('mkdir -p ' + ROOT_DIR + '/../datasets/KWS_CNN_S/', shell=True)
+        path = ROOT_DIR + '/../datasets/KWS_CNN_S/' + split
         #subprocess.call('mkdir -p ~/.cache/KWS_CNN_S/', shell=True)
         #path = '~/.cache/KWS_CNN_S/' + split
         if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
