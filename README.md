@@ -1,41 +1,67 @@
-## Building on Linux
+# Intermittent-Aware Neural Network Pruning
 
-# Requirements
+<!-- ABOUT THE PROJECT -->
+## Overview
 
-* CMake >= 2.8
-* Python >= 3.6
+<!-- TABLE OF CONTENTS -->
+## Table of Contents
+* [Directory/File Structure](#directory/file-structure)
+* [Getting Started](#getting-started)
+  * [Prerequisites](#prerequisites)
+  * [Setup and Build](#setup-and-build)
+* [Using iNAS](#using-inas)
 
-# Install needed Python packages
 
-* `pip3 install numpy onnx==1.8.0`
 
-If you are using Python 3.6, install one more Python package:
+## Directory/File Structure
+Below is an explanation of the directories/files found in this repository.
 
-* `pip3 install dataclasses`
+`pruning/config.py` contains the model configuration and tile size used during runtime inference
+`pruning/datasets` contains the datasets used for three models
+`pruning/models` contains the model information for training
+`pruning/onnx_models` contains the onnx models deployed on TI-MSP430FR5994
+`pruning/pruning_utils` contains auxiliary functions used in the network pruning
+`pruning/main.py` is the entry file in the intermittent-aware neural network pruning
+`pruning/prune.squeezenet.sh`, `pruning/prune.har.sh`, and `pruning/prune.kws_cnn_s.sh` are the scripts that shows an intermittent-aware neural network pruning run
+`inference-library` contains the both inference runtime library designed for intermittently-powered systems and coutinuously-powered systems (currently supports convolution, sparse convolution, fully connected layers, sparse fully connected layers, global pooling, and batchnormalization layers)<br/>
 
-# Preparation steps for all platforms
 
-* `git submodule update --init --recursive`
-* `./transform.py --target (msp430|msp432) (--baseline|--hawaii|--japari|--stateful) --batch-size 1 (mnist|cifar10|kws)`
+<!-- GETTING STARTED -->
+## Getting Started
 
-# Building for POSIX-compliant systems
+### Prerequisites
 
-* `cmake -B build -S .`
-* `make -C build`
-* `./build/intermittent-cnn`
+###### Intermittent-Aware Neural Network Pruning
+Here are basic software to build the intermittent-aware neural network pruning
+* Python >= 3.7
+* Several deep learning Python libraries defined in `pruning/requirements.txt`. Those libraries can be installed with `pip3 install -r requirements.txt`.
 
-# Building for MSP430FR5994
+###### Intermittent Inference Library
+Here is the basic software and hardware needed to build/run the intermittent inference runtime library.
+* Python >= 3.7
+* Several deep learning Python libraries defined in `inference-library/requirements.txt`. Those libraries can be installed with `pip3 install -r requirements.txt`.
+* [Code composer studio](https://www.ti.com/tool/CCSTUDIO) >= 11.0
+* [MSP-EXP430FR5994 LaunchPad](https://www.ti.com/tool/MSP-EXP430FR5994)
+* [MSP DSP Library](https://www.ti.com/tool/MSP-DSPLIB) 1.30.00.02
+* [MSP430 driverlib](https://www.ti.com/tool/MSPDRIVERLIB) 2.91.13.01
 
-In the `msp430` folder, run:
+### Setup and Build
 
-* `git clone ssh://git@github.com/EMCLab-Sinica/driverlib-msp430.git driverlib`
+###### Intermittent-Aware Neural Network Pruning
+1. Download/clone this repository
+1. Install dependencies `pip3 install -r requirements.txt`
+1. Run intermittent-aware neural network pruning scripts: `source prune.kws_cnn_s.sh`
 
-And then import this project into CCStudio.
-
-# Building for MSP432P401R
-
-In the `msp432` folder, run:
-
-* `git clone ssh://git@github.com/EMCLab-Sinica/driverlib-msp432.git driverlib`
-
-And then import this project into CCStudio.
+###### Intermittent Inference Library
+1. Download/clone this repository
+1. Install dependencies `pip3 install -r requirements.txt`
+1. Convert the provided pre-trained models with the command `cd inference-library && python transform.py --target msp430 (--hawaii|--baseline --stable-power) (pruned_cifar10|pruned_har|pruned_kws_cnn) --method (intermittent|energy)` to specify the target platform, the inference engine, the model, and pruning method to deploy.
+1. Download [MSP DSP Library](https://www.ti.com/tool/MSP-DSPLIB) to `inference-library/TI-DSPLib` and apply the patch with the following command:
+```
+cd TI-DSPLib/ && patch -Np1 -i ../TI-DSPLib.diff
+```
+1. Download `MSP430 driverlib` to `inference-library/msp430/` with the following command:
+```
+cd inference-library/msp430/ && git clone ssh://git@github.com/EMCLab-Sinica/driverlib-msp430.git driverlib
+```
+1. Import the folder `inference-library/msp430/` as a project in CCSTUDIO
