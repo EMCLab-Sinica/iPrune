@@ -11,19 +11,15 @@ import subprocess
 import pathlib
 import fcntl
 import csv
-
-cwd = os.getcwd()
-sys.path.append(cwd+'/../')
 import models
 
 from torchvision import datasets, transforms
 from torch.utils.data.dataset import Dataset
 from torch.autograd import Variable
-from util import *
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm, trange
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
-sys.path.append(cwd+'/../../')
+from pruning_utils import *
 from datasets import *
 
 def plot_sensitivity(sensitivity):
@@ -92,17 +88,6 @@ def train(epoch):
         optimizer.step()
         if args.prune and batch_idx % 15 == 0:
             prune_weight(model)
-    if args.arch == 'KWS_CNN_S':
-        for batch_idx, (data, target) in enumerate(validation_loader):
-            data, target = data.to(device), target.to(device)
-            data, target = Variable(data.type(torch.float)), Variable(target)
-            optimizer.zero_grad()
-            output = model(data)
-            loss = torch.mean(criterion(output, target))
-            loss.backward()
-            optimizer.step()
-            if args.prune and batch_idx % 15 == 0:
-                prune_weight(model)
     if args.prune:
         prune_weight(model)
     return

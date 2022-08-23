@@ -113,12 +113,8 @@ def get_jobs(onnx_model, args):
             layer_config = config[args.arch][node_idx]
             logger.debug(layer_config)
             if len(shape) == 4:
-                if args.layout == 'nchw':
-                    group_size = (layer_config['group'][0], layer_config['group'][1] * layer_config['filter'][2] * layer_config['filter'][3])
-                    matrix = im2col(matrix, shape)
-                elif args.layout == 'nhwc':
-                    group_size = (layer_config['group'][0], layer_config['group'][1])
-                    matrix = im2col(nchw2nhwc(matrix), shape)
+                group_size = (layer_config['group'][0], layer_config['group'][1])
+                matrix = im2col(nchw2nhwc(matrix), shape)
             else:
                 group_size = (layer_config['group'][0], layer_config['group'][1])
                 matrix = im2col(matrix, shape)
@@ -147,8 +143,7 @@ def get_jobs(onnx_model, args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--onnx_model', action='store', default=None)
-    parser.add_argument('--arch', action='store', default='LeNet_5', help='the network architecture: LeNet_5 | SqueezeNet')
-    parser.add_argument('--layout', action='store', default='nhwc', help='Select data layout: nhwc | nchw')
+    parser.add_argument('--arch', action='store', default='KWS_CNN_S', help='the network architecture: SqueezeNet | HAR | KWS_CNN_S')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
     set_logger(args)

@@ -32,22 +32,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     printArgs(args)
 
-    if args.arch == 'LeNet_5':
-        input_shape = (1,28,28)
-        model = models.LeNet_5(None)
-        dummy_input = Variable(torch.randn(1, 1, 28, 28))
-    elif args.arch == 'mnist':
-        input_shape = (1,28,28)
-        model = models.MNIST(None)
-        dummy_input = Variable(torch.randn(1, 1, 28, 28))
-    elif args.arch == 'HAR':
+    if args.arch == 'HAR':
         input_shape = (9,1,128)
         model = models.HAR_CNN(None)
         dummy_input = Variable(torch.randn(1,9,1,128))
-    elif args.arch == 'KWS':
-        input_shape = (1,25,10)
-        model = models.KWS_DNN_S(None)
-        dummy_input = Variable(torch.randn(1,25,10))
     elif args.arch == 'KWS_CNN_S':
         input_shape = (1,49,10)
         model = models.KWS_CNN_S(None)
@@ -63,7 +51,7 @@ if __name__ == "__main__":
     summary(model, input_shape, device='cpu')
     print(profile(model, inputs=(dummy_input, )))
     # save onnx model
-    converted_name = "./onnx_models/{}/{}.onnx".format(args.method, args.arch)
+    converted_name = "../onnx_models/{}/{}.onnx".format(args.method, args.arch)
     if args.arch == 'KWS_CNN_S':
         torch.onnx.export(model, dummy_input, converted_name, opset_version=OPSET, training=2) # exported in training mode to avoid fusing the conv and batchnormalization
     else:

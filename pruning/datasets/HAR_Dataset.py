@@ -11,12 +11,12 @@ from torch.utils.data.dataset import Dataset
 class HAR_Dataset(Dataset):
     def __init__(self, split):
         if not os.path.isdir('~/.cache/UCI HAR Dataset/'):
-            sys.path.append(cwd + '/../../')
+            sys.path.append(cwd + '/../inference-library/')
             from utils import download_file, extract_archive
             print('Download HAR dataset ...')
             archive_dir = download_file('https://archive.ics.uci.edu/ml/machine-learning-databases/00240/UCI%20HAR%20Dataset.zip', filename='UCI HAR Dataset.zip', post_processor=functools.partial(extract_archive, subdir='UCI HAR Dataset'))
         root =  pathlib.Path('~/.cache/UCI HAR Dataset/').expanduser()
-        sys.path.append(cwd + '/../../utils')
+        sys.path.append(cwd + '/../inference-library/utils')
         from har_utils import read_data
         self.imgs, self.labels, self.list_ch_train = read_data(data_path=root, split=split) # train
         # make sure they contain only valid labels [0 ~ class -1]

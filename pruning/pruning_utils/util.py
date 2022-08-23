@@ -395,11 +395,6 @@ class EnergyCostMaker(MetricsMaker):
         elif isinstance(node, nn.Conv2d):
             input_tile_h = (layer_config['tile']['output'][2] - 1) * layer_config['stride'][0] + layer_config['filter'][2]
             input_tile_w = (layer_config['tile']['output'][3] - 1) * layer_config['stride'][1] + layer_config['filter'][3]
-            '''
-            if n_col == layer_config['input'][1]:
-                EC_NVM2VM_IFM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](input_tile_w * n_col)
-            else:
-            '''
             EC_NVM2VM_IFM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_col)
             EC_NVM2VM_WGT = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_col)
             EC_NVM2VM = self.plat_costs_profile['E_DMA_NVM_TO_VM'](n_col)
@@ -422,15 +417,6 @@ class EnergyCostMaker(MetricsMaker):
                     tile_c_set = set()
                     for idx in range(rows[i - 1], rows[i]):
                         tile_c_set.add(int(cols[idx] / (layer_config['filter'][2] * layer_config['filter'][3])))
-                    '''
-                    if n_col == layer_config['input'][1]:
-                        nvm_read_inputs += \
-                            len(tile_c_set) * \
-                            EC_NVM2VM_IFM * \
-                            input_tile_h * \
-                            n_output_tile_per_weight_group
-                    else:
-                    '''
                     nvm_read_inputs += \
                         len(tile_c_set) * \
                         EC_NVM2VM_IFM * \
@@ -578,13 +564,6 @@ class SimulatedAnnealing():
                 break
 
     def generate_perturbations(self):
-        '''
-        Generate perturbation to the current sparsities distribution.
-        Returns:
-        --------
-        list
-            perturbated sparsities
-        '''
         logger_.info("Generating perturbations to the current sparsities...")
 
         # decrease magnitude with current temperature

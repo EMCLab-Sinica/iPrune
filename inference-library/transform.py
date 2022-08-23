@@ -12,6 +12,8 @@ import pprint
 import struct
 import textwrap
 import warnings
+import sys
+import os
 # warnings.simplefilter("ignore", UserWarning)
 from typing import List
 from scipy.sparse import bsr_matrix
@@ -22,12 +24,16 @@ import onnx.helper
 import onnx.numpy_helper
 import numpy as np
 
+cwd = os.getcwd()
+
 from configs import configs
-from pruning.intermittent_aware.config import config as model_configs
+sys.path.append(cwd + '/../')
+from pruning.config import config as model_configs
 from utils import extract_data, find_initializer, find_node_by_output, find_node_by_input, find_tensor_value_info, load_model, get_model_ops, OPS_WITH_MERGE, DataLayout
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
+
 
 """
 Goal: Mapping name-based nodes to integer-based ones.

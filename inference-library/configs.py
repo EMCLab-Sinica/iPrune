@@ -8,8 +8,8 @@ from utils import (
 configs = {
     'pruned_cifar10': {
         'onnx_model': {
-            'energy': 'pruning/intermittent_aware/onnx_models/energy/SqueezeNet.onnx',
-            'intermittent': 'pruning/intermittent_aware/onnx_models/intermittent/SqueezeNet.onnx'
+            'energy': '../pruning/onnx_models/energy/SqueezeNet.onnx',
+            'intermittent': '../pruning/onnx_models/intermittent/SqueezeNet.onnx'
         },
         'scale': 2,
         'input_scale': 4,
@@ -24,8 +24,8 @@ configs = {
     },
     'pruned_kws_cnn': {
         'onnx_model': {
-            'energy': 'pruning/intermittent_aware/onnx_models/energy/KWS_CNN_S.onnx',
-            'intermittent': 'pruning/intermittent_aware/onnx_models/intermittent/KWS_CNN_S.onnx',
+            'energy': '../pruning/onnx_models/energy/KWS_CNN_S.onnx',
+            'intermittent': '../pruning/onnx_models/intermittent/KWS_CNN_S.onnx',
         },
         'scale': 1.6,
         'input_scale': 120,
@@ -40,8 +40,8 @@ configs = {
     },
     'pruned_har': {
         'onnx_model': {
-            'energy': 'pruning/intermittent_aware/onnx_models/energy/HAR.onnx',
-            'intermittent': 'pruning/intermittent_aware/onnx_models/intermittent/HAR.onnx',
+            'energy': '../pruning/onnx_models/energy/HAR.onnx',
+            'intermittent': '../pruning/onnx_models/intermittent/HAR.onnx',
         },
         'scale': 2,
         'input_scale': 16,

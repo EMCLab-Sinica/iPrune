@@ -14,7 +14,6 @@ import zipfile
 import json
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional
 from urllib.request import urlretrieve
-from datasets import *
 
 import numpy as np
 import onnx
@@ -27,6 +26,9 @@ logger = logging.getLogger(__name__)
 OPS_WITH_MERGE = ['Gemm']
 
 TOPDIR = pathlib.Path(__file__).absolute().parent
+
+sys.path.append(str(TOPDIR) + '/../pruning/')
+from datasets import *
 
 class DataLayout(enum.Enum):
     NEUTRAL = 0
@@ -52,37 +54,6 @@ def extract_archive(archive_path: pathlib.Path, subdir: str):
                 members = [member for member in zip_f.namelist() if member.startswith(subdir)]
                 zip_f.extractall(archive_path.parent, members=members)
     return archive_dir
-
-def load_data_mnist(start: int, limit: int) -> ModelData:
-    images = []
-    labels = []
-
-    filename = download_file('https://github.com/microsoft/NativeKeras/raw/master/Datasets/cntk_mnist/Test-28x28_cntk_text.txt',
-                             'MNIST-Test-28x28_cntk_text.txt')
-
-    with open(filename) as f:
-        counter = 0
-        for line in f:
-            if start > 0:
-                start -= 1
-                continue
-            mobj = re.match(r'\|labels ([\d ]+) \|features ([\d ]+)', line)
-            if mobj is None:
-                raise ValueError
-            labels.append(np.argmax(list(map(int, mobj.group(1).split(' ')))))
-            im = np.reshape(np.array(list(map(int, mobj.group(2).split(' ')))), (28, 28))
-
-            # Check CNTK_103*.ipynb in https://github.com/microsoft/CNTK/tree/master/Tutorials
-            # for data formats
-            im = im / 256
-            im = np.expand_dims(im, axis=0)
-            images.append(im)
-
-            counter += 1
-            if limit is not None and counter >= limit:
-                break
-
-    return ModelData(labels=labels, images=np.array(images, dtype=np.float32), data_layout=DataLayout.NCHW)
 
 def load_data_cifar10(start: int, limit: int) -> ModelData:
     archive_dir = download_file('https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz',
@@ -154,7 +125,7 @@ def load_data_google_speech(start: int, limit: int) -> ModelData:
     return ModelData(labels=labels, images=np.array(mfccs, dtype=np.float32), data_layout=DataLayout.NEUTRAL)
 
 def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
-    path = "./datasets/KWS_CNN_S/test"
+    path = str(TOPDIR) + "/../pruning/datasets/KWS_CNN_S/test"
     #path = "~/.cache/KWS_CNN_S/test"
     if os.path.isfile(path + "_data.json") and os.path.isfile(path + "_label.json"):
         print("Load cached data ...")
@@ -176,9 +147,6 @@ def load_data_google_speech_cnn(start: int, limit: int) -> ModelData:
     test_data = data[start:limit]
     labels = [list(item).index(1) for item in label[start:limit]]
     return ModelData(labels=labels, images=np.array(test_data, dtype=np.float32), data_layout=DataLayout.NHWC)
-
-def kws_dnn_model():
-    return download_file('https://github.com/ARM-software/ML-KWS-for-MCU/raw/master/Pretrained_models/DNN/DNN_S.pb', 'KWS-DNN_S.pb')
 
 def load_har(start: int, limit: int):
     try:

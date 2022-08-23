@@ -106,6 +106,7 @@ class SpeechCommandsDataset(Dataset):
                 time_shift=time_shift, \
                 mode=split, \
                 sess=sess)
+            sess.close()
             if arch == 'KWS_CNN_S':
                 data = np.reshape(data, (-1, 1, 49, 10))
                 data = data.tolist()
@@ -113,6 +114,7 @@ class SpeechCommandsDataset(Dataset):
                 json.dump(data, fd, indent=2)
             with open(path + "_label.json", "w") as fl:
                 json.dump(label.tolist(), fl, indent=2)
+            data = np.array(data)
 
         self.classes = classes
         self.data = data
