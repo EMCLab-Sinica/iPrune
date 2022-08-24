@@ -1,7 +1,6 @@
 # built files
 *.o
 *.pyc
-/inference-library/build/
 /inference-library/utils/parse_model/external/*.pb-c.*
 /inference-library/utils/parse_model/parse_model
 /inference-library/gcov/
