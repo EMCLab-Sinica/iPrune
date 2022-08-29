@@ -7,7 +7,6 @@
 
 # data files
 /inference-library/nvm.bin
-/inference-library/samples.bin
 /inference-library/images/
 
 # CCS-generated files
