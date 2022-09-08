@@ -20,10 +20,10 @@ struct Node;
 #define INTERMITTENT 1
 #define JAPARI 0
 #define LEA_BUFFER_SIZE 18000
-#define MAX_N_COL_CONV 0
+#define MAX_N_COL_CONV 14
 #define MAX_N_COL_FC 0
 #define MAX_N_FILTER_GROUP 0
-#define MAX_ROW_LEN_CONV 0
+#define MAX_ROW_LEN_CONV 66
 #define MAX_ROW_LEN_FC 0
 #define METHOD "HAWAII"
 #define MODEL_NODES_LEN 30
@@ -36,7 +36,7 @@ struct Node;
 #define SLOT_INTERMEDIATE_VALUES 1
 #define SLOT_PARAMETERS 240
 #define SLOT_TEST_SET 255
-#define SPARSE 0
+#define SPARSE 1
 #define STABLE_POWER 0
 #define STATEFUL 0
 #define TEMP_FILTER_WIDTH 1
@@ -83,7 +83,7 @@ void handle_squeeze(struct Model *model, const struct ParameterInfo *input[], st
 #endif
 
 extern const uint8_t * const parameters_data;
-#define PARAMETERS_DATA_LEN 147108
+#define PARAMETERS_DATA_LEN 50324
 
 extern const uint8_t * const samples_data;
 #define SAMPLES_DATA_LEN 6144
@@ -95,10 +95,19 @@ extern const uint8_t * const nodes_data;
 #define NODES_DATA_LEN 4680
 
 extern const uint8_t * const model_parameters_info_data;
-#define MODEL_PARAMETERS_INFO_DATA_LEN 800
+#define MODEL_PARAMETERS_INFO_DATA_LEN 1100
 
 extern const uint8_t * const intermediate_parameters_info_data;
-#define INTERMEDIATE_PARAMETERS_INFO_DATA_LEN 960
+#define INTERMEDIATE_PARAMETERS_INFO_DATA_LEN 1320
 
 extern const uint8_t * const labels_data;
 #define LABELS_DATA_LEN 20
+
+extern const uint8_t * const rows_data;
+#define ROWS_DATA_LEN 602
+
+extern const uint8_t * const cols_data;
+#define COLS_DATA_LEN 1368
+
+extern const uint8_t * const first_tile_index_data;
+#define FIRST_TILE_INDEX_DATA_LEN 26
