@@ -19,7 +19,7 @@ struct Node;
 #define INPUTS_DATA_LEN 0
 #define INTERMITTENT 1
 #define JAPARI 0
-#define LEA_BUFFER_SIZE 18000
+#define LEA_BUFFER_SIZE 1884
 #define MAX_N_COL_CONV 20
 #define MAX_N_COL_FC 26
 #define MAX_N_FILTER_GROUP 33
@@ -41,7 +41,8 @@ struct Node;
 #define STATEFUL 0
 #define TEMP_FILTER_WIDTH 1
 #define TURNING_POINTS_LEN 8
-#define USE_ARM_CMSIS 1
+#define USE_ARM_CMSIS 0
+#define PARAM_BIN 0
 #define SCALE 1.6
 #define INPUT_SCALE 120
 #define NUM_SLOTS 2

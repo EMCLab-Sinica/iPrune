@@ -83,7 +83,8 @@ class Constants:
     SPARSE = 0
     # exeuction model on stable power
     STABLE_POWER = 0
-
+    # generate parameter.bin if true (--pbin)
+    param_bin = 0
 # XXX: Transpose does nothing as we happens to need NHWC
 inplace_update_ops = ['Reshape', 'Softmax', 'Squeeze', 'Transpose', 'Unsqueeze']
 
@@ -218,6 +219,7 @@ parser.add_argument('--method', default='intermittent',
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--sparse', action='store_true')
 parser.add_argument('--stable-power', action='store_true')
+parser.add_argument('--pbin', action='store_true')
 intermittent_methodology = parser.add_mutually_exclusive_group(required=True)
 intermittent_methodology.add_argument('--baseline', action='store_true')
 intermittent_methodology.add_argument('--hawaii', action='store_true')
@@ -259,6 +261,9 @@ if args.target == 'msp432':
     Constants.USE_ARM_CMSIS = 1
 Constants.LEA_BUFFER_SIZE = lea_buffer_size[args.target]
 Constants.CPU_BUFFER_SIZE = cpu_buffer_size[args.target]
+
+if args.pbin:
+    Constants.param_bin = 1
 
 if args.config == 'pruned_cifar10':
     model_config = model_configs['SqueezeNet']
@@ -684,7 +689,8 @@ else:
         'labels': io.BytesIO(),
     }
 
-EXTERNAL_DATA = ('parameters',)
+if Constants.param_bin:
+    EXTERNAL_DATA = ('parameters',)
 
 Constants.MODEL_NODES_LEN = len(graph)
 
@@ -1178,7 +1184,7 @@ extern const uint8_t * const {var_name};
 #define {var_name.upper()}_LEN {len(data)}
 ''')
 
-        if var_name[:-len('_data')] in EXTERNAL_DATA:
+        if Constants.param_bin and var_name[:-len('_data')] in EXTERNAL_DATA:
             return
 
         # #define with _Pragma seems to be broken :/
@@ -1208,9 +1214,10 @@ with open('samples.bin', 'wb') as f:
     samples.seek(0)
     f.write(samples.read())
 
-for var_name in EXTERNAL_DATA:
-    with open(f'{var_name}.bin', 'wb') as f:
-        data = outputs[var_name]
-        data.seek(0)
-        f.write(data.read())
+if Constants.param_bin:
+    for var_name in EXTERNAL_DATA:
+        with open(f'{var_name}.bin', 'wb') as f:
+            data = outputs[var_name]
+            data.seek(0)
+            f.write(data.read())
 
