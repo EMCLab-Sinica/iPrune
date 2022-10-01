@@ -5,7 +5,7 @@ SENA='OFF'
 GPUS='0'
 VISIBLE_GPUS='7'
 OVERALL_PRUNING_RATIO='0.2'
-STAGE=''
+STAGE='0'
 while getopts a:v:o:sie flag;
 do
     case "${flag}" in
@@ -31,7 +31,7 @@ COMMON_FLAGS='--arch '$Model' --batch-size 600 --test-batch-size 600 --lr 0.0001
 CANDIDATES_PRUNING_RATIOS='0 0 0 0'
 MY_DEBUG='--debug -1' # -1: none, 0: info, 1: debug
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --overall-pruning-ratio '$OVERALL_PRUNING_RATIO
-SENSITIVITY_ANALYSIS_FLAGS='--arch '$Model' --batch-size 600 --test-batch-size 600 --lr 0.0001 --epochs 200 --lr-epochs 200 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST' --prune '$PRUNE_METHOD' --sen-ana'
+SENSITIVITY_ANALYSIS_FLAGS='--arch '$Model' --batch-size 600 --test-batch-size 600 --lr 0.0001 --epochs 200 --lr-epochs 200 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST' --prune '$PRUNE_METHOD' --sen-ana' 
 
 if [[ $PRUNE_METHOD == '' ]]; then
 	python main.py $COMMON_FLAGS

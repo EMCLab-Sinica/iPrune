@@ -90,13 +90,13 @@ extern const uint8_t * const model_data;
 #define MODEL_DATA_LEN 12
 
 extern const uint8_t * const nodes_data;
-#define NODES_DATA_LEN 1872
+#define NODES_DATA_LEN 1968
 
 extern const uint8_t * const model_parameters_info_data;
-#define MODEL_PARAMETERS_INFO_DATA_LEN 440
+#define MODEL_PARAMETERS_INFO_DATA_LEN 400
 
 extern const uint8_t * const intermediate_parameters_info_data;
-#define INTERMEDIATE_PARAMETERS_INFO_DATA_LEN 528
+#define INTERMEDIATE_PARAMETERS_INFO_DATA_LEN 480
 
 extern const uint8_t * const labels_data;
 #define LABELS_DATA_LEN 20

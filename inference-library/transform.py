@@ -766,7 +766,7 @@ for node in graph:
         output_nodes.write(to_bytes(node.flags.as_bytes[idx], size=8))
     if Constants.HAWAII:
         for _ in range(2):
-            output_nodes.write(to_bytes(0, size=32))  # Node::Footprint
+            output_nodes.write(to_bytes(0, size=64))  # Node::Footprint
 
 parameter_info_idx = 0
 
@@ -893,7 +893,8 @@ for params in parameters:
         # Actual data for test samples are added last
         dims = model_data.images[0].shape
         model_parameters_info.write(to_bytes(parameters_slot.offset, size=32))  # params_offset
-        model_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
+        if Constants.param_bin:
+            model_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
         model_parameters_info.write(to_bytes(np.prod(dims) * 2, size=32))  # A _q15 is 16-bit
         if args.sparse:
             model_parameters_info.write(to_bytes(0, size=32))  # cols_offset, the place is used by sparse matrix
@@ -960,7 +961,8 @@ for params in parameters:
             slot = parameters_slot
 
             model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
-            model_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
+            if Constants.param_bin:
+                model_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
             model_parameters_info.write(to_bytes(data_len * 2, size=32))  # A _q15 is 16-bit
             # XXX: adjuct the length of cols and rows
             if args.sparse:
@@ -989,7 +991,8 @@ for params in parameters:
             assert data_len > 0
             slot = parameters_slot
             model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
-            model_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
+            if Constants.param_bin:
+                model_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
             model_parameters_info.write(to_bytes(data_len * 8, size=32))
             if args.sparse:
                 model_parameters_info.write(to_bytes(slot.cols_offset, size=32))  # cols_offset
@@ -1036,7 +1039,8 @@ for params in parameters:
 intermediate_parameters_info = outputs['intermediate_parameters_info']
 for idx, n in enumerate(nodes):
     intermediate_parameters_info.write(to_bytes(0, size=32))  # params_offset
-    intermediate_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
+    if Constants.param_bin:
+        intermediate_parameters_info.write(to_bytes(0, size=32))  # params_fram_offset
     intermediate_parameters_info.write(to_bytes(0, size=32))  # params_len
     if args.sparse:
         intermediate_parameters_info.write(to_bytes(0, size=32))  # params_cols_offset
@@ -1189,7 +1193,7 @@ extern const uint8_t * const {var_name};
 
         # #define with _Pragma seems to be broken :/
         output_c.write(f'''
-const uint8_t _{var_name}[{len(data)}] = {{
+DATA_SECTION_NVM const uint8_t _{var_name}[{len(data)}] = {{
 ''')
         n_pieces, remaining = divmod(len(data), 16)
         for idx in range(n_pieces):

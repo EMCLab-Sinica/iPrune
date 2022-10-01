@@ -359,6 +359,7 @@ if __name__=='__main__':
                 cur_epoch = epoch
                 cur_loss, cur_acc, best_acc = test()
                 pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
+                print('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
         # test(evaluate=True)
         # prune_op.print_info()
 
@@ -382,6 +383,7 @@ if __name__=='__main__':
             cur_epoch = epoch
             cur_loss, cur_acc, best_acc = test()
             pbar.set_description('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
+            print('[Epoch: {}| Loss: {:.4f}| Accuracy: {:.2f}| Best Accuracy: {:.2f}]'.format(cur_epoch, cur_loss, cur_acc, best_acc))
 
     layer_sensitivity = []
     if args.sen_ana:
