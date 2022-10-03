@@ -1,11 +1,11 @@
 Model='KWS_CNN_S'
 LEARNING_RATE_LIST='0.0005 0.0001 0.00002'
-PRUNE_METHOD='' # intermittent or energy
+PRUNE_METHOD='energy' # intermittent or energy
 SENA='OFF'
 GPUS='0'
 VISIBLE_GPUS='4'
 OVERALL_PRUNING_RATIO='0.2'
-STAGE=''
+STAGE='2'
 while getopts a:v:o:sie flag;
 do
     case "${flag}" in

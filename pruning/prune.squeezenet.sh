@@ -5,10 +5,10 @@ SENA='OFF'
 GPUS='0'
 VISIBLE_GPUS='2'
 OVERALL_PRUNING_RATIO='0.2'
-STAGE=''
+STAGE='0'
 while getopts a:v:o:sie flag;
 do
-    case "${flag}" in
+    case "${flag}" in 
         e) PRUNE_METHOD='energy';;
         i) PRUNE_METHOD='intermittent';;
         s) SENA='ON';;
