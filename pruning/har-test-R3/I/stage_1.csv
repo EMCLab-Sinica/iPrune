@@ -1,0 +1,5 @@
+node,op_type,ofm_jobs,nvm_jobs,nvm_read_psum,nvm_write_psum,pruned_ofm_element,total_jobs
+0,CONV,2304,3840,7680,3840,0,3840
+1,CONV,2304,3072,6144,3072,768,3840
+2,CONV,2304,2112,4224,2112,768,2880
+3,FC,6,386,864,432,0,386

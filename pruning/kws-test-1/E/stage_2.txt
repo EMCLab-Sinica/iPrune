@@ -1,0 +1,732 @@
+[DEBUG 20221003 04:07:42 util:379] Node: 0
+[DEBUG 20221003 04:07:42 util:379] Node: 1
+[DEBUG 20221003 04:07:42 util:379] Node: 2
+[DEBUG 20221003 04:07:42 util:379] Node: 3
+[DEBUG 20221003 04:07:42 util:379] Node: 4
+[DEBUG 20221003 04:07:42 util:680] Pruned ratios: [0.275, 0.4928571428571429, 0.24107142857142858, 0.0625, 0.0]
+[DEBUG 20221003 04:07:42 util:695] Metrics : [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:42 util:696] Pruning Order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:42 util:697] pruning_ratios: [0.0, 0.0, 0.0, 0.0, 0.0]
+[INFO 20221003 04:07:42 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:42 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:42 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:42 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:42 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:42 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:42 util:792] Finish generating masks.
+[INFO 20221003 04:07:42 util:604] Starting Simulated Annealing...
+[DEBUG 20221003 04:07:42 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:42 util:552] Rescale_sparsity: 0.1999505684626792
+[INFO 20221003 04:07:42 util:562] Gen sparsities: [0.01860044 0.05495454 0.17309251 0.19429272 0.24317494]
+[INFO 20221003 04:07:42 util:612] Iter 0:
+[INFO 20221003 04:07:42 util:613] Current Temperature: 100
+[INFO 20221003 04:07:42 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:42 util:571] current perturation magnitude:0.35
+[DEBUG 20221003 04:07:42 util:576] sparsities before rescalling: [0.         0.39823299 0.00385259 0.         0.11056328]
+[DEBUG 20221003 04:07:42 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:42 util:552] Rescale_sparsity: 0.2000123578843302
+[DEBUG 20221003 04:07:42 util:579] sparsities after rescalling: [0.         0.         0.00392109 0.11252927 0.40531422]
+[INFO 20221003 04:07:42 util:582] Sparsities perturbated:[0.         0.         0.00392109 0.11252927 0.40531422]
+[DEBUG 20221003 04:07:42 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:42 util:592] sparsities: [0.0, 0.0, 0.003921090348097213, 0.11252927488947898, 0.40531422140668527]
+[DEBUG 20221003 04:07:42 util:593] Pruning ratios: [0.11252927488947898, 0.40531422140668527, 0.003921090348097213, 0.0, 0.0]
+[INFO 20221003 04:07:42 util:620] config_list for Pruner generated: [0.11252927488947898, 0.40531422140668527, 0.003921090348097213, 0.0, 0.0]
+[INFO 20221003 04:07:42 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:42 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:42 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:42 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:42 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:42 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:42 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:42 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:42 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:42 util:792] Finish generating masks.
+[INFO 20221003 04:07:43 main:143] Test set: Average loss: 5.4909, Accuracy: 2107/4890 (43.09%)
+[INFO 20221003 04:07:43 util:639] updating best model...
+[INFO 20221003 04:07:43 util:612] Iter 1:
+[INFO 20221003 04:07:43 util:613] Current Temperature: 90.0
+[INFO 20221003 04:07:43 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:43 util:571] current perturation magnitude:0.315
+[DEBUG 20221003 04:07:43 util:576] sparsities before rescalling: [0.30954408 0.         0.         0.1866498  0.6449008 ]
+[DEBUG 20221003 04:07:43 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:43 util:552] Rescale_sparsity: 0.19999691052891744
+[DEBUG 20221003 04:07:43 util:579] sparsities after rescalling: [0.         0.         0.09322913 0.15461322 0.32211951]
+[INFO 20221003 04:07:43 util:582] Sparsities perturbated:[0.         0.         0.09322913 0.15461322 0.32211951]
+[DEBUG 20221003 04:07:43 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:43 util:592] sparsities: [0.0, 0.0, 0.0932291293056144, 0.1546132158097201, 0.32211950504217834]
+[DEBUG 20221003 04:07:43 util:593] Pruning ratios: [0.1546132158097201, 0.32211950504217834, 0.0932291293056144, 0.0, 0.0]
+[INFO 20221003 04:07:43 util:620] config_list for Pruner generated: [0.1546132158097201, 0.32211950504217834, 0.0932291293056144, 0.0, 0.0]
+[INFO 20221003 04:07:43 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:43 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:43 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:43 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:43 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:43 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:43 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:43 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:43 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:43 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:43 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:43 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:43 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:43 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:43 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:43 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:43 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:43 util:792] Finish generating masks.
+[INFO 20221003 04:07:44 main:143] Test set: Average loss: 27.1973, Accuracy: 1456/4890 (29.78%)
+[INFO 20221003 04:07:44 util:651] Escape local optimized value.
+[INFO 20221003 04:07:44 util:612] Iter 2:
+[INFO 20221003 04:07:44 util:613] Current Temperature: 81.0
+[INFO 20221003 04:07:44 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:44 util:571] current perturation magnitude:0.2835
+[DEBUG 20221003 04:07:44 util:576] sparsities before rescalling: [0.27721121 0.28232733 0.34922427 0.         0.20639064]
+[DEBUG 20221003 04:07:44 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:44 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:44 util:579] sparsities after rescalling: [0.         0.13607888 0.18277278 0.18614597 0.23025291]
+[INFO 20221003 04:07:44 util:582] Sparsities perturbated:[0.         0.13607888 0.18277278 0.18614597 0.23025291]
+[DEBUG 20221003 04:07:44 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:44 util:592] sparsities: [0.0, 0.136078878052352, 0.18277277552385293, 0.18614596653034965, 0.23025291237846618]
+[DEBUG 20221003 04:07:44 util:593] Pruning ratios: [0.18614596653034965, 0.23025291237846618, 0.18277277552385293, 0.136078878052352, 0.0]
+[INFO 20221003 04:07:44 util:620] config_list for Pruner generated: [0.18614596653034965, 0.23025291237846618, 0.18277277552385293, 0.136078878052352, 0.0]
+[INFO 20221003 04:07:44 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:44 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:44 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:44 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:44 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:44 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:44 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:44 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:44 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:44 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:44 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:44 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:44 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:44 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:44 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:44 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:44 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:44 util:792] Finish generating masks.
+[INFO 20221003 04:07:45 main:143] Test set: Average loss: 32.9266, Accuracy: 1072/4890 (21.92%)
+[INFO 20221003 04:07:45 util:651] Escape local optimized value.
+[INFO 20221003 04:07:45 util:612] Iter 3:
+[INFO 20221003 04:07:45 util:613] Current Temperature: 72.9
+[INFO 20221003 04:07:45 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:45 util:571] current perturation magnitude:0.25515000000000004
+[DEBUG 20221003 04:07:45 util:576] sparsities before rescalling: [0.163037   0.         0.26576661 0.18341013 0.28530506]
+[DEBUG 20221003 04:07:45 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:45 util:552] Rescale_sparsity: 0.19999691052891744
+[DEBUG 20221003 04:07:45 util:579] sparsities after rescalling: [0.         0.14229003 0.16007062 0.23194698 0.2489991 ]
+[INFO 20221003 04:07:45 util:582] Sparsities perturbated:[0.         0.14229003 0.16007062 0.23194698 0.2489991 ]
+[DEBUG 20221003 04:07:45 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:45 util:592] sparsities: [0.0, 0.1422900338532131, 0.16007061668781464, 0.23194697614981333, 0.24899910265209385]
+[DEBUG 20221003 04:07:45 util:593] Pruning ratios: [0.23194697614981333, 0.24899910265209385, 0.16007061668781464, 0.1422900338532131, 0.0]
+[INFO 20221003 04:07:45 util:620] config_list for Pruner generated: [0.23194697614981333, 0.24899910265209385, 0.16007061668781464, 0.1422900338532131, 0.0]
+[INFO 20221003 04:07:45 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:45 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:45 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:45 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:45 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:45 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:45 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:45 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:45 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:45 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:45 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:45 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:45 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:45 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:45 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:45 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:45 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:45 util:792] Finish generating masks.
+[INFO 20221003 04:07:46 main:143] Test set: Average loss: 25.0438, Accuracy: 1199/4890 (24.52%)
+[INFO 20221003 04:07:46 util:612] Iter 4:
+[INFO 20221003 04:07:46 util:613] Current Temperature: 65.61000000000001
+[INFO 20221003 04:07:46 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:46 util:571] current perturation magnitude:0.22963500000000003
+[DEBUG 20221003 04:07:46 util:576] sparsities before rescalling: [0.18648605 0.1154097  0.17173125 0.23179799 0.22881982]
+[DEBUG 20221003 04:07:46 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:46 util:552] Rescale_sparsity: 0.19999691052891744
+[DEBUG 20221003 04:07:46 util:579] sparsities after rescalling: [0.11151821 0.16594066 0.18019794 0.22110426 0.22398201]
+[INFO 20221003 04:07:46 util:582] Sparsities perturbated:[0.11151821 0.16594066 0.18019794 0.22110426 0.22398201]
+[DEBUG 20221003 04:07:46 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:46 util:592] sparsities: [0.11151820607031304, 0.16594065769936026, 0.1801979362651294, 0.22110425501393383, 0.22398200797091455]
+[DEBUG 20221003 04:07:46 util:593] Pruning ratios: [0.22110425501393383, 0.22398200797091455, 0.1801979362651294, 0.16594065769936026, 0.11151820607031304]
+[INFO 20221003 04:07:46 util:620] config_list for Pruner generated: [0.22110425501393383, 0.22398200797091455, 0.1801979362651294, 0.16594065769936026, 0.11151820607031304]
+[INFO 20221003 04:07:46 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:46 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:46 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:46 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:46 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:46 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:46 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:46 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:46 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:46 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:46 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:46 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:46 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:46 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:46 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:46 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:46 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:46 util:792] Finish generating masks.
+[INFO 20221003 04:07:47 main:143] Test set: Average loss: 33.0037, Accuracy: 1032/4890 (21.10%)
+[INFO 20221003 04:07:47 util:651] Escape local optimized value.
+[INFO 20221003 04:07:47 util:612] Iter 5:
+[INFO 20221003 04:07:47 util:613] Current Temperature: 59.049000000000014
+[INFO 20221003 04:07:47 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:47 util:571] current perturation magnitude:0.20667150000000006
+[DEBUG 20221003 04:07:47 util:576] sparsities before rescalling: [0.28360217 0.10545426 0.2356975  0.29337096 0.13634708]
+[DEBUG 20221003 04:07:47 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:47 util:552] Rescale_sparsity: 0.19999691052891744
+[DEBUG 20221003 04:07:47 util:579] sparsities after rescalling: [0.08168825 0.10561882 0.18257884 0.21968733 0.22725454]
+[INFO 20221003 04:07:47 util:582] Sparsities perturbated:[0.08168825 0.10561882 0.18257884 0.21968733 0.22725454]
+[DEBUG 20221003 04:07:47 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:47 util:592] sparsities: [0.08168825025235178, 0.10561881532941046, 0.18257883808848885, 0.21968733227521808, 0.22725454466948064]
+[DEBUG 20221003 04:07:47 util:593] Pruning ratios: [0.21968733227521808, 0.22725454466948064, 0.18257883808848885, 0.10561881532941046, 0.08168825025235178]
+[INFO 20221003 04:07:47 util:620] config_list for Pruner generated: [0.21968733227521808, 0.22725454466948064, 0.18257883808848885, 0.10561881532941046, 0.08168825025235178]
+[INFO 20221003 04:07:47 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:47 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:47 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:47 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:47 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:47 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:47 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:47 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:47 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:47 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:47 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:47 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:47 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:47 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:47 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:47 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:47 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:47 util:792] Finish generating masks.
+[INFO 20221003 04:07:48 main:143] Test set: Average loss: 36.8944, Accuracy: 1043/4890 (21.33%)
+[INFO 20221003 04:07:48 util:651] Escape local optimized value.
+[INFO 20221003 04:07:48 util:612] Iter 6:
+[INFO 20221003 04:07:48 util:613] Current Temperature: 53.144100000000016
+[INFO 20221003 04:07:48 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:48 util:571] current perturation magnitude:0.18600435000000004
+[DEBUG 20221003 04:07:48 util:576] sparsities before rescalling: [0.09128016 0.         0.06305982 0.23364445 0.13308685]
+[DEBUG 20221003 04:07:48 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:48 util:552] Rescale_sparsity: 0.19996601581809195
+[DEBUG 20221003 04:07:48 util:579] sparsities after rescalling: [0.         0.07987166 0.11561558 0.16856799 0.2959344 ]
+[INFO 20221003 04:07:48 util:582] Sparsities perturbated:[0.         0.07987166 0.11561558 0.16856799 0.2959344 ]
+[DEBUG 20221003 04:07:48 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:48 util:592] sparsities: [0.0, 0.07987166401303358, 0.11561558119678482, 0.168567992478073, 0.29593439893991735]
+[DEBUG 20221003 04:07:48 util:593] Pruning ratios: [0.168567992478073, 0.29593439893991735, 0.11561558119678482, 0.07987166401303358, 0.0]
+[INFO 20221003 04:07:48 util:620] config_list for Pruner generated: [0.168567992478073, 0.29593439893991735, 0.11561558119678482, 0.07987166401303358, 0.0]
+[INFO 20221003 04:07:48 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:48 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:48 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:48 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:48 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:48 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:48 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:48 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:48 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:48 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:48 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:48 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:48 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:48 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:48 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:48 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:48 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:48 util:792] Finish generating masks.
+[INFO 20221003 04:07:49 main:143] Test set: Average loss: 33.6776, Accuracy: 1289/4890 (26.36%)
+[INFO 20221003 04:07:49 util:612] Iter 7:
+[INFO 20221003 04:07:49 util:613] Current Temperature: 47.829690000000014
+[INFO 20221003 04:07:49 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:49 util:571] current perturation magnitude:0.16740391500000004
+[DEBUG 20221003 04:07:49 util:576] sparsities before rescalling: [0.         0.06680969 0.22392349 0.13553805 0.32637246]
+[DEBUG 20221003 04:07:49 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:49 util:552] Rescale_sparsity: 0.19999691052891744
+[DEBUG 20221003 04:07:49 util:579] sparsities after rescalling: [0.         0.05962628 0.12096493 0.19984712 0.29128073]
+[INFO 20221003 04:07:49 util:582] Sparsities perturbated:[0.         0.05962628 0.12096493 0.19984712 0.29128073]
+[DEBUG 20221003 04:07:49 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:49 util:592] sparsities: [0.0, 0.05962628239810757, 0.1209649324171671, 0.19984712227766116, 0.29128073039151353]
+[DEBUG 20221003 04:07:49 util:593] Pruning ratios: [0.19984712227766116, 0.29128073039151353, 0.1209649324171671, 0.05962628239810757, 0.0]
+[INFO 20221003 04:07:49 util:620] config_list for Pruner generated: [0.19984712227766116, 0.29128073039151353, 0.1209649324171671, 0.05962628239810757, 0.0]
+[INFO 20221003 04:07:49 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:49 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:49 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:49 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:49 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:49 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:49 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:49 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:49 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:49 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:49 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:49 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:49 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:49 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:49 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:49 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:49 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:49 util:792] Finish generating masks.
+[INFO 20221003 04:07:50 main:143] Test set: Average loss: 40.2165, Accuracy: 1093/4890 (22.35%)
+[INFO 20221003 04:07:50 util:651] Escape local optimized value.
+[INFO 20221003 04:07:50 util:612] Iter 8:
+[INFO 20221003 04:07:50 util:613] Current Temperature: 43.04672100000001
+[INFO 20221003 04:07:50 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:50 util:571] current perturation magnitude:0.15066352350000004
+[DEBUG 20221003 04:07:50 util:576] sparsities before rescalling: [0.07409987 0.12925523 0.27064478 0.20209087 0.41120712]
+[DEBUG 20221003 04:07:50 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:50 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:50 util:579] sparsities after rescalling: [0.04953203 0.08640061 0.13508756 0.18091239 0.27487123]
+[INFO 20221003 04:07:50 util:582] Sparsities perturbated:[0.04953203 0.08640061 0.13508756 0.18091239 0.27487123]
+[DEBUG 20221003 04:07:50 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:50 util:592] sparsities: [0.04953203056748773, 0.08640060560066867, 0.1350875566573575, 0.1809123936986993, 0.2748712313430215]
+[DEBUG 20221003 04:07:50 util:593] Pruning ratios: [0.1809123936986993, 0.2748712313430215, 0.1350875566573575, 0.08640060560066867, 0.04953203056748773]
+[INFO 20221003 04:07:50 util:620] config_list for Pruner generated: [0.1809123936986993, 0.2748712313430215, 0.1350875566573575, 0.08640060560066867, 0.04953203056748773]
+[INFO 20221003 04:07:50 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:50 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:50 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:50 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:50 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:50 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:50 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:50 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:50 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:50 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:50 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:50 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:50 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:50 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:50 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:50 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:50 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:50 util:792] Finish generating masks.
+[INFO 20221003 04:07:51 main:143] Test set: Average loss: 34.9737, Accuracy: 1075/4890 (21.98%)
+[INFO 20221003 04:07:51 util:612] Iter 9:
+[INFO 20221003 04:07:51 util:613] Current Temperature: 38.742048900000015
+[INFO 20221003 04:07:51 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:51 util:571] current perturation magnitude:0.13559717115000003
+[DEBUG 20221003 04:07:51 util:576] sparsities before rescalling: [0.07124575 0.21683023 0.12306723 0.07173223 0.33805327]
+[DEBUG 20221003 04:07:51 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:51 util:552] Rescale_sparsity: 0.19999691052891744
+[DEBUG 20221003 04:07:51 util:579] sparsities after rescalling: [0.06306803 0.06349867 0.10894134 0.19194204 0.29925088]
+[INFO 20221003 04:07:51 util:582] Sparsities perturbated:[0.06306803 0.06349867 0.10894134 0.19194204 0.29925088]
+[DEBUG 20221003 04:07:51 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:51 util:592] sparsities: [0.06306802864144119, 0.06349867299968394, 0.10894133717161435, 0.19194204286293184, 0.2992508766619425]
+[DEBUG 20221003 04:07:51 util:593] Pruning ratios: [0.19194204286293184, 0.2992508766619425, 0.10894133717161435, 0.06349867299968394, 0.06306802864144119]
+[INFO 20221003 04:07:51 util:620] config_list for Pruner generated: [0.19194204286293184, 0.2992508766619425, 0.10894133717161435, 0.06349867299968394, 0.06306802864144119]
+[INFO 20221003 04:07:51 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:51 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:51 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:51 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:51 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:51 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:51 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:51 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:51 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:51 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:51 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:51 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:51 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:51 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:51 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:51 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:51 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:51 util:792] Finish generating masks.
+[INFO 20221003 04:07:52 main:143] Test set: Average loss: 40.0611, Accuracy: 1114/4890 (22.78%)
+[INFO 20221003 04:07:52 util:651] Escape local optimized value.
+[INFO 20221003 04:07:52 util:612] Iter 10:
+[INFO 20221003 04:07:52 util:613] Current Temperature: 34.86784401000001
+[INFO 20221003 04:07:52 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:52 util:571] current perturation magnitude:0.12203745403500005
+[DEBUG 20221003 04:07:52 util:576] sparsities before rescalling: [0.08301466 0.15982881 0.21743215 0.24102463 0.37135475]
+[DEBUG 20221003 04:07:52 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:52 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:52 util:579] sparsities after rescalling: [0.05777913 0.11124264 0.15133521 0.16775584 0.25846706]
+[INFO 20221003 04:07:52 util:582] Sparsities perturbated:[0.05777913 0.11124264 0.15133521 0.16775584 0.25846706]
+[DEBUG 20221003 04:07:52 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:52 util:592] sparsities: [0.05777912910365505, 0.11124264066454337, 0.1513352091935938, 0.16775583898814275, 0.25846705702960343]
+[DEBUG 20221003 04:07:52 util:593] Pruning ratios: [0.16775583898814275, 0.25846705702960343, 0.1513352091935938, 0.11124264066454337, 0.05777912910365505]
+[INFO 20221003 04:07:52 util:620] config_list for Pruner generated: [0.16775583898814275, 0.25846705702960343, 0.1513352091935938, 0.11124264066454337, 0.05777912910365505]
+[INFO 20221003 04:07:52 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:52 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:52 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:52 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:52 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:52 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:52 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:52 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:52 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:52 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:52 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:52 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:52 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:52 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:52 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:52 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:52 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:52 util:792] Finish generating masks.
+[INFO 20221003 04:07:53 main:143] Test set: Average loss: 33.0505, Accuracy: 1130/4890 (23.11%)
+[INFO 20221003 04:07:53 util:612] Iter 11:
+[INFO 20221003 04:07:53 util:613] Current Temperature: 31.381059609000012
+[INFO 20221003 04:07:53 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:53 util:571] current perturation magnitude:0.10983370863150003
+[DEBUG 20221003 04:07:53 util:576] sparsities before rescalling: [0.         0.07454668 0.15330436 0.19918417 0.31543703]
+[DEBUG 20221003 04:07:53 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:53 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:53 util:579] sparsities after rescalling: [0.         0.06582804 0.13537459 0.17588851 0.27854497]
+[INFO 20221003 04:07:53 util:582] Sparsities perturbated:[0.         0.06582804 0.13537459 0.17588851 0.27854497]
+[DEBUG 20221003 04:07:53 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:53 util:592] sparsities: [0.0, 0.06582804109152238, 0.13537458909869213, 0.17588851114872564, 0.27854496929767986]
+[DEBUG 20221003 04:07:53 util:593] Pruning ratios: [0.17588851114872564, 0.27854496929767986, 0.13537458909869213, 0.06582804109152238, 0.0]
+[INFO 20221003 04:07:53 util:620] config_list for Pruner generated: [0.17588851114872564, 0.27854496929767986, 0.13537458909869213, 0.06582804109152238, 0.0]
+[INFO 20221003 04:07:53 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:53 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:53 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:53 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:53 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:53 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:53 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:53 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:53 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:53 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:53 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:53 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:53 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:53 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:53 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:53 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:53 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:53 util:792] Finish generating masks.
+[INFO 20221003 04:07:54 main:143] Test set: Average loss: 34.2330, Accuracy: 1259/4890 (25.75%)
+[INFO 20221003 04:07:54 util:651] Escape local optimized value.
+[INFO 20221003 04:07:54 util:612] Iter 12:
+[INFO 20221003 04:07:54 util:613] Current Temperature: 28.242953648100013
+[INFO 20221003 04:07:54 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:54 util:571] current perturation magnitude:0.09885033776835003
+[DEBUG 20221003 04:07:54 util:576] sparsities before rescalling: [0.06913238 0.00775032 0.14071513 0.08960273 0.21833263]
+[DEBUG 20221003 04:07:54 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:54 util:552] Rescale_sparsity: 0.2000123578843302
+[DEBUG 20221003 04:07:54 util:579] sparsities after rescalling: [0.0103193  0.09204759 0.11930322 0.18735777 0.29070303]
+[INFO 20221003 04:07:54 util:582] Sparsities perturbated:[0.0103193  0.09204759 0.11930322 0.18735777 0.29070303]
+[DEBUG 20221003 04:07:54 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:54 util:592] sparsities: [0.010319302203613604, 0.09204758629055083, 0.1193032158556018, 0.18735777184271807, 0.2907030318532337]
+[DEBUG 20221003 04:07:54 util:593] Pruning ratios: [0.18735777184271807, 0.2907030318532337, 0.1193032158556018, 0.09204758629055083, 0.010319302203613604]
+[INFO 20221003 04:07:54 util:620] config_list for Pruner generated: [0.18735777184271807, 0.2907030318532337, 0.1193032158556018, 0.09204758629055083, 0.010319302203613604]
+[INFO 20221003 04:07:54 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:54 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:54 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:54 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:54 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:54 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:54 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:54 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:54 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:54 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:54 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:54 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:54 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:54 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:54 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:54 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:54 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:54 util:792] Finish generating masks.
+[INFO 20221003 04:07:55 main:143] Test set: Average loss: 40.3976, Accuracy: 1003/4890 (20.51%)
+[INFO 20221003 04:07:55 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:55 util:571] current perturation magnitude:0.09885033776835003
+[DEBUG 20221003 04:07:55 util:576] sparsities before rescalling: [0.         0.15649216 0.22590976 0.1893208  0.25078806]
+[DEBUG 20221003 04:07:55 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:55 util:552] Rescale_sparsity: 0.19999691052891744
+[DEBUG 20221003 04:07:55 util:579] sparsities after rescalling: [0.         0.14613309 0.17678863 0.21095556 0.23418703]
+[INFO 20221003 04:07:55 util:582] Sparsities perturbated:[0.         0.14613309 0.17678863 0.21095556 0.23418703]
+[DEBUG 20221003 04:07:55 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:55 util:592] sparsities: [0.0, 0.14613309447805636, 0.17678862628702835, 0.21095556059400972, 0.23418702558954826]
+[DEBUG 20221003 04:07:55 util:593] Pruning ratios: [0.21095556059400972, 0.23418702558954826, 0.17678862628702835, 0.14613309447805636, 0.0]
+[INFO 20221003 04:07:55 util:620] config_list for Pruner generated: [0.21095556059400972, 0.23418702558954826, 0.17678862628702835, 0.14613309447805636, 0.0]
+[INFO 20221003 04:07:55 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:55 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:55 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:55 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:55 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:55 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:55 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:55 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:55 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:55 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:55 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:55 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:55 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:55 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:55 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:55 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:55 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:55 util:792] Finish generating masks.
+[INFO 20221003 04:07:56 main:143] Test set: Average loss: 36.1918, Accuracy: 1042/4890 (21.31%)
+[INFO 20221003 04:07:56 util:651] Escape local optimized value.
+[INFO 20221003 04:07:56 util:612] Iter 13:
+[INFO 20221003 04:07:56 util:613] Current Temperature: 25.41865828329001
+[INFO 20221003 04:07:56 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:56 util:571] current perturation magnitude:0.08896530399151505
+[DEBUG 20221003 04:07:56 util:576] sparsities before rescalling: [0.01174215 0.19866802 0.09378174 0.17052745 0.25934557]
+[DEBUG 20221003 04:07:56 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:56 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:56 util:579] sparsities after rescalling: [0.01129983 0.09024907 0.16410383 0.19118437 0.24957626]
+[INFO 20221003 04:07:56 util:582] Sparsities perturbated:[0.01129983 0.09024907 0.16410383 0.19118437 0.24957626]
+[DEBUG 20221003 04:07:56 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:56 util:592] sparsities: [0.011299830150493597, 0.09024906876414272, 0.16410383398237385, 0.19118437111885034, 0.24957626044844167]
+[DEBUG 20221003 04:07:56 util:593] Pruning ratios: [0.19118437111885034, 0.24957626044844167, 0.16410383398237385, 0.09024906876414272, 0.011299830150493597]
+[INFO 20221003 04:07:56 util:620] config_list for Pruner generated: [0.19118437111885034, 0.24957626044844167, 0.16410383398237385, 0.09024906876414272, 0.011299830150493597]
+[INFO 20221003 04:07:56 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:56 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:56 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:56 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:56 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:56 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:56 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:56 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:56 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:56 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:56 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:56 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:56 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:56 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:56 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:56 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:56 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:56 util:792] Finish generating masks.
+[INFO 20221003 04:07:57 main:143] Test set: Average loss: 40.3629, Accuracy: 1024/4890 (20.94%)
+[INFO 20221003 04:07:57 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:57 util:571] current perturation magnitude:0.08896530399151505
+[DEBUG 20221003 04:07:57 util:576] sparsities before rescalling: [0.06012163 0.11708212 0.11768542 0.25181052 0.27587417]
+[DEBUG 20221003 04:07:57 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:57 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:57 util:579] sparsities after rescalling: [0.06159256 0.11994664 0.1205647  0.25797129 0.28262368]
+[INFO 20221003 04:07:57 util:582] Sparsities perturbated:[0.06159256 0.11994664 0.1205647  0.25797129 0.28262368]
+[DEBUG 20221003 04:07:57 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:57 util:592] sparsities: [0.06159256066329855, 0.11994663752738718, 0.12056469602152352, 0.25797129304597843, 0.28262367706575997]
+[DEBUG 20221003 04:07:57 util:593] Pruning ratios: [0.25797129304597843, 0.28262367706575997, 0.12056469602152352, 0.11994663752738718, 0.06159256066329855]
+[INFO 20221003 04:07:57 util:620] config_list for Pruner generated: [0.25797129304597843, 0.28262367706575997, 0.12056469602152352, 0.11994663752738718, 0.06159256066329855]
+[INFO 20221003 04:07:57 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:57 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:57 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:57 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:57 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:57 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:57 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:57 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:57 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:57 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:57 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:57 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:57 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:57 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:57 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:57 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:57 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:57 util:792] Finish generating masks.
+[INFO 20221003 04:07:58 main:143] Test set: Average loss: 29.8180, Accuracy: 1136/4890 (23.23%)
+[INFO 20221003 04:07:58 util:612] Iter 14:
+[INFO 20221003 04:07:58 util:613] Current Temperature: 22.87679245496101
+[INFO 20221003 04:07:58 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:58 util:571] current perturation magnitude:0.08006877359236353
+[DEBUG 20221003 04:07:58 util:576] sparsities before rescalling: [0.0442885  0.09975323 0.19236486 0.28713386 0.25148824]
+[DEBUG 20221003 04:07:58 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:58 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:58 util:579] sparsities after rescalling: [0.03804485 0.08569036 0.16524591 0.21603427 0.24665469]
+[INFO 20221003 04:07:58 util:582] Sparsities perturbated:[0.03804485 0.08569036 0.16524591 0.21603427 0.24665469]
+[DEBUG 20221003 04:07:58 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:58 util:592] sparsities: [0.03804485345896249, 0.08569035744257061, 0.16524590860945776, 0.21603427422426283, 0.24665468943204247]
+[DEBUG 20221003 04:07:58 util:593] Pruning ratios: [0.21603427422426283, 0.24665468943204247, 0.16524590860945776, 0.08569035744257061, 0.03804485345896249]
+[INFO 20221003 04:07:58 util:620] config_list for Pruner generated: [0.21603427422426283, 0.24665468943204247, 0.16524590860945776, 0.08569035744257061, 0.03804485345896249]
+[INFO 20221003 04:07:58 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:58 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:58 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:58 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:58 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:58 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:58 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:58 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:58 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:58 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:58 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:58 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:58 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:58 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:58 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:58 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:58 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:58 util:792] Finish generating masks.
+[INFO 20221003 04:07:59 main:143] Test set: Average loss: 37.5339, Accuracy: 1127/4890 (23.05%)
+[INFO 20221003 04:07:59 util:651] Escape local optimized value.
+[INFO 20221003 04:07:59 util:612] Iter 15:
+[INFO 20221003 04:07:59 util:613] Current Temperature: 20.58911320946491
+[INFO 20221003 04:07:59 util:567] Generating perturbations to the current sparsities...
+[INFO 20221003 04:07:59 util:571] current perturation magnitude:0.07206189623312718
+[DEBUG 20221003 04:07:59 util:576] sparsities before rescalling: [0.0576566  0.09184376 0.22779867 0.16278605 0.29051135]
+[DEBUG 20221003 04:07:59 util:551] Metrics: [0.015297064296206734, 0.054594538695627956, 0.0007402488854176833, 9.3481273521494e-05, 5.959060644891683e-05]
+[DEBUG 20221003 04:07:59 util:552] Rescale_sparsity: 0.1999814631735047
+[DEBUG 20221003 04:07:59 util:579] sparsities after rescalling: [0.05217302 0.08310871 0.14730386 0.20613328 0.2628815 ]
+[INFO 20221003 04:07:59 util:582] Sparsities perturbated:[0.05217302 0.08310871 0.14730386 0.20613328 0.2628815 ]
+[DEBUG 20221003 04:07:59 util:591] Pruning order: [4, 3, 2, 0, 1]
+[DEBUG 20221003 04:07:59 util:592] sparsities: [0.05217301572675037, 0.08310871458458415, 0.1473038575042524, 0.20613327618554977, 0.2628815032927709]
+[DEBUG 20221003 04:07:59 util:593] Pruning ratios: [0.20613327618554977, 0.2628815032927709, 0.1473038575042524, 0.08310871458458415, 0.05217301572675037]
+[INFO 20221003 04:07:59 util:620] config_list for Pruner generated: [0.20613327618554977, 0.2628815032927709, 0.1473038575042524, 0.08310871458458415, 0.05217301572675037]
+[INFO 20221003 04:07:59 util:798] Get the mask with perturbating.
+[INFO 20221003 04:07:59 util:765] Start generating masks ...
+[DEBUG 20221003 04:07:59 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:07:59 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:07:59 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:07:59 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:07:59 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:07:59 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:07:59 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:07:59 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:07:59 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:07:59 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:07:59 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:07:59 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:07:59 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:07:59 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:07:59 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:07:59 util:792] Finish generating masks.
+[INFO 20221003 04:08:00 main:143] Test set: Average loss: 37.6877, Accuracy: 1121/4890 (22.92%)
+[INFO 20221003 04:08:00 util:651] Escape local optimized value.
+[INFO 20221003 04:08:00 util:658] Finish simulating anealing.
+[INFO 20221003 04:08:00 util:798] Get the mask with perturbating.
+[INFO 20221003 04:08:00 util:765] Start generating masks ...
+[DEBUG 20221003 04:08:00 util:775] original_size: torch.Size([28, 1, 10, 4])
+[DEBUG 20221003 04:08:00 util:785] After pruning: torch.Size([203, 4])
+[INFO 20221003 04:08:00 util:790] Finish generating node 1 mask.
+
+[DEBUG 20221003 04:08:00 util:775] original_size: torch.Size([28, 28, 10, 4])
+[DEBUG 20221003 04:08:00 util:785] After pruning: torch.Size([142, 112])
+[INFO 20221003 04:08:00 util:790] Finish generating node 2 mask.
+
+[DEBUG 20221003 04:08:00 util:775] original_size: torch.Size([16, 1792])
+[DEBUG 20221003 04:08:00 util:785] After pruning: torch.Size([85, 256])
+[INFO 20221003 04:08:00 util:790] Finish generating node 3 mask.
+
+[DEBUG 20221003 04:08:00 util:775] original_size: torch.Size([128, 16])
+[DEBUG 20221003 04:08:00 util:785] After pruning: torch.Size([30, 64])
+[INFO 20221003 04:08:00 util:790] Finish generating node 4 mask.
+
+[DEBUG 20221003 04:08:00 util:775] original_size: torch.Size([12, 128])
+[DEBUG 20221003 04:08:00 util:785] After pruning: torch.Size([12, 128])
+[INFO 20221003 04:08:00 util:790] Finish generating node 5 mask.
+
+[INFO 20221003 04:08:00 util:792] Finish generating masks.
