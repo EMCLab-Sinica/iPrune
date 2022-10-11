@@ -1,3 +1,4 @@
+from sklearn import linear_model
 import sys, os
 from pprint import pprint
 import numpy as np
@@ -5,7 +6,7 @@ from time import perf_counter
 import inspect
 
 import pandas as pd
-from sklearn import linear_model
+
 
 #######################
 # Dim calcs
