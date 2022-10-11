@@ -1,14 +1,14 @@
 Model='SqueezeNet'
 LEARNING_RATE_LIST='0.001 0.0005'
-PRUNE_METHOD='' # intermittent or energy
+PRUNE_METHOD='energy' # intermittent or energy
 SENA='OFF'
-GPUS='2'
+GPUS='3'
 VISIBLE_GPUS='4'
-OVERALL_PRUNING_RATIO='0.2'
-STAGE='0'
+OVERALL_PRUNING_RATIO='0.1'
+STAGE='2'
 while getopts a:v:o:sie flag;
 do
-    case "${flag}" in 
+    case "${flag}" in
         e) PRUNE_METHOD='energy';;
         i) PRUNE_METHOD='intermittent';;
         s) SENA='ON';;
@@ -27,7 +27,7 @@ echo "overall pruning ratio: "$OVERALL_PRUNING_RATIO;
 echo "stage: "$STAGE;
 echo ""
 
-COMMON_FLAGS='--arch '$Model' --batch-size 128 --test-batch-size 128 --lr 0.0001 --epochs 150 --lr-epochs 75 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
+COMMON_FLAGS='--arch '$Model' --batch-size 128 --test-batch-size 128 --lr 0.0001 --epochs 150 --lr-epochs 50 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
 CANDIDATES_PRUNING_RATIOS='0 0 0 0 0 0 0 0 0 0 0'
 MY_DEBUG='--debug -1'
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --overall-pruning-ratio '$OVERALL_PRUNING_RATIO

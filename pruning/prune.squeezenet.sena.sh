@@ -2,8 +2,8 @@ Model='SqueezeNet'
 LEARNING_RATE_LIST='0.001 0.0005'
 PRUNE_METHOD='intermittent' # intermittent or energy
 SENA='ON'
-GPUS='0'
-VISIBLE_GPUS='2'
+GPUS='2'
+VISIBLE_GPUS='4'
 OVERALL_PRUNING_RATIO='0.2'
 STAGE='0'
 while getopts a:v:o:sie flag;

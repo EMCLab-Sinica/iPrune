@@ -2,10 +2,10 @@ Model='SqueezeNet'
 LEARNING_RATE_LIST='0.001 0.0005'
 PRUNE_METHOD='intermittent' # intermittent or energy
 SENA='OFF'
-GPUS='0'
-VISIBLE_GPUS='2'
+GPUS='2'
+VISIBLE_GPUS='4'
 OVERALL_PRUNING_RATIO='0.2'
-STAGE='2'
+STAGE='3'
 while getopts a:v:o:sie flag;
 do
     case "${flag}" in
