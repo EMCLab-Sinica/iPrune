@@ -1,5 +1,0 @@
-node,0.00,0.10,0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90
-0,tensor(91.8561),tensor(91.8561),tensor(89.8202),tensor(89.8202),tensor(69.6641),tensor(75.1273),tensor(75.1273),tensor(43.7055),tensor(43.7055),tensor(23.0404)
-1,tensor(91.8561),tensor(90.5327),tensor(86.8341),tensor(84.8320),tensor(85.3410),tensor(67.5942),tensor(62.6060),tensor(67.8656),tensor(55.0390),tensor(57.4143)
-2,tensor(91.8561),tensor(91.3811),tensor(90.5327),tensor(90.5327),tensor(88.4289),tensor(76.4167),tensor(70.5124),tensor(63.6919),tensor(53.5120),tensor(45.7754)
-3,tensor(91.8561),tensor(90.9739),tensor(89.8880),tensor(82.6943),tensor(80.5565),tensor(83.4747),tensor(64.9813),tensor(62.6739),tensor(63.9973),tensor(16.8646)
