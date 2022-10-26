@@ -3,7 +3,7 @@ LEARNING_RATE_LIST='0.001 0.0005'
 PRUNE_METHOD='' # intermittent or energy
 SENA='OFF'
 GPUS='0'
-VISIBLE_GPUS='2'
+VISIBLE_GPUS='1'
 OVERALL_PRUNING_RATIO='0.2'
 STAGE='0'
 while getopts a:v:o:sie flag;
@@ -27,7 +27,7 @@ echo "overall pruning ratio: "$OVERALL_PRUNING_RATIO;
 echo "stage: "$STAGE;
 echo ""
 
-COMMON_FLAGS='--arch '$Model' --batch-size 128 --test-batch-size 128 --lr 0.0001 --epochs 250 --lr-epochs 50 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
+COMMON_FLAGS='--arch '$Model' --batch-size 128 --test-batch-size 128 --lr 0.0001 --epochs 400 --lr-epochs 50 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
 CANDIDATES_PRUNING_RATIOS='0 0 0 0 0 0 0 0 0 0 0'
 MY_DEBUG='--debug -1'
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --overall-pruning-ratio '$OVERALL_PRUNING_RATIO

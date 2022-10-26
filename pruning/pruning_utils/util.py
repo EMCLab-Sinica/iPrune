@@ -555,7 +555,7 @@ class SimulatedAnnealing():
 
     def init_sparsities(self):
         while True:
-            sparsities = sorted(np.random.uniform(0, 1, self.get_n_node()))
+            sparsities = sorted(np.random.uniform(0, 1, self.get_n_node()))  # n nodes need to prune
             sparsities = self.rescale_sparsities(sparsities, target_sparsity=self.target_sparsity_)
 
             if sparsities is not None and sparsities[0] >= 0 and sparsities[-1] < 1:
@@ -569,11 +569,19 @@ class SimulatedAnnealing():
         # decrease magnitude with current temperature
         magnitude = self.cur_temp_ / self.start_temp_ * self.perturbation_magnitude_
         logger_.info('current perturation magnitude:%s', magnitude)
-
+        checkzero = 0
         while True:
             perturbation = np.random.uniform(-magnitude, magnitude, self.get_n_node())
             sparsities = np.clip(0, self.sparsities_ + perturbation, None)
             logger_.debug("sparsities before rescalling: {}".format(sparsities))
+            for i in range(len(sparsities)):
+                if sparsities[i] > 0:
+                    checkzero+=1;
+            if checkzero == 0:
+                perturbation = np.random.uniform(-magnitude, magnitude, self.get_n_node())
+                sparsities = np.clip(0, self.sparsities_ + perturbation, None)
+                logger_.debug("sparsities before rescalling: {}".format(sparsities))
+           
 
             sparsities = self.rescale_sparsities(sparsities, target_sparsity=self.target_sparsity_)
             logger_.debug("sparsities after rescalling: {}".format(sparsities))
