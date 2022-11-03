@@ -1,0 +1,3 @@
+[submodule "inference-library/ARM-CMSIS"]
+	path = inference-library/ARM-CMSIS
+	url = ssh://git@github.com/EMCLab-Sinica/ARM-CMSIS.git
