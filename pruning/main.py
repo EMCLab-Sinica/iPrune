@@ -347,12 +347,12 @@ if __name__=='__main__':
         else:
             for epoch in pbar:
                 if epoch % args.lr_epochs == 0:
-                    if args.arch == 'KWS_CNN_S' or args.arch == 'SqueezeNet':
+                    if args.arch == 'KWS_CNN_S':
                         if args.learning_rate_list:
                             adjust_learning_rate(optimizer, epoch, args.learning_rate_list[int((epoch - 1) / args.lr_epochs)])
                         else:
                             adjust_learning_rate(optimizer, epoch)
-                    elif args.arch == 'HAR':
+                    elif args.arch == 'HAR' or args.arch == 'SqueezeNet':
                         # adjusted by ADAM
                         pass
                 train(epoch)
