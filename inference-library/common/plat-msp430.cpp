@@ -21,10 +21,11 @@
 #ifdef __MSP430__
 #define DATA_SECTION_NVM _Pragma("DATA_SECTION(\".nvm2\")")
 #endif
-DATA_SECTION_NVM Counters counters_data[COUNTERS_LEN];
-Counters *counters(uint16_t idx) {
-    return counters_data + idx;
-}
+#if ENABLE_COUNTERS
+DATA_SECTION_NVM uint32_t total_jobs = 0;
+DATA_SECTION_NVM Counters _counters_data[COUNTERS_LEN];
+Counters *counters_data = _counters_data;
+#endif
 
 #ifdef __MSP430__
 
@@ -74,6 +75,11 @@ void my_memcpy(void* dest, const void* src, size_t n) {
 }
 
 void read_from_nvm(void* vm_buffer, uint32_t nvm_offset, size_t n) {
+#if ENABLE_COUNTERS
+    counters()->dma_invocations_r++;
+    counters()->dma_bytes_r += n;
+    my_printf_debug("Recorded DMA invocation with %ld bytes" NEWLINE, n);
+#endif
     SPI_ADDR addr;
     addr.L = nvm_offset;
     SPI_READ(&addr, reinterpret_cast<uint8_t*>(vm_buffer), n);
@@ -83,6 +89,11 @@ void write_to_nvm(const void* vm_buffer, uint32_t nvm_offset, size_t n, uint16_t
     SPI_ADDR addr;
     addr.L = nvm_offset;
     check_nvm_write_address(nvm_offset, n);
+#if ENABLE_COUNTERS
+    counters()->dma_invocations_w++;
+    counters()->dma_bytes_w += n;
+    my_printf_debug("Recorded DMA invocation with %ld bytes" NEWLINE, n);
+#endif
     MY_ASSERT(n <= 1024);
     SPI_WRITE2(&addr, reinterpret_cast<const uint8_t*>(vm_buffer), n, timer_delay);
     if (!timer_delay) {
@@ -123,8 +134,8 @@ void copy_samples_data(void) {
 #define STABLE_POWER_ITERATIONS 10
 
 void IntermittentCNNTest() {
-    GPIO_setAsOutputPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
     GPIO_setOutputLowOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
+    GPIO_setAsOutputPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
     GPIO_setAsInputPinWithPullUpResistor(GPIO_RESET_PORT, GPIO_RESET_PIN);
 
     // sleep to wait for external FRAM
@@ -172,20 +183,22 @@ void button_pushed(uint16_t button1_status, uint16_t button2_status) {
 
 void notify_model_finished(void) {
     my_printf("." NEWLINE);
-    //GPIO_setOutputHighOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
+    GPIO_setOutputHighOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
     //my_printf("%d" NEWLINE, GPIO_getInputPinValue(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN));
-    //our_delay_cycles(5E-3 * getFrequency(FreqLevel));
-    //GPIO_setOutputLowOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
+    our_delay_cycles(5E-3 * getFrequency(FreqLevel));
+    GPIO_setOutputLowOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
 }
 
+#if ENABLE_COUNTERS && !DEMO
 void start_cpu_counter(void) {
-#if defined(__MSP430__) && ENABLE_COUNTERS
+#if defined(__MSP430__)
     msp_benchmarkStart(MSP_BENCHMARK_BASE, 1);
 #endif
 }
 
 void stop_cpu_counter(uint32_t Counters::* mem_ptr) {
-#if defined(__MSP430__) && ENABLE_COUNTERS
-    counters(get_model()->layer_idx)->*mem_ptr += msp_benchmarkStop(MSP_BENCHMARK_BASE);
+#if defined(__MSP430__)
+    counters()->*mem_ptr += msp_benchmarkStop(MSP_BENCHMARK_BASE);
 #endif
 }
+#endif

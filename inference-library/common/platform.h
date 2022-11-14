@@ -37,6 +37,3 @@ uint16_t read_hawaii_sub_layer_footprint_vm(uint16_t layer_idx);
 void reset_hawaii_layer_footprint(uint16_t layer_idx);
 void reset_hawaii_sub_layer_footprint(uint16_t layer_idx);
 #endif
-void start_cpu_counter(void);
-// pointer to member https://stackoverflow.com/questions/670734/pointer-to-class-data-member
-void stop_cpu_counter(uint32_t Counters::* mem_ptr);

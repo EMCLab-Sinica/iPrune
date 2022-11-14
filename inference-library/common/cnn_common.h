@@ -5,6 +5,10 @@
 #include "data.h"
 
 #define ENABLE_COUNTERS 0
+#define DEMO 1
+#define ENABLE_PER_LAYER_COUNTERS 0
+// Some demo codes assume counters are accumulated across layers
+static_assert((!ENABLE_PER_LAYER_COUNTERS) || (!DEMO), "ENABLE_PER_LAYER_COUNTERS and DEMO are mutually exclusive");
 
 /**********************************
  *        Data structures         *
@@ -143,21 +147,42 @@ static_assert(sizeof(Model) == 8 + NUM_SLOTS * (2 + INDIRECT_RECOVERY * (2 + TUR
 /**********************************
  *          Global data           *
  **********************************/
+#if ENABLE_COUNTERS
 #define COUNTERS_LEN (MODEL_NODES_LEN+1)
 struct Counters {
     uint32_t power_counters;
-    uint32_t dma_invocations;
+    uint32_t dma_invocations_r;
+    uint32_t dma_invocations_w;
     uint32_t dma_read_filter;
     uint32_t dma_read_input;
     uint32_t dma_write_ofm;
     uint32_t dma_write_fp;
     uint32_t indexing;
-    uint32_t dma_bytes;
+    uint32_t dma_bytes_r;
+    uint32_t dma_bytes_w;
+    uint32_t job_preservation;
+    uint32_t footprint_preservation;
+    uint32_t macs;
 
     uint32_t progress_seeking;
 };
 
-Counters *counters(uint16_t idx);
+extern uint32_t total_jobs;
+extern Counters *counters_data;
+Counters *counters();
+void reset_counters();
+void report_progress();
+#endif
+
+#if ENABLE_COUNTERS && !DEMO
+void start_cpu_counter(void);
+// pointer to member https://stackoverflow.com/questions/670734/pointer-to-class-data-member
+void stop_cpu_counter(uint32_t Counters::* mem_ptr);
+#else
+#define start_cpu_counter()
+#define stop_cpu_counter(mem_ptr)
+#endif
+
 extern ParameterInfo intermediate_parameters_info_vm[MODEL_NODES_LEN];
 
 

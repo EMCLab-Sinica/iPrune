@@ -271,3 +271,41 @@ void Scale::fromFloat(float scale) {
 float Scale::toFloat() const {
     return 1.0f*fract * (1<<shift) / 32768;
 }
+
+#if ENABLE_COUNTERS
+Counters *counters() {
+#if ENABLE_PER_LAYER_COUNTERS
+    return counters_data + get_model()->layer_idx;
+#else
+    return counters_data;
+#endif
+}
+
+void reset_counters() {
+    memset(counters_data, 0, sizeof(Counters) * COUNTERS_LEN);
+}
+
+#if !ENABLE_PER_LAYER_COUNTERS
+void report_progress() {
+    static uint8_t last_progress = 0;
+
+    if (!total_jobs) {
+        return;
+    }
+    uint32_t cur_jobs = counters()->job_preservation / 2;
+    uint8_t cur_progress = 100 * cur_jobs / total_jobs;
+    // report only when the percentage is changed to avoid high UART overheads
+    if (cur_progress != last_progress) {
+        // Somehow printing all values in one my_printf() does not work
+        my_printf("P,%d,%d,", cur_progress,
+                  counters()->job_preservation/1024);
+        my_printf("%d,",
+                  counters()->dma_bytes_r/1024);
+        my_printf("%d" NEWLINE,
+                  counters()->dma_bytes_w/1024);
+        last_progress = cur_progress;
+    }
+}
+#endif // !ENABLE_PER_LAYER_COUNTERS
+
+#endif // ENABLE_COUNTERS

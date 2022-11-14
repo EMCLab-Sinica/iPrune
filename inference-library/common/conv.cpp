@@ -1122,6 +1122,9 @@ RECOVERY:
                             if(conv_params->cur_op == 0) {
                                 // perform psum
                                 handle_conv_inner_loop(model, conv_params);
+#if ENABLE_COUNTERS && DEMO
+                                report_progress();
+#endif
 #if !STABLE_POWER
                                 conv_params->cur_op ^= 1;
                                 output_h = (conv_params->input_h - conv_params->input_h_first - conv_params->kX) /

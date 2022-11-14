@@ -30,10 +30,10 @@ static uint32_t shutdown_counter = UINT32_MAX;
 static uint64_t nvm_writes = 0;
 static std::ofstream out_file;
 
-static Counters counters_data[COUNTERS_LEN];
-Counters *counters(uint16_t idx) {
-    return counters_data + idx;
-}
+uint32_t total_jobs = 0;
+#if ENABLE_COUNTERS
+Counters *counters_data;
+#endif
 
 #ifdef USE_PROTOBUF
 static void save_model_output_data() {
@@ -41,10 +41,30 @@ static void save_model_output_data() {
 }
 #endif
 
+static void* map_file(const char* path, size_t len, bool read_only) {
+    int fd = -1;
+    struct stat stat_buf;
+    if (stat(path, &stat_buf) != 0) {
+        if (errno != ENOENT) {
+            perror("Checking file failed");
+            return NULL;
+        }
+        fd = open(path, O_RDWR|O_CREAT, 0600);
+        ftruncate(fd, len);
+    } else {
+        fd = open(path, O_RDWR);
+    }
+    void* ptr = mmap(NULL, len, PROT_READ|PROT_WRITE, read_only ? MAP_PRIVATE : MAP_SHARED, fd, 0);
+    if (ptr == MAP_FAILED) {
+        perror("mmap() failed");
+        return NULL;
+    }
+    return ptr;
+}
+
 int main(int argc, char* argv[]) {
     int ret = 0, opt_ch, button_pushed = 0, read_only = 0, n_samples = 0;
     Model *model;
-    int nvm_fd = -1;
 
     while((opt_ch = getopt(argc, argv, "bfrc:s:")) != -1) {
         switch (opt_ch) {
@@ -77,22 +97,10 @@ int main(int argc, char* argv[]) {
         n_samples = atoi(argv[optind]);
     }
 
-    struct stat stat_buf;
-    if (stat("nvm.bin", &stat_buf) != 0) {
-        if (errno != ENOENT) {
-            perror("Checking nvm.bin failed");
-            goto exit;
-        }
-        nvm_fd = open("nvm.bin", O_RDWR|O_CREAT, 0600);
-        ftruncate(nvm_fd, NVM_SIZE);
-    } else {
-        nvm_fd = open("nvm.bin", O_RDWR);
-    }
-    nvm = reinterpret_cast<uint8_t*>(mmap(NULL, NVM_SIZE, PROT_READ|PROT_WRITE, read_only ? MAP_PRIVATE : MAP_SHARED, nvm_fd, 0));
-    if (nvm == MAP_FAILED) {
-        perror("mmap() failed");
-        goto exit;
-    }
+    nvm = reinterpret_cast<uint8_t*>(map_file("nvm.bin", NVM_SIZE, read_only));
+#if ENABLE_COUNTERS
+    counters_data = reinterpret_cast<Counters*>(map_file("counters.bin", COUNTERS_LEN*sizeof(Counters), false));
+#endif
 
 #if USE_ARM_CMSIS
     my_printf_debug("Use DSP from ARM CMSIS pack" NEWLINE);
@@ -121,8 +129,6 @@ int main(int argc, char* argv[]) {
 
     ret = run_cnn_tests(n_samples);
 
-exit:
-    close(nvm_fd);
     return ret;
 }
 
@@ -141,11 +147,6 @@ void my_memcpy_ex(void* dest, const void* src, size_t n, uint8_t write_to_nvm) {
         return;
     }
 
-#if ENABLE_COUNTERS
-    Model* model = &model_vm;
-    counters(model->layer_idx)->dma_invocations++;
-    counters(model->layer_idx)->dma_bytes += n;
-#endif
     // Not using memcpy here so that it is more likely that power fails during
     // memcpy, which is the case for external FRAM
     uint8_t *dest_u = reinterpret_cast<uint8_t*>(dest);
@@ -166,11 +167,21 @@ void my_memcpy(void* dest, const void* src, size_t n) {
 }
 
 void read_from_nvm(void *vm_buffer, uint32_t nvm_offset, size_t n) {
+#if ENABLE_COUNTERS
+    counters()->dma_invocations_r++;
+    counters()->dma_bytes_r += n;
+    my_printf_debug("Recorded DMA invocation with %ld bytes" NEWLINE, n);
+#endif
     my_memcpy_ex(vm_buffer, nvm + nvm_offset, n, 0);
 }
 
 void write_to_nvm(const void *vm_buffer, uint32_t nvm_offset, size_t n, uint16_t timer_delay) {
     check_nvm_write_address(nvm_offset, n);
+#if ENABLE_COUNTERS
+    counters()->dma_invocations_w++;
+    counters()->dma_bytes_w += n;
+    my_printf_debug("Recorded DMA invocation with %ld bytes" NEWLINE, n);
+#endif
     my_memcpy_ex(nvm + nvm_offset, vm_buffer, n, 1);
     if (dma_counter_enabled) {
         nvm_writes += n;
@@ -208,9 +219,11 @@ void notify_model_finished(void) {}
     exit_with_status(1);
 }
 
+#if ENABLE_COUNTERS && !DEMO
 void start_cpu_counter(void) {}
 void stop_cpu_counter(uint32_t Counters::* mem_ptr) {
-    counters(get_model()->layer_idx)->*mem_ptr += 1;
+    counters()->*mem_ptr += 1;
 }
+#endif
 
 #endif // POSIX_BUILD

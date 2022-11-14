@@ -52,6 +52,15 @@ void my_memcpy_to_param(ParameterInfo *param, uint16_t offset_in_word, const voi
     uint32_t total_offset = param->params_offset + offset_in_word * sizeof(int16_t);
     MY_ASSERT(total_offset + n <= param->params_len);
     write_to_nvm(src, intermediate_values_offset(param->slot) + total_offset, n, timer_delay);
+#if ENABLE_COUNTERS
+#if JAPARI
+    uint16_t n_footprints = n / (BATCH_SIZE + 1);
+    counters()->job_preservation += n - n_footprints;
+    counters()->footprint_preservation += n_footprints;
+#else
+    counters()->job_preservation += n;
+#endif
+#endif
 }
 
 void my_memcpy_from_intermediate_values(void *dest, const ParameterInfo *param, uint16_t offset_in_word, size_t n) {
@@ -142,6 +151,11 @@ Model* get_model(void) {
 }
 
 void commit_model(void) {
+#if ENABLE_COUNTERS && DEMO
+    if (!model_vm.running) {
+        reset_counters();
+    }
+#endif
     if (!model_vm.running) {
         notify_model_finished();
     }
@@ -151,6 +165,9 @@ void commit_model(void) {
 void first_run(void) {
     dma_counter_enabled = 0;
     my_printf_debug("First run, resetting everything..." NEWLINE);
+#if ENABLE_COUNTERS
+    total_jobs = 0;
+#endif
     my_erase();
     copy_samples_data();
 
@@ -219,6 +236,9 @@ void write_hawaii_sub_layer_footprint(uint16_t layer_idx, int16_t sub_layer_valu
 }
 
 void write_hawaii_layer_footprint(uint16_t layer_idx, int16_t n_jobs) {
+#if ENABLE_COUNTERS
+    counters()->footprint_preservation += 1;
+#endif
     Node::Footprint* footprint_vm = footprints_vm + layer_idx;
     footprint_vm->value += n_jobs;
     my_printf_debug("footprint_vm->value: %d" NEWLINE, footprint_vm->value);

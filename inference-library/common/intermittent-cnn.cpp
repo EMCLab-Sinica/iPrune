@@ -70,6 +70,11 @@ static void handle_node(Model *model, uint16_t node_idx) {
     if (node_idx == MODEL_NODES_LEN - 1) {
         model->running = 0;
         model->run_counter++;
+#if ENABLE_COUNTERS
+        if (!total_jobs) {
+            total_jobs = counters()->job_preservation / 2;
+        }
+#endif
     }
 }
 
@@ -96,12 +101,12 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
         model->running = 1;
         commit_model();
 #if ENABLE_COUNTERS
-        memset(counters(0), 0, sizeof(Counters) * COUNTERS_LEN);
+        memset(counters_data, 0, sizeof(Counters) * COUNTERS_LEN);
 #endif
     }
 
 #if ENABLE_COUNTERS
-    counters(model->layer_idx)->power_counters++;
+    counters()->power_counters++;
 #endif
 
     dump_model_debug(model);
@@ -150,12 +155,17 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
 #endif
 }
 
+#if ENABLE_COUNTERS
 template<uint32_t Counters::* MemPtr>
 static uint32_t print_counters() {
     uint32_t total = 0;
     for (uint16_t i = 0; i < MODEL_NODES_LEN; i++) {
-        total += counters(i)->*MemPtr;
-        my_printf("%8" PRIu32, counters(i)->*MemPtr);
+        total += (counters_data + i)->*MemPtr;
+#if ENABLE_PER_LAYER_COUNTERS
+        my_printf("%8" PRIu32, counters_data[i].*MemPtr);
+#else
+        break;
+#endif
         if (i % 16 == 15) {
             my_printf(NEWLINE);
         }
@@ -163,8 +173,9 @@ static uint32_t print_counters() {
     my_printf(" total=%8" PRIu32, total);
     return total;
 }
+#endif
 
-#if (MY_DEBUG >= MY_DEBUG_NORMAL) || ENABLE_COUNTERS
+#if (MY_DEBUG >= MY_DEBUG_NORMAL) || (ENABLE_COUNTERS && !DEMO)
 static void print_results(const ParameterInfo *output_node) {
     Model *model = get_model();
 
@@ -177,21 +188,29 @@ static void print_results(const ParameterInfo *output_node) {
             my_printf(NEWLINE);
         }
     }
+
+#if ENABLE_COUNTERS
     uint32_t total_dma_bytes = 0, total_overhead = 0;
     my_printf(NEWLINE "Power counters:      "); print_counters<&Counters::power_counters>();
-    my_printf(NEWLINE "DMA invocations:     "); print_counters<&Counters::dma_invocations>();
+    my_printf(NEWLINE "DMA invocations (R): "); print_counters<&Counters::dma_invocations_r>();
+    my_printf(NEWLINE "DMA invocations (W): "); print_counters<&Counters::dma_invocations_w>();
     my_printf(NEWLINE "DMA read of filter:  "); print_counters<&Counters::dma_read_filter>();
     my_printf(NEWLINE "DMA read of input:   "); print_counters<&Counters::dma_read_input>();
     my_printf(NEWLINE "DMA write of ofm:    "); print_counters<&Counters::dma_write_ofm>();
     my_printf(NEWLINE "DMA write of fp:     "); print_counters<&Counters::dma_write_fp>();
     my_printf(NEWLINE "Indexing:            "); print_counters<&Counters::indexing>();
-    my_printf(NEWLINE "DMA bytes:           "); total_dma_bytes = print_counters<&Counters::dma_bytes>();
+    my_printf(NEWLINE "DMA bytes (R):       "); total_dma_bytes = print_counters<&Counters::dma_bytes_r>();
+    my_printf(NEWLINE "DMA bytes (W):       "); total_dma_bytes = print_counters<&Counters::dma_bytes_w>();
+    my_printf(NEWLINE "Job preservation:    "); print_counters<&Counters::job_preservation>();
+    my_printf(NEWLINE "FP preservation:     "); print_counters<&Counters::footprint_preservation>();
+    my_printf(NEWLINE "MACs:                "); print_counters<&Counters::macs>();
     // recovery overheads
     my_printf(NEWLINE "Progress seeking:    "); total_overhead += print_counters<&Counters::progress_seeking>();
 
     my_printf(NEWLINE "Total DMA bytes: %d", total_dma_bytes);
     my_printf(NEWLINE "Total overhead: %" PRIu32, total_overhead);
     my_printf(NEWLINE "run_counter: %d" NEWLINE, model->run_counter);
+#endif
 
     my_printf("NVM writes: %ld" NEWLINE, get_nvm_writes());
 }
@@ -225,7 +244,7 @@ uint8_t run_cnn_tests(uint16_t n_samples) {
         my_printf_debug("idx=%d label=%d predicted=%d correct=%d" NEWLINE, i, label, predicted, label == predicted);
 #endif
     }
-#if (MY_DEBUG >= MY_DEBUG_NORMAL) || ENABLE_COUNTERS
+#if (MY_DEBUG >= MY_DEBUG_NORMAL) || (ENABLE_COUNTERS && !DEMO)
     if (n_samples == 1) {
         print_results(output_node);
     }

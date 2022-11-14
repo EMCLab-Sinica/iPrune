@@ -328,6 +328,9 @@ void handle_gemm(Model *model, const ParameterInfo *input[], ParameterInfo *outp
             output_offset += values_to_preserve;
 #endif // SPARSE
         }
+#if ENABLE_COUNTERS && DEMO
+        report_progress();
+#endif
 #if SPARSE
 #if ENABLE_COUNTERS
         start_cpu_counter();

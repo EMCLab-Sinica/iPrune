@@ -276,6 +276,9 @@ void my_matrix_mpy_q15(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16
     }
 #endif
 #endif
+#if ENABLE_COUNTERS
+    counters()->macs += A_rows * B_cols * A_cols;
+#endif
 }
 #if STABLE_POWER
 void my_matrix_mpy_q15_to_vm(uint16_t A_rows, uint16_t A_cols, uint16_t B_rows, uint16_t B_cols, int16_t *pSrcA, int16_t *pSrcB, int16_t *pDst, ParameterInfo *param, uint16_t offset_in_word, size_t values_to_preserve, uint16_t mask, int16_t n_keep_state_bits) {
