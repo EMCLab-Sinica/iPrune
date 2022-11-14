@@ -27,7 +27,7 @@ echo "overall pruning ratio: "$OVERALL_PRUNING_RATIO;
 echo "stage: "$STAGE;
 echo ""
 
-COMMON_FLAGS='--arch '$Model' --batch-size 128 --test-batch-size 128 --lr 0.0001 --epochs 400 --lr-epochs 50 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
+COMMON_FLAGS='--arch '$Model' --batch-size 32 --test-batch-size 32 --lr 0.001 --epochs 20 --lr-epochs 10 --visible-gpus '$VISIBLE_GPUS' --gpus '$GPUS' --learning_rate_list '$LEARNING_RATE_LIST
 CANDIDATES_PRUNING_RATIOS='0 0 0 0 0 0 0 0 0 0 0'
 MY_DEBUG='--debug -1'
 PRUNE_COMMON_FLAGS='--prune '$PRUNE_METHOD' --sa '$MY_DEBUG' --overall-pruning-ratio '$OVERALL_PRUNING_RATIO
