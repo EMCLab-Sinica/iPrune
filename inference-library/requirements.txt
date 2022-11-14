@@ -1,5 +1,5 @@
 librosa==0.9.1
-matplotlib==3.3.4
+matplotlib==3.5.3
 numpy==1.19.5
 onnx==1.11.0
 onnxoptimizer==0.2.7
@@ -7,6 +7,7 @@ onnxruntime==1.10.0
 pandas==1.1.5
 prettytable==3.3.0
 PyGithub==1.55
+protobuf==3.20.3
 pyvisa==1.12.0
 scikit_learn==1.0.2
 scipy==1.5.4
