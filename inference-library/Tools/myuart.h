@@ -1,4 +1,4 @@
-#define BuadRate 9600
+#define BuadRate 115200
 
 #ifdef __cplusplus
 extern "C" {
