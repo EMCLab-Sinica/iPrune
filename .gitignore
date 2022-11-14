@@ -4,10 +4,14 @@
 /inference-library/utils/parse_model/external/*.pb-c.*
 /inference-library/utils/parse_model/parse_model
 /inference-library/gcov/
+/inference-library/build/*
 
 # data files
 /inference-library/nvm.bin
+/inference-library/counters.bin
 /inference-library/images/
+!/inference-library/build/data.cpp
+!/inference-library/build/data.h
 
 # CCS-generated files
 /inference-library/.launches/
