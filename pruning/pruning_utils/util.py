@@ -24,7 +24,7 @@ from itertools import chain
 from collections import OrderedDict
 from config import config
 from tqdm import tqdm, trange
-from .CostModel.plat_energy_costs import PlatformCostModel
+from CostModel.plat_energy_costs import PlatformCostModel
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')

@@ -5,11 +5,11 @@ import os
 import sys
 import logging
 from scipy.sparse import bsr_matrix
-from config import config
 
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
 
+from config import config
 from util import *
 
 logger = logging.getLogger(__name__)
