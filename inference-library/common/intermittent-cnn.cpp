@@ -117,6 +117,10 @@ static void run_model(int8_t *ansptr, const ParameterInfo **output_node_ptr) {
 
         commit_model();
 
+#if 0
+        notify_layer_finished();
+#endif
+
         dump_model_debug(model);
     }
 

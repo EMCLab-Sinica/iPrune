@@ -120,6 +120,8 @@ void copy_samples_data(void) {
 #ifdef __MSP430__
 #define GPIO_COUNTER_PORT GPIO_PORT_P8
 #define GPIO_COUNTER_PIN GPIO_PIN0
+#define GPIO_LAYER_COUNTER_PORT GPIO_PORT_P4
+#define GPIO_LAYER_COUNTER_PIN GPIO_PIN7
 #define GPIO_RESET_PORT GPIO_PORT_P5
 #define GPIO_RESET_PIN GPIO_PIN7
 #define GPIO_ENERGY_PROFILE_PORT GPIO_PORT_P3
@@ -136,6 +138,8 @@ void copy_samples_data(void) {
 void IntermittentCNNTest() {
     GPIO_setOutputLowOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
     GPIO_setAsOutputPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
+    GPIO_setOutputLowOnPin(GPIO_LAYER_COUNTER_PORT, GPIO_LAYER_COUNTER_PIN);
+    GPIO_setAsOutputPin(GPIO_LAYER_COUNTER_PORT, GPIO_LAYER_COUNTER_PIN);
     GPIO_setAsInputPinWithPullUpResistor(GPIO_RESET_PORT, GPIO_RESET_PIN);
 
     // sleep to wait for external FRAM
@@ -187,6 +191,13 @@ void notify_model_finished(void) {
     //my_printf("%d" NEWLINE, GPIO_getInputPinValue(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN));
     our_delay_cycles(5E-3 * getFrequency(FreqLevel));
     GPIO_setOutputLowOnPin(GPIO_COUNTER_PORT, GPIO_COUNTER_PIN);
+}
+
+void notify_layer_finished(void) {
+    my_printf("L" NEWLINE);
+    GPIO_setOutputHighOnPin(GPIO_LAYER_COUNTER_PORT, GPIO_LAYER_COUNTER_PIN);
+    our_delay_cycles(5E-3 * getFrequency(FreqLevel));
+    GPIO_setOutputLowOnPin(GPIO_LAYER_COUNTER_PORT, GPIO_LAYER_COUNTER_PIN);
 }
 
 #if ENABLE_COUNTERS && !DEMO
