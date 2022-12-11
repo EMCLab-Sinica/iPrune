@@ -474,6 +474,7 @@ def determine_conv_tile_c(n, node_idx):
     output_value_info = find_tensor_value_info(onnx_model, n.output[0])
     filter_info = find_initializer(onnx_model, n.input[1])
     node_flags = n.flags.b.extra.conv
+    stride_h, stride_w = n.flags.b.stride
 
     if model_config:
         is_separate_tiling = False
@@ -489,30 +490,32 @@ def determine_conv_tile_c(n, node_idx):
         CHANNEL = filter_info.dims[1]
         kH = filter_info.dims[2]
         kW = filter_info.dims[3]
-        tile_kH = model_config[node_idx]['tile']['weight'][2]
-        tile_kW = model_config[node_idx]['tile']['weight'][3]
+        # tiling with 1x1 filters
+        tile_kH = 1
+        tile_kW = 1
 
         def output2input(tile_size, kernel_size, stride):
             return (tile_size - 1) * stride + kernel_size
 
-        output_tile_h = model_config[node_idx]['tile']['output'][2]
-        input_tile_h = output2input(tile_size=model_config[node_idx]['tile']['output'][2], \
-                                    kernel_size=model_config[node_idx]['filter'][2],
-                                    stride=model_config[node_idx]['stride'][0])
-        output_tile_w = model_config[node_idx]['tile']['output'][3]
-        input_tile_w = output2input(tile_size=model_config[node_idx]['tile']['output'][3], \
-                                    kernel_size=model_config[node_idx]['filter'][3],
-                                    stride=model_config[node_idx]['stride'][1])
+        output_tile_h = OUTPUT_H
+        input_tile_h = output2input(tile_size=output_tile_h,
+                                    kernel_size=kH,
+                                    stride=stride_h)
+        output_tile_w = OUTPUT_W
+        input_tile_w = output2input(tile_size=output_tile_w,
+                                    kernel_size=kW,
+                                    stride=stride_w)
+        initial_output_tile_w = output_tile_w
         output_tile_c = model_config[node_idx]['tile']['output'][1]
 
         max_continuous_channels = CHANNEL
         if is_separate_tiling:
             max_continuous_channels //= 2
-        node_flags.input_tile_c = model_config[node_idx]['tile']['input'][1]
+        node_flags.input_tile_c = max_continuous_channels
 
         logger.debug('Initial input_tile_c=%d', node_flags.input_tile_c)
         # ignore the code if you want to fix tile size
-        def get_memory_usage(output_tile_h, output_tile_w, input_tile_h, input_tile_w, output_tile_c, input_tile_c, filter_len):
+        def memory_usage_ok(output_tile_h, output_tile_w, input_tile_h, input_tile_w, output_tile_c, input_tile_c, filter_len):
             # *2 as in JAPARI, the number of footprint weights is up to the number of
             # filters (e.g., batch size=1)
             weight_memory_usage = ((output_tile_c + 1) + Constants.TEMP_FILTER_WIDTH) * filter_len
@@ -523,24 +526,37 @@ def determine_conv_tile_c(n, node_idx):
             logger.debug('Checking output_tile_c=%d, input_tile_c=%d, filter_len=%d', output_tile_c, input_tile_c, filter_len)
             logger.debug('Checking memory usage: weight=%d, input=%d, output=%d, total=%d', \
                          weight_memory_usage, input_memory_usage, output_memory_usage, weight_memory_usage+input_memory_usage+output_memory_usage)
-            assert(output_memory_usage < Constants.CPU_BUFFER_SIZE)
-            return weight_memory_usage + input_memory_usage + output_memory_usage
+            return (weight_memory_usage + input_memory_usage + output_memory_usage < Constants.LEA_BUFFER_SIZE and
+                    output_memory_usage < Constants.CPU_BUFFER_SIZE)
 
-        # inner +1 for biases
-        filter_len = ((node_flags.input_tile_c * tile_kW + 1) + 1) // 2 * 2 * tile_kH
-        input_tile_c =((node_flags.input_tile_c + 1) + 1) // 2 * 2
-        while get_memory_usage(output_tile_h, output_tile_w, \
-                               input_tile_h, input_tile_w, \
-                               output_tile_c, input_tile_c, filter_len) > Constants.LEA_BUFFER_SIZE:
-            logger.debug('output_tile_w=%d, input_tile_w=%d', output_tile_w, input_tile_w)
-            output_tile_w -= 1
-            input_tile_w -= 1
-            if output_tile_w < 1 or input_tile_w < 1:
-                print("Input channel or output channel may be too large")
-                exit()
-        node_flags.output_tile_w = output_tile_w
-        node_flags.output_tile_h = output_tile_h
-        node_flags.output_tile_c = output_tile_c
+        while True:
+            input_tile_too_large = False
+            # inner +1 for biases
+            filter_len = ((node_flags.input_tile_c * tile_kW + 1) + 1) // 2 * 2 * tile_kH
+            input_tile_c =((node_flags.input_tile_c + 1) + 1) // 2 * 2
+            while not memory_usage_ok(output_tile_h, output_tile_w, \
+                                      input_tile_h, input_tile_w, \
+                                      output_tile_c, input_tile_c, filter_len):
+                logger.debug('output_tile_w=%d, input_tile_w=%d', output_tile_w, input_tile_w)
+                output_tile_w -= 1
+                input_tile_w = output2input(tile_size=output_tile_w,
+                                            kernel_size=kW,
+                                            stride=stride_w)
+                if output_tile_w < 1 or input_tile_w < 1:
+                    logger.debug("Input channel or output channel may be too large")
+                    input_tile_too_large = True
+                    output_tile_w = initial_output_tile_w
+                    break
+
+            if not input_tile_too_large:
+                node_flags.output_tile_w = output_tile_w
+                node_flags.output_tile_h = output_tile_h
+                node_flags.output_tile_c = output_tile_c
+                break
+
+            assert node_flags.input_tile_c / 2 * 2 == node_flags.input_tile_c
+            node_flags.input_tile_c //= 2
+            logger.debug('input_tile_c=%d', node_flags.input_tile_c)
     else:
         print("Please select configed model.")
         exit()
