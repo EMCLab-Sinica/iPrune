@@ -110,7 +110,7 @@ typedef struct ParameterInfo {
      */
     uint8_t slot;
     // uint8_t is not enough. For example, fully connected layer in MNIST has dims 257x1
-    uint16_t dims[4];
+    uint16_t dims[N_MAX_DIMS];
     Scale scale;
     uint8_t param_flags;
     uint8_t extra_info[EXTRA_INFO_LEN];
@@ -118,9 +118,9 @@ typedef struct ParameterInfo {
 } ParameterInfo;
 
 #if SPARSE
-    static_assert(sizeof(ParameterInfo) == 40, "Unexpected size for ParameterInfo");
+    static_assert(sizeof(ParameterInfo) == 32+2*N_MAX_DIMS, "Unexpected size for ParameterInfo");
 #else
-    static_assert(sizeof(ParameterInfo) == 28, "Unexpected size for ParameterInfo");
+    static_assert(sizeof(ParameterInfo) == 20+2*N_MAX_DIMS, "Unexpected size for ParameterInfo");
 #endif
 
 typedef struct SlotInfo {

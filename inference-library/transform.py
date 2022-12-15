@@ -43,6 +43,7 @@ Indexing policy:
 """
 
 class Constants:
+    N_MAX_DIMS = 6
     SLOT_PARAMETERS = 0xf0
     SLOT_TEST_SET = 0xff
     SLOT_CONSTANTS_MIN = SLOT_PARAMETERS
@@ -913,12 +914,11 @@ for params in parameters:
             dims = (3, 32, 32)
         for dim in dims:
             model_parameters_info.write(to_bytes(dim))
-        for _ in range(3 - len(dims)):
+        for _ in range(Constants.N_MAX_DIMS - 1 - len(dims)):
             model_parameters_info.write(to_bytes(0))
         write_scale(model_parameters_info, config['input_scale'])
     else:
         params_scale = 0
-        assert len(params.dims) <= 4
         if params.data_type == onnx.TensorProto.FLOAT:
             float_data = get_float_data(params)
             if params.name in conv_param_names and not args.sparse:
@@ -1015,15 +1015,10 @@ for params in parameters:
         else:
             assert False
         model_parameters_info.write(to_bytes(slot.slot_id, size=8))  # slot
-        if len(params.dims) == 4:
-            channels = params.dims[1]
-        else:
-            channels = 0
         logger.info('dims = %r, length = %d', params.dims, data_len)
         for dim in params.dims:
             model_parameters_info.write(to_bytes(dim))
-        # dims are always 4 uint16_t's in C++
-        for _ in range(4 - len(params.dims)):
+        for _ in range(Constants.N_MAX_DIMS - len(params.dims)):
             model_parameters_info.write(to_bytes(0))
         logger.info("{} scale: {}".format(params.name, params_scale))
         write_scale(model_parameters_info, params_scale)
@@ -1049,7 +1044,7 @@ for idx, n in enumerate(nodes):
     intermediate_parameters_info.write(to_bytes(0, size=8))  # bitwidth
     intermediate_parameters_info.write(to_bytes(0, size=8))  # slot
     intermediate_parameters_info.write(to_bytes(0))         # dummy
-    for _ in range(4):  # dims[4]
+    for _ in range(Constants.N_MAX_DIMS):  # dims[N_MAX_DIMS]
         intermediate_parameters_info.write(to_bytes(0))
     intermediate_parameters_info.write(to_bytes(0))   # scale
     intermediate_parameters_info.write(to_bytes(0, size=8))     # param_flags
