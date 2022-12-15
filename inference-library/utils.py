@@ -161,6 +161,9 @@ def load_har(start: int, limit: int):
     finally:
         sys.path = orig_sys_path
 
+def load_coco128(start: int, limit: int):
+    return ModelData(labels=[0], images=np.random.randn(1, 3, 128, 128), data_layout=DataLayout.NCHW)
+
 def download_file(url: str, filename: str, post_processor: Optional[Callable] = None) -> os.PathLike:
     xdg_cache_home = pathlib.Path(os.path.expanduser('~/.cache'))
 

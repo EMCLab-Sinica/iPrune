@@ -53,7 +53,7 @@ typedef struct ConvTaskParams {
     uint16_t input_tile_c_index;
     int16_t tile_h;
     int16_t tile_w;
-    uint8_t cur_input_tile_c;
+    uint16_t cur_input_tile_c;
     uint16_t cur_filter_tile_c;
     uint16_t n_tiles_c;
     int16_t dest_offset;

@@ -108,6 +108,9 @@ void handle_relu(Model *model, const ParameterInfo *input[], ParameterInfo *outp
     // }
 }
 
+void handle_sigmoid(struct Model *model, const struct ParameterInfo *input[], struct ParameterInfo *output, const struct Node* node) {
+}
+
 void handle_reshape(Model *model, const ParameterInfo *input[], ParameterInfo *output, const Node*) {
     my_printf_debug("Reshape!" NEWLINE);
 
@@ -264,6 +267,9 @@ void handle_add(Model *model, const ParameterInfo *input[], ParameterInfo *outpu
         my_memcpy_to_param(output, idx*buffer_size, buffer_a, buffer_size * sizeof(int16_t), 0);
     }
     dump_params_nhwc_debug(model, output, node->output_name);
+}
+
+void handle_mul(struct Model *model, const struct ParameterInfo *input[], struct ParameterInfo *output, const struct Node* node) {
 }
 
 void alloc_batchnormalization(Model* model, const ParameterInfo* input[], ParameterInfo* output, const Node*) {

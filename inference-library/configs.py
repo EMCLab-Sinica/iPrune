@@ -1,4 +1,5 @@
 from utils import (
+    load_coco128,
     load_data_cifar10,
     load_data_google_speech_cnn,
     load_har,
@@ -53,6 +54,22 @@ configs = {
         'op_filters': 2,
         'first_sample_outputs': [ -6.194588, 2.2284777, -13.659239, -1.4972568, 13.473643, -10.446839 ],
         'fp32_accuracy': 0.9121,
+    },
+    'pruned_yolov5n': {
+        'onnx_model': {
+            'energy': '../pruning/onnx_models/energy/yolov5n.onnx',
+            'intermittent': '../pruning/onnx_models/intermittent/yolov5n.onnx',
+        },
+        'scale': 4,
+        'input_scale': 16,
+        'num_slots': 6,
+        'intermediate_values_size': 264000,
+        'data_loader': load_coco128,
+        'n_all_samples': 1,
+        'sample_size': [3, 128, 128],
+        'op_filters': 2,
+        'first_sample_outputs': [],
+        'fp32_accuracy': 0,
     },
 }
 

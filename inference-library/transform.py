@@ -61,7 +61,7 @@ class Constants:
     NUM_INPUTS = 0  # will be filled during parsing
     N_INPUT = 0
     # Match the size of external FRAM
-    NVM_SIZE = 512 * 1024
+    NVM_SIZE = 16 * 1024 * 1024
     N_SAMPLES = 20
     # to make the code clearer; used in Conv
     TEMP_FILTER_WIDTH = 1
@@ -87,7 +87,7 @@ class Constants:
     # generate parameter.bin if true (--pbin)
     param_bin = 0
 # XXX: Transpose does nothing as we happens to need NHWC
-inplace_update_ops = ['Reshape', 'Softmax', 'Squeeze', 'Transpose', 'Unsqueeze']
+inplace_update_ops = ['Reshape', 'Softmax', 'Squeeze', 'Transpose', 'Unsqueeze', 'Sigmoid', 'Mul']
 
 audio_ops = ['DecodeWav', 'AudioSpectrogram', 'Mfcc']
 
@@ -274,6 +274,9 @@ elif args.config == 'pruned_har':
 elif args.config == 'pruned_kws_cnn':
     Constants.CPU_BUFFER_SIZE = 700
     model_config = model_configs['KWS_CNN_S']
+elif args.config == 'pruned_yolov5n':
+    Constants.CPU_BUFFER_SIZE = 700
+    model_config = model_configs['YOLOv5n']
 
 onnx_model = load_model(config, args.method)
 # print(onnx_model)
@@ -973,7 +976,7 @@ for params in parameters:
                 int_data_Q15 = data
 
             data_len = len(int_data_Q15)
-            assert data_len > 0
+            # assert data_len > 0
             slot = parameters_slot
 
             model_parameters_info.write(to_bytes(slot.offset, size=32))  # params_offset
