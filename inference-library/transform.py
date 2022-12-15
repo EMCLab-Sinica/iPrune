@@ -549,6 +549,9 @@ def determine_conv_tile_c(n, node_idx):
                     logger.debug("Input channel or output channel may be too large")
                     input_tile_too_large = True
                     output_tile_w = initial_output_tile_w
+                    input_tile_w = output2input(tile_size=output_tile_w,
+                                                kernel_size=kW,
+                                                stride=stride_w)
                     break
 
             if not input_tile_too_large:
