@@ -509,7 +509,7 @@ def determine_conv_tile_c(n, node_idx):
                                     kernel_size=kW,
                                     stride=stride_w)
         initial_output_tile_w = output_tile_w
-        output_tile_c = model_config[node_idx]['tile']['output'][1]
+        output_tile_c = OUTPUT_CHANNEL
 
         max_continuous_channels = CHANNEL
         if is_separate_tiling:
@@ -533,7 +533,7 @@ def determine_conv_tile_c(n, node_idx):
                     output_memory_usage < Constants.CPU_BUFFER_SIZE)
 
         while True:
-            input_tile_too_large = False
+            input_or_output_tile_too_large = False
             # inner +1 for biases
             filter_len = ((node_flags.input_tile_c * tile_kW + 1) + 1) // 2 * 2 * tile_kH
             input_tile_c =((node_flags.input_tile_c + 1) + 1) // 2 * 2
@@ -547,22 +547,26 @@ def determine_conv_tile_c(n, node_idx):
                                             stride=stride_w)
                 if output_tile_w < 1 or input_tile_w < 1:
                     logger.debug("Input channel or output channel may be too large")
-                    input_tile_too_large = True
+                    input_or_output_tile_too_large = True
                     output_tile_w = initial_output_tile_w
                     input_tile_w = output2input(tile_size=output_tile_w,
                                                 kernel_size=kW,
                                                 stride=stride_w)
                     break
 
-            if not input_tile_too_large:
+            if not input_or_output_tile_too_large:
                 node_flags.output_tile_w = output_tile_w
                 node_flags.output_tile_h = output_tile_h
                 node_flags.output_tile_c = output_tile_c
                 break
 
-            assert node_flags.input_tile_c / 2 * 2 == node_flags.input_tile_c
-            node_flags.input_tile_c //= 2
-            logger.debug('input_tile_c=%d', node_flags.input_tile_c)
+            if output_tile_c // 2:
+                output_tile_c //= 2
+            else:
+                output_tile_c = OUTPUT_CHANNEL
+                assert node_flags.input_tile_c // 2 * 2 == node_flags.input_tile_c
+                node_flags.input_tile_c //= 2
+            logger.debug('input_tile_c=%d, output_tile_c=%d', node_flags.input_tile_c, output_tile_c)
     else:
         print("Please select configed model.")
         exit()
